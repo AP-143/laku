@@ -19,3 +19,9 @@ This version of Next.js has breaking changes: APIs, conventions, and file struct
 ## Models and the live bake-off
 
 All model IDs live in `src/config/models.ts`. `npm run bakeoff -- --dry-run` prints the plan and estimated spend without calling any model; `npm run bakeoff` runs the live comparison (spends free-tier credit, capped by `--cap`, default US$2). Keep generated outputs under `storage/` (git-ignored).
+
+## Gateway account facts (verified 2026-11-01)
+
+- The AI Gateway needs a valid card on file before it unlocks the US$5 monthly free credit. Do not buy credits and keep auto top-up off; set a budget on the API key.
+- The free tier covers only a subset of models. `bfl/flux-kontext-pro` works on it; `meta/muse-image-1.0` and `google/gemini-nano-banana-2.1` do not.
+- Every video model is refused unless the paid balance is at least US$10, so video is not available on the free credit.

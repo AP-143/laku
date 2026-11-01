@@ -133,12 +133,17 @@ export function formatSummary(results: JobResult[], balanceBefore?: string, bala
     const allCreditProblems = videoRuns.every(
       (result) => result.status === "error" && result.errorClass === "no_credits_or_quota",
     );
-    lines.push("");
+    const imageInput = anyOk
+      ? "accepted"
+      : videoRuns.some((result) => result.errorClass === "unsupported_input")
+        ? "rejected by at least one model"
+        : "unknown (no call got far enough for the gateway to evaluate the image)";
+    lines.push("", `Video image input through the gateway: ${imageInput}.`);
     if (anyOk) {
       lines.push("Video: at least one candidate produced a clip through the gateway with the current credit.");
     } else if (allCreditProblems) {
       lines.push(
-        "VIDEO IS NOT COVERED BY THE FREE CREDIT: every video candidate failed on credits or quota.",
+        "VIDEO IS NOT AVAILABLE ON THE CURRENT CREDIT: every video candidate was refused on credits, quota or a minimum balance.",
         "Recommendation: defer feature 3 (video) and ship features 1 and 2 first.",
       );
     } else {
