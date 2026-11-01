@@ -1,0 +1,12 @@
+# secrets
+.env
+.env.*
+
+# dependencies and build output
+node_modules/
+.next/
+out/
+
+# local data (generated assets, sample photos, usage ledger)
+storage/
+samples/
