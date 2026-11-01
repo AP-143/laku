@@ -1,30 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { ChatEvent } from "../shared/chat-events";
-import { createChatHandler } from "./chat-handler";
-import { createModelClient } from "./model-client";
+import { readEvents } from "./testing/events";
 import { fakeChatModel } from "./testing/fake-models";
+import { chatRequest, createTestApp } from "./testing/harness";
 
 /** The one test seam: the chat API boundary. Requests go in, the stream of events comes out. */
 
-function chatRequest(body: unknown): Request {
-  return new Request("http://localhost/api/chat", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-
-async function readEvents(response: Response): Promise<ChatEvent[]> {
-  const text = await response.text();
-  return text
-    .split("\n")
-    .filter((line) => line.trim() !== "")
-    .map((line) => JSON.parse(line) as ChatEvent);
-}
-
 function handlerWith(model: ReturnType<typeof fakeChatModel>) {
-  return createChatHandler(createModelClient({ chatModel: model }));
+  return createTestApp(model).chat;
 }
 
 describe("chat API", () => {

@@ -8,12 +8,33 @@ const usage = {
   outputTokens: { total: 5, text: 5, reasoning: undefined },
 };
 
+interface FakeChatModelOptions {
+  /** The pieces of the streamed chat reply. */
+  chunks: string[];
+  /** Fail after streaming the chunks, like a dropped or refused call. */
+  failAfterChunks?: boolean;
+  /** What the product check answers for any photo. Defaults to "it is a product". */
+  isProduct?: boolean;
+  /** Make the product check itself fail. */
+  failProductCheck?: boolean;
+}
+
 /**
  * A deterministic stand-in for the chat model. It never touches the network and costs nothing.
- * It streams `chunks` as the reply; with `failAfterChunks` it then fails, like a dropped or refused call.
+ * The streamed reply is the chat; the single-shot answer is the product check (YES or NO).
  */
-export function fakeChatModel(options: { chunks: string[]; failAfterChunks?: boolean }) {
+export function fakeChatModel(options: FakeChatModelOptions) {
   return new MockLanguageModelV4({
+    doGenerate: async () => {
+      if (options.failProductCheck) throw new Error("fake product check failure");
+      return {
+        content: [{ type: "text" as const, text: options.isProduct === false ? "NO" : "YES" }],
+        finishReason: { unified: "stop" as const, raw: undefined },
+        usage,
+        warnings: [],
+      };
+    },
+
     doStream: async () => {
       const deltas = options.chunks.map((delta) => ({ type: "text-delta" as const, id: TEXT_PART_ID, delta }));
 
