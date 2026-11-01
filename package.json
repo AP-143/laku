@@ -8,9 +8,11 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "bakeoff": "tsx scripts/bakeoff/index.ts"
+    "bakeoff": "tsx scripts/bakeoff/index.ts",
+    "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
+    "@ai-sdk/google": "^4.0.109",
     "ai": "^7.0.159",
     "next": "16.4.3",
     "react": "19.3.0",

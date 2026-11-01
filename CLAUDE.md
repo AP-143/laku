@@ -25,3 +25,7 @@ All model IDs live in `src/config/models.ts`. `npm run bakeoff -- --dry-run` pri
 - The AI Gateway needs a valid card on file before it unlocks the US$5 monthly free credit. Do not buy credits and keep auto top-up off; set a budget on the API key.
 - The free tier covers only a subset of models. `bfl/flux-kontext-pro` works on it; `meta/muse-image-1.0` and `google/gemini-nano-banana-2.1` do not.
 - Every video model is refused unless the paid balance is at least US$10, so video is not available on the free credit.
+
+## Tests
+
+`npm test` runs the automated tests (Node's built-in runner through tsx). They sit at one seam, the chat API boundary: they send a request to the chat handler and read the event stream, with the model faked by `src/server/testing/fake-models.ts`, so they cost nothing and call no real model. Add new behaviour as a test at that seam first.

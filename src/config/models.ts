@@ -15,8 +15,12 @@ export interface ImageModelConfig {
 
 /** Models in use by the app. Updated from the bake-off evidence below. */
 export const MODELS = {
-  /** Chat LLM with vision. Wired to the free Google AI Studio key in the chat API ticket. */
-  chat: "google/gemini-3.6-flash",
+  /**
+   * Chat LLM with vision, called directly with the free Google AI Studio key (so this is a Google model
+   * ID, not a gateway "provider/model" ID). Verified live on 2026-11-01: replies in Indonesian and reads
+   * images. gemini-3.6-flash also worked; gemini-2.5-flash-lite is closed to new users.
+   */
+  chat: "gemini-3.5-flash-lite",
   /** Studio photos and storyboard frames. */
   image: { id: "bfl/flux-kontext-pro", api: "image" } satisfies ImageModelConfig,
   /**
