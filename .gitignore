@@ -10,3 +10,8 @@ out/
 # local data (generated assets, sample photos, usage ledger)
 storage/
 samples/
+
+# misc
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store
