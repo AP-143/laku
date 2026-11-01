@@ -1,5 +1,5 @@
 import { CHAT_EVENTS_CONTENT_TYPE, encodeChatEvent, type ChatEvent } from "../shared/chat-events";
-import type { ChatMessage, GatewayClient } from "./gateway";
+import type { ChatMessage, ModelClient } from "./model-client";
 
 export type ChatHandler = (request: Request) => Promise<Response>;
 
@@ -76,18 +76,26 @@ function eventStream(run: (send: (event: ChatEvent) => void) => Promise<void>): 
   });
 }
 
-export function createChatHandler(gateway: GatewayClient): ChatHandler {
+function eventResponse(
+  run: (send: (event: ChatEvent) => void) => Promise<void>,
+  init: { status?: number } = {},
+): Response {
+  return new Response(eventStream(run), { ...init, headers: { "content-type": CHAT_EVENTS_CONTENT_TYPE } });
+}
+
+export function createChatHandler(models: ModelClient): ChatHandler {
   return async (request) => {
     const conversation = await readConversation(request);
 
     if (!conversation) {
-      const body = eventStream(async (send) => send({ type: "error", message: INVALID_REQUEST_MESSAGE, retryable: false }));
-      return new Response(body, { status: 400, headers: { "content-type": CHAT_EVENTS_CONTENT_TYPE } });
+      return eventResponse(async (send) => send({ type: "error", message: INVALID_REQUEST_MESSAGE, retryable: false }), {
+        status: 400,
+      });
     }
 
-    const body = eventStream(async (send) => {
+    return eventResponse(async (send) => {
       try {
-        for await (const text of gateway.streamChatReply(conversation)) {
+        for await (const text of models.streamChatReply(conversation)) {
           send({ type: "assistant_text", text });
         }
         send({ type: "done" });
@@ -96,6 +104,5 @@ export function createChatHandler(gateway: GatewayClient): ChatHandler {
         send({ type: "error", message: MODEL_FAILURE_MESSAGE, retryable: true });
       }
     });
-    return new Response(body, { headers: { "content-type": CHAT_EVENTS_CONTENT_TYPE } });
   };
 }

@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ChatEvent } from "../shared/chat-events";
 import { createChatHandler } from "./chat-handler";
-import { createGatewayClient } from "./gateway";
+import { createModelClient } from "./model-client";
 import { fakeChatModel } from "./testing/fake-models";
 
-/** Seam A: the chat API boundary. Requests go in, the stream of events comes out. */
+/** The one test seam: the chat API boundary. Requests go in, the stream of events comes out. */
 
 function chatRequest(body: unknown): Request {
   return new Request("http://localhost/api/chat", {
@@ -24,7 +24,7 @@ async function readEvents(response: Response): Promise<ChatEvent[]> {
 }
 
 function handlerWith(model: ReturnType<typeof fakeChatModel>) {
-  return createChatHandler(createGatewayClient({ chatModel: model }));
+  return createChatHandler(createModelClient({ chatModel: model }));
 }
 
 describe("chat API", () => {

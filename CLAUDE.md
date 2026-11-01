@@ -18,7 +18,7 @@ This version of Next.js has breaking changes: APIs, conventions, and file struct
 
 ## Models and the live bake-off
 
-All model IDs live in `src/config/models.ts`. `npm run bakeoff -- --dry-run` prints the plan and estimated spend without calling any model; `npm run bakeoff` runs the live comparison (spends free-tier credit, capped by `--cap`, default US$2). Keep generated outputs under `storage/` (git-ignored).
+All model IDs live in `src/config/models.ts`. The chat model runs directly on the free Google AI Studio key (not through the Vercel AI Gateway); image models will use the gateway. Inside the app, only `src/server/model-client.ts` talks to models (the manual bake-off script is the exception). `npm run bakeoff -- --dry-run` prints the plan and estimated spend without calling any model; `npm run bakeoff` runs the live comparison (spends free-tier credit, capped by `--cap`, default US$2). Keep generated outputs under `storage/` (git-ignored).
 
 ## Gateway account facts (verified 2026-11-01)
 

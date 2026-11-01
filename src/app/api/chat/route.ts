@@ -1,9 +1,9 @@
 import { createChatHandler, type ChatHandler } from "../../../server/chat-handler";
-import { createDefaultGatewayClient } from "../../../server/gateway";
+import { createDefaultModelClient } from "../../../server/model-client";
 
 let handler: ChatHandler | undefined;
 
 export async function POST(request: Request) {
-  handler ??= createChatHandler(createDefaultGatewayClient());
+  handler ??= createChatHandler(createDefaultModelClient());
   return handler(request);
 }

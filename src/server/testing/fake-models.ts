@@ -1,6 +1,8 @@
 import { simulateReadableStream } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 
+const TEXT_PART_ID = "text-1";
+
 const usage = {
   inputTokens: { total: 3, noCache: 3, cacheRead: undefined, cacheWrite: undefined },
   outputTokens: { total: 5, text: 5, reasoning: undefined },
@@ -13,11 +15,11 @@ const usage = {
 export function fakeChatModel(options: { chunks: string[]; failAfterChunks?: boolean }) {
   return new MockLanguageModelV4({
     doStream: async () => {
-      const deltas = options.chunks.map((delta) => ({ type: "text-delta" as const, id: "text-1", delta }));
+      const deltas = options.chunks.map((delta) => ({ type: "text-delta" as const, id: TEXT_PART_ID, delta }));
 
       if (options.failAfterChunks) {
         // Pull-based, so the chunks are delivered before the failure (erroring in start() would drop them).
-        const parts = [{ type: "text-start" as const, id: "text-1" }, ...deltas];
+        const parts = [{ type: "text-start" as const, id: TEXT_PART_ID }, ...deltas];
         return {
           stream: new ReadableStream({
             pull(controller) {
@@ -32,9 +34,9 @@ export function fakeChatModel(options: { chunks: string[]; failAfterChunks?: boo
       return {
         stream: simulateReadableStream({
           chunks: [
-            { type: "text-start" as const, id: "text-1" },
+            { type: "text-start" as const, id: TEXT_PART_ID },
             ...deltas,
-            { type: "text-end" as const, id: "text-1" },
+            { type: "text-end" as const, id: TEXT_PART_ID },
             { type: "finish" as const, finishReason: { unified: "stop" as const, raw: undefined }, usage },
           ],
         }),
