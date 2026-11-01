@@ -8,6 +8,9 @@ import { CHAT_SYSTEM_PROMPT } from "./chat-prompt";
  * Everything else asks it for results and never imports a model SDK.
  */
 
+/** Chat replies are short by design; this also caps what one request can make the model produce. */
+const MAX_REPLY_TOKENS = 1024;
+
 export interface ChatMessage {
   role: "user" | "assistant";
   text: string;
@@ -25,6 +28,7 @@ export function createGatewayClient(models: { chatModel: LanguageModel }): Gatew
         model: models.chatModel,
         system: CHAT_SYSTEM_PROMPT,
         messages: messages.map((message) => ({ role: message.role, content: message.text })),
+        maxOutputTokens: MAX_REPLY_TOKENS,
         maxRetries: 0,
       });
 

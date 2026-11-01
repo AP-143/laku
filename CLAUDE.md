@@ -29,3 +29,7 @@ All model IDs live in `src/config/models.ts`. `npm run bakeoff -- --dry-run` pri
 ## Tests
 
 `npm test` runs the automated tests (Node's built-in runner through tsx). They sit at one seam, the chat API boundary: they send a request to the chat handler and read the event stream, with the model faked by `src/server/testing/fake-models.ts`, so they cost nothing and call no real model. Add new behaviour as a test at that seam first.
+
+## Before any public deployment
+
+The chat API is bounded per request (body size, message count, message length, reply tokens) but has no authentication and no per-IP or per-session rate limit, because the prototype only runs on localhost. Add both before the app is exposed publicly, otherwise anyone can spend the model quota.

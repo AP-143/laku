@@ -62,7 +62,27 @@ describe("chat API", () => {
     ["a missing messages list", () => chatRequest({})],
     ["a last message that is not from the user", () => chatRequest({ messages: [{ role: "assistant", text: "Hai" }] })],
     ["an empty user message", () => chatRequest({ messages: [{ role: "user", text: "   " }] })],
+    ["more than 50 messages", () => chatRequest({ messages: Array.from({ length: 51 }, () => ({ role: "user", text: "Hai" })) })],
+    ["a message over 4000 characters", () => chatRequest({ messages: [{ role: "user", text: "a".repeat(4001) }] })],
+    [
+      "a conversation over 20000 characters in total",
+      () => chatRequest({ messages: Array.from({ length: 6 }, () => ({ role: "user", text: "a".repeat(4000) })) }),
+    ],
+    [
+      "a body over 64 KB even when the messages are small",
+      () => chatRequest({ messages: [{ role: "user", text: "Hai" }], padding: "x".repeat(70 * 1024) }),
+    ],
   ];
+
+  it("accepts a message exactly at the 4000 character limit", async () => {
+    const handle = handlerWith(fakeChatModel({ chunks: ["Oke"] }));
+
+    const response = await handle(chatRequest({ messages: [{ role: "user", text: "a".repeat(4000) }] }));
+    const events = await readEvents(response);
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(events.at(-1), { type: "done" });
+  });
 
   for (const [name, makeRequest] of invalidRequests) {
     it(`rejects ${name} with a single non-retryable error`, async () => {
