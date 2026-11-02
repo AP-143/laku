@@ -26,7 +26,7 @@ export const MODELS = {
   /**
    * Image-to-video clips, called directly on the Google key (Interactions API). Not wired into the app
    * yet: Veo 3.1 was shut down in the Gemini API on 2026-10-22 and Gemini Omni Flash replaces it.
-   * Clip length and per-second price are still unmeasured (see the bake-off).
+   * Measured 2026-11-02 (see BAKEOFF_NOTES): a 4 s clip came back at 720x1280 with an audio track, about US$0.10 per second.
    */
   video: "gemini-omni-1.1-flash",
 } as const;
@@ -92,6 +92,35 @@ Rejected on the same photos:
 Video: not usable on the free credit. Every video model is refused with "Video generation requires a minimum
 balance of $10". Feature 3 (video) is deferred until paid credit is available; the model above is only the
 first candidate, untested.
+
+Run of 2026-11-02, directly on the Google key (prepaid balance, no gateway). Prices are from Google's pricing
+page read on 2026-11-02 and are estimates until compared with the drop in the AI Studio balance.
+
+Image (5 photos, studio photo, 4 candidates):
+- gemini-nano-banana-2.1 at 1K (US$0.0336): chosen. Faithful on 5 of 5 photos, including the skincare set with all
+  four products (the previous model kept one of four). Big text, logos and stickers stay right; small print on
+  packaging is reinvented (for example "Advanced Beanmening"), so do not promise legible fine print.
+- gemini-3.1-flash-image at 0.5K (US$0.045) and 1K (US$0.067): about as faithful, but more expensive.
+- gemini-3.1-flash-lite-image at 1K (US$0.0336): weakest. Showed the studio backdrop in one photo, changed the
+  stickers on the tumbler and kept the hand in the tea photo.
+- Storyboard frames (9:16) with the chosen model: faithful on 5 of 5, product kept in a lifestyle scene.
+- Contact sheet (4 panels in one 1:1 image, same price as one frame): usable as a cheap preview, but each panel is
+  only about 512 px, is not 9:16, and the skincare set dropped to a single tube. Not good as a video source, so the
+  app should make one frame per scene.
+- gemini-2.5-flash-image (the original Nano Banana) is deprecated and shuts down on 2027-03-15.
+
+Video: Veo 3.1 was shut down in the Gemini API on 2026-10-22. Gemini Omni Flash (gemini-omni-1.1-flash) replaces it.
+- Called over the Interactions REST API (the AI SDK has no video support for it yet); the video comes back as base64
+  inside steps, model_output, content.
+- Asking for a duration of "4s" in response_format was accepted and gave a 4.0 s clip, 720x1280 (9:16), 24 fps,
+  H.264. It took about 40 s to make. The longest and shortest allowed lengths are still unknown.
+- The clip has an AAC audio track by default, and no request field to turn it off was found, so the app must drop
+  it (ffmpeg) when it adds a voice-over. Price with and without audio is not separated on the pricing page.
+- Price: about US$0.10 per second (derived by Google from 5,792 tokens per second of 720p); a 4 s clip is about
+  US$0.40. Quality by eye: smooth camera push-in, product label intact, nothing added.
+
+Speech: gemini-3.8-flash-lite-tts made 11.9 s of Indonesian narration (24 kHz mono WAV) in about 4 s, estimated at
+US$0.002 (US$6 per 1M audio tokens until 2026-12-31, US$12 after; 25 tokens per second).
 `.trim();
 
 /** Estimated spend, used by the usage meter. Prices change, so re-check them against the gateway catalogue. */

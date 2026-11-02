@@ -11,13 +11,14 @@
  *   npm run bakeoff -- --use-case=studio,frame,sheet   which image jobs to run (default: studio,frame)
  *   npm run bakeoff -- --models=nano-banana,flash-image@512   only image candidates whose id or id@size contains one of these
  *   npm run bakeoff -- --video-seconds=4      clip length asked for (0 = do not ask, let the model decide)
+ *   npm run bakeoff -- --video-source=path    make the clip from this image (an earlier frame) instead of a fresh one
  *   npm run bakeoff -- --photos=some/folder
  *
  * It never retries a paid call, and it refuses to start when the estimated spend is above the cap.
  * Google has no balance API: note your AI Studio balance before and after to see the real spend.
  */
 import { execFile } from "node:child_process";
-import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
@@ -74,6 +75,7 @@ interface Options {
   useCases: UseCase[];
   models: string[];
   videoSeconds: number;
+  videoSourcePath?: string;
 }
 
 function parseArgs(argv: string[]): Options {
@@ -100,6 +102,7 @@ function parseArgs(argv: string[]): Options {
     useCases: useCases as UseCase[],
     models: value("models") ? list("models", "") : [],
     videoSeconds: seconds,
+    videoSourcePath: value("video-source") ? path.resolve(value("video-source")!) : undefined,
   };
 }
 
@@ -295,6 +298,16 @@ async function main() {
     mediaType: "image/jpeg",
     note: `source: original photo ${photoNames[0]}`,
   };
+
+  if (options.videoSourcePath) {
+    const mediaType = { ".png": "image/png", ".webp": "image/webp" }[path.extname(options.videoSourcePath).toLowerCase()] ?? "image/jpeg";
+    videoSource = {
+      photo: path.basename(options.videoSourcePath),
+      image: await readFile(options.videoSourcePath),
+      mediaType,
+      note: `source: ${path.basename(options.videoSourcePath)}`,
+    };
+  }
 
   // Once Google refuses on billing or quota grounds (for example no billing on the key's project),
   // every later call would fail the same way, so stop instead of firing the rest.
