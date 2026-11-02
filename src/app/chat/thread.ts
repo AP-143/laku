@@ -21,6 +21,19 @@ export type ThreadItem =
       approved: boolean;
     }
   | { id: string; kind: "video"; assetId: string; sourceAssetId: string }
+  /** A video stopped part way: the clips kept so far, and what is needed to remake only the rest. */
+  | {
+      id: string;
+      kind: "partial";
+      seconds: number;
+      clips: number[];
+      finished: Record<number, string>;
+      failedIndex: number;
+      /** The storyboard frames the video is made from, sent again with the resume. */
+      frames: string[];
+      /** The seller already asked to remake the rest. */
+      resumed?: boolean;
+    }
   /** The bot asks before spending: the request to send again with a yes, and the seller's answer once given. */
   | { id: string; kind: "confirm"; message: string; retry: RetryRequest; answer?: "yes" | "no" }
   | { id: string; kind: "error"; message: string; code?: ErrorCode; retryable: boolean; retry?: RetryRequest };

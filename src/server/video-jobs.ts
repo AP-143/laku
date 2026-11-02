@@ -6,7 +6,13 @@ import type { AssetFile, AssetStore } from "./asset-store";
 import { clipPrompt } from "./image-prompts";
 import { NotAProductError } from "./image-jobs";
 import type { ModelClient } from "./model-client";
-import { DailyCapReachedError, mayStillBeBilled, QuotaExhaustedError, VideoNotAffordableError } from "./model-errors";
+import {
+  ClipFailedError,
+  DailyCapReachedError,
+  mayStillBeBilled,
+  QuotaExhaustedError,
+  VideoNotAffordableError,
+} from "./model-errors";
 import { readUsage, type UsageLedger } from "./usage-ledger";
 import { joinClips } from "./video-join";
 
@@ -46,16 +52,26 @@ export function createVideoJobs(deps: {
   }
 
   return {
-    /** `frames` are the storyboard frames in scene order; clip `i` is made from frame `i`. */
-    async generate(request: { frames: StoryboardFrame[]; plan: Extract<ClipPlan, { ok: true }> }) {
+    /**
+     * `frames` are the storyboard frames in scene order; clip `i` is made from frame `i`.
+     * `finished` holds clips made by an earlier try (by position), which are used as they are and not paid for again.
+     */
+    async generate(request: {
+      frames: StoryboardFrame[];
+      plan: Extract<ClipPlan, { ok: true }>;
+      finished?: Record<number, { assetId: string; bytes: Uint8Array }>;
+    }) {
       const { plan } = request;
+      const finished = request.finished ?? {};
       const frames = request.frames.slice(0, plan.clips.length);
       for (const frame of frames) {
         if (!(await isProduct(frame.file))) throw new NotAProductError();
       }
 
-      // The whole video is booked before the first clip, so simultaneous requests cannot squeeze under a limit.
-      const reservation = await ledger.reserve(costOf(sum(plan.clips)), {
+      // Only the clips still to be made are paid for, and they are booked before the first one, so
+      // simultaneous requests cannot squeeze under a limit.
+      const missing = plan.clips.filter((_, index) => !finished[index]);
+      const reservation = await ledger.reserve(costOf(sum(missing)), {
         monthlyUsd: COSTS.monthlyBudgetUsd,
         dailyUsd: COSTS.dailyBudgetUsd,
       });
@@ -72,6 +88,10 @@ export function createVideoJobs(deps: {
       send({ type: "job_started", jobId: randomUUID(), kind: "video" });
       const made: Uint8Array[] = [];
       for (const [index, seconds] of plan.clips.entries()) {
+        if (finished[index]) {
+          made.push(finished[index].bytes);
+          continue;
+        }
         send({
           type: "job_progress",
           jobId: "video",
@@ -82,9 +102,24 @@ export function createVideoJobs(deps: {
           made.push(await models.generateClip({ prompt: clipPrompt(), frame: frames[index].file, seconds }));
         } catch (error) {
           // Clips that were not made are given back. A clip that timed out may still be billed, so it stays booked.
-          const notBilled = plan.clips.slice(index + (mayStillBeBilled(error) ? 1 : 0));
+          const start = index + (mayStillBeBilled(error) ? 1 : 0);
+          const notBilled = plan.clips.filter((_, position) => position >= start && !finished[position]);
           await ledger.record(-costOf(sum(notBilled)));
-          throw error;
+
+          // The clips that came out are kept, so the seller can remake just the rest instead of paying again.
+          const kept: Record<number, string> = {};
+          for (const [position, file] of made.entries()) {
+            kept[position] = finished[position]?.assetId ?? (await assets.saveVideo(file));
+          }
+          send({
+            type: "video_partial",
+            seconds: plan.seconds,
+            clips: plan.clips,
+            finished: kept,
+            failedIndex: index,
+            sourceAssetId: frames[0].assetId,
+          });
+          throw new ClipFailedError(index, plan.clips.length, error);
         }
       }
 

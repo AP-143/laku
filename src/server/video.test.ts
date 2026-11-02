@@ -178,6 +178,86 @@ describe("confirming an expensive video", () => {
   });
 });
 
+describe("recovering from a failed clip", () => {
+  const partialOf = (events: ChatEvent[]) => events.find((event) => event.type === "video_partial");
+  const rejected = Object.assign(new Error("bad request"), { statusCode: 400 });
+
+  async function failSecondClip() {
+    const model = fakeVideoModel({ failOnClip: 1, failWith: rejected });
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10 }), undefined, { videoModel: model });
+    const frames = await uploadFrames(app);
+    const events = await readEvents(await app.chat(videoRequest("video 10 detik", frames)));
+    return { app, frames, events };
+  }
+
+  it("keeps the clips that were made, saves them, and says which part failed", async () => {
+    const { app, frames, events } = await failSecondClip();
+
+    const partial = partialOf(events);
+    assert.ok(partial && partial.type === "video_partial");
+    assert.equal(partial.seconds, 10);
+    assert.deepEqual(partial.clips, [6, 4]);
+    assert.deepEqual(Object.keys(partial.finished), ["0"]);
+    assert.equal(partial.failedIndex, 1);
+    assert.equal(partial.sourceAssetId, frames[0]);
+    assert.equal((await app.store.read(partial.finished[0], "original"))?.mediaType, "video/mp4");
+    assert.match(errorOf(events)?.message ?? "", /klip 2 dari 2/i);
+    assert.equal(finishedVideo(events), undefined);
+  });
+
+  it("never retries a clip by itself", async () => {
+    const { app } = await failSecondClip();
+
+    assert.equal(app.videoModel.calls.length, 2);
+  });
+
+  it("remakes only the failed clip when the seller asks, and finishes the video", async () => {
+    const { app, frames, events } = await failSecondClip();
+    const partial = partialOf(events);
+    assert.ok(partial && partial.type === "video_partial");
+
+    const resumed = await readEvents(
+      await app.chat(
+        videoRequest("Coba ulang bagian yang gagal.", frames, {
+          resume: { seconds: partial.seconds, clips: partial.clips, finished: partial.finished },
+        }),
+      ),
+    );
+
+    // One more call in total: the 4 s clip, from the second frame.
+    assert.equal(app.videoModel.calls.length, 3);
+    assert.equal(app.videoModel.calls[2].seconds, 4);
+    const stored = await app.store.read(frames[1], "resized");
+    assert.deepEqual(Buffer.from(app.videoModel.calls[2].frame.bytes), Buffer.from(stored!.bytes));
+
+    const ready = finishedVideo(resumed);
+    assert.ok(ready && ready.type === "asset_ready");
+    const probe = await probeVideo((await app.store.read(ready.assetId, "original"))!.bytes);
+    assert.ok(Math.abs(probe.seconds - 10) < 0.6, `length was ${probe.seconds}`);
+    // The finished clip stays booked from the first try (US$0.60); the remade clip adds US$0.40.
+    assert.equal((await usageOf(app)).monthUsd, 1);
+    assert.deepEqual(resumed.at(-1), { type: "done" });
+  });
+
+  it("books only the clips still missing when it resumes", async () => {
+    const { app, frames, events } = await failSecondClip();
+    const partial = partialOf(events);
+    assert.ok(partial && partial.type === "video_partial");
+    // US$0.60 stays from the first try; room is left for exactly the 4 s clip (US$0.40) and nothing more today.
+    const tight = createTestApp(fakeChatModel({ chunks: ["x"] }), undefined, { startingTodayUsd: 1.6 });
+    const tightFrames = await uploadFrames(tight);
+    const tightClip = await tight.store.saveVideo(new Uint8Array((await app.store.read(partial.finished[0], "original"))!.bytes));
+
+    const resumed = await readEvents(
+      await tight.chat(videoRequest("Coba ulang bagian yang gagal.", tightFrames, { resume: { seconds: 10, clips: [6, 4], finished: { 0: tightClip } } })),
+    );
+
+    assert.ok(finishedVideo(resumed));
+    assert.equal((await usageOf(tight)).monthUsd, 2);
+    void frames;
+  });
+});
+
 describe("video spending", () => {
   it("refuses up front when the budget cannot cover the video and says how many seconds it can", async () => {
     // US$1.50 spent today: US$0.50 is left of the day, which is 5 seconds.
@@ -211,7 +291,7 @@ describe("video spending", () => {
 
     assert.equal(errorOf(events)?.type, "error");
     assert.equal(finishedVideo(events), undefined);
-    // The 6 s clip was made (US$0.60); the 4 s clip failed and is given back.
+    // The 6 s clip was made (US$0.60) and is kept; the 4 s clip failed and is given back.
     assert.equal((await usageOf(app)).monthUsd, 0.6);
   });
 

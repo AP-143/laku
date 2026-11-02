@@ -25,6 +25,18 @@ export type ChatEvent =
       /** For a storyboard frame: which scene (0 to 3) it shows. */
       sceneIndex?: number;
     }
+  /**
+   * A video stopped part way. The clips in `finished` (by position) are kept and saved; the rest can be remade by
+   * sending `resume` with these same numbers. `failedIndex` is the first clip that did not come out.
+   */
+  | {
+      type: "video_partial";
+      seconds: number;
+      clips: number[];
+      finished: Record<number, string>;
+      failedIndex: number;
+      sourceAssetId: string;
+    }
   /** The four proposed scenes of a storyboard. Nothing is generated until the user approves them. */
   | { type: "storyboard_scenes"; sourceAssetId: string; scenes: string[] }
   /** Something went wrong. `message` is shown to the user as is, so it is Indonesian. */

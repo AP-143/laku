@@ -114,6 +114,8 @@ export default function ChatApp() {
       setNote(undefined);
       let botId: string | undefined;
       let framesStarted = 0;
+      // After a video stopped part way, only the "remake this part" button may continue it, never a full retry.
+      let videoStopped = false;
       const retry: RetryRequest = body;
 
       const handle = (event: ChatEvent) => {
@@ -175,6 +177,21 @@ export default function ChatApp() {
             }
             break;
           }
+          case "video_partial":
+            videoStopped = true;
+            setItems((current) => [
+              ...current,
+              {
+                id: newId(),
+                kind: "partial",
+                seconds: event.seconds,
+                clips: event.clips,
+                finished: event.finished,
+                failedIndex: event.failedIndex,
+                frames: Array.isArray(body.frames) ? (body.frames as string[]) : [],
+              },
+            ]);
+            break;
           case "confirmation_requested":
             setItems((current) => [...current, { id: newId(), kind: "confirm", message: event.message, retry }]);
             break;
@@ -184,7 +201,14 @@ export default function ChatApp() {
           case "error":
             setItems((current) => [
               ...current,
-              { id: newId(), kind: "error", message: event.message, code: event.code, retryable: event.retryable, retry },
+              {
+                id: newId(),
+                kind: "error",
+                message: event.message,
+                code: event.code,
+                retryable: event.retryable,
+                retry: videoStopped ? undefined : retry,
+              },
             ]);
             break;
           case "done":
@@ -312,6 +336,24 @@ export default function ChatApp() {
     [busy, run, makeFrames],
   );
 
+  /** Remakes only the clips of a stopped video that are still missing; the finished ones are reused. */
+  const resumeVideo = useCallback(
+    (itemId: string) => {
+      const item = itemsRef.current.find((candidate) => candidate.id === itemId);
+      if (busy || !item || item.kind !== "partial" || item.resumed) return;
+      patchItem(itemId, (current) => (current.kind === "partial" ? { ...current, resumed: true } : current));
+      void run(
+        {
+          messages: [{ role: "user", text: "Coba ulang bagian yang gagal." }],
+          frames: item.frames,
+          resume: { seconds: item.seconds, clips: item.clips, finished: item.finished },
+        },
+        { frameIndexes: [] },
+      );
+    },
+    [busy, patchItem, run],
+  );
+
   /** The seller's answer to a price question: yes sends the same request again, now confirmed; no spends nothing. */
   const answerConfirmation = useCallback(
     (itemId: string, yes: boolean) => {
@@ -360,6 +402,7 @@ export default function ChatApp() {
                 onEditScene={editScene}
                 onMakeFrames={makeFrames}
                 onAnswerConfirm={answerConfirmation}
+                onResumeVideo={resumeVideo}
                 photoUrl={(assetId) => assetUrl(assetId, "resized")}
               />
             )}

@@ -17,6 +17,7 @@ interface ThreadViewProps {
   onEditScene: (itemId: string, index: number, value: string) => void;
   onMakeFrames: (itemId: string, sceneIndex?: number) => void;
   onAnswerConfirm: (itemId: string, yes: boolean) => void;
+  onResumeVideo: (itemId: string) => void;
   photoUrl: (assetId: string) => string;
 }
 
@@ -24,7 +25,17 @@ function Spinner({ label }: { label: string }) {
   return <span className="spinner" role="status" aria-label={label} />;
 }
 
-export function ThreadView({ items, progress, busy, onRetry, onEditScene, onMakeFrames, onAnswerConfirm, photoUrl }: ThreadViewProps) {
+export function ThreadView({
+  items,
+  progress,
+  busy,
+  onRetry,
+  onEditScene,
+  onMakeFrames,
+  onAnswerConfirm,
+  onResumeVideo,
+  photoUrl,
+}: ThreadViewProps) {
   const end = useRef<HTMLDivElement>(null);
 
   // Keep the newest message in view as the conversation grows.
@@ -79,6 +90,27 @@ export function ThreadView({ items, progress, busy, onRetry, onEditScene, onMake
                 </div>
               </figure>
             );
+
+          case "partial": {
+            const made = Object.keys(item.finished).length;
+            return (
+              <div key={item.id} className="msg msg-bot">
+                <p>
+                  Klip {item.failedIndex + 1} dari {item.clips.length} belum jadi. {made} klip yang sudah selesai kusimpan, jadi
+                  yang dibuat ulang hanya bagian ini.
+                </p>
+                {item.resumed ? (
+                  <span className="hint">Dibuat ulang, hasilnya muncul di bawah.</span>
+                ) : (
+                  <div className="actions">
+                    <button type="button" className="btn btn-primary" disabled={busy} onClick={() => onResumeVideo(item.id)}>
+                      Coba ulang bagian ini
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          }
 
           case "confirm":
             return (

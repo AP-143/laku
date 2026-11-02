@@ -29,6 +29,17 @@ export class DailyCapReachedError extends Error {
   }
 }
 
+/** One clip of a video did not come out. The clips made before it are kept; `cause` is what the model threw. */
+export class ClipFailedError extends Error {
+  constructor(
+    readonly index: number,
+    readonly total: number,
+    readonly cause: unknown,
+  ) {
+    super(`Clip ${index + 1} of ${total} failed`);
+  }
+}
+
 /** The video asked for costs more than the budget has left, but a shorter one fits. No model was called. */
 export class VideoNotAffordableError extends Error {
   constructor(/** The most seconds of video the remaining budget covers. */ readonly affordableSeconds: number) {
@@ -72,6 +83,10 @@ function messageOf(error: unknown): string {
 }
 
 export function describeFailure(error: unknown): ErrorEvent {
+  if (error instanceof ClipFailedError) {
+    const why = describeFailure(error.cause);
+    return { ...why, message: `Klip ${error.index + 1} dari ${error.total} gagal dibuat. ${why.message}` };
+  }
   if (error instanceof DailyCapReachedError) {
     return { type: "error", message: dailyCapMessage(error), retryable: true, code: "daily_cap_reached" };
   }

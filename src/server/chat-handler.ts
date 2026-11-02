@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { COSTS } from "../config/models";
 import type { ChatIntent, StudioStyle } from "../shared/chat-events";
 import { SCENE_COUNT, SCENE_INDEXES } from "../shared/storyboard";
-import { DEFAULT_VIDEO_SECONDS, planClips } from "../shared/video-plan";
+import { CLIP_SECONDS, DEFAULT_VIDEO_SECONDS, planClips } from "../shared/video-plan";
 import { isAssetId, type AssetFile, type AssetStore } from "./asset-store";
 import { readBoundedBytes } from "./bounded-body";
 import type { Intent } from "./chat-prompt";
@@ -22,7 +22,8 @@ const NOT_A_PRODUCT_MESSAGE =
   "Maaf, saat ini aku hanya bisa memproses foto produk. Coba kirim foto barang yang mau kamu jual ya.";
 const NEED_PHOTO_MESSAGE = "Kirim dulu foto produknya ya (klik ikon penjepit kertas), nanti aku bantu.";
 const NEED_FRAMES_MESSAGE = "Buat dulu storyboard dan gambar tiap scene-nya ya, baru aku buatkan videonya.";
-const confirmVideoMessage = (seconds: number, clipCount: number, usd: number) => {
+const CLIP_NOT_FOUND_MESSAGE = "Klip yang sudah jadi tidak ketemu lagi. Minta videonya dibuat dari awal ya.";
+const confirmVideoMessage =(seconds: number, clipCount: number, usd: number) => {
   const rupiah = (Math.round((usd * COSTS.idrPerUsd) / 100) * 100).toLocaleString("id-ID");
   return `Video ${seconds} detik (${clipCount} klip), perkiraan US$${usd.toFixed(2)} (sekitar Rp${rupiah}). Lanjut?`;
 };
@@ -61,6 +62,15 @@ interface Conversation {
   frames: string[];
   /** The seller said yes to the price of an expensive video. */
   confirmVideo: boolean;
+  /** Remake only the missing clips of a video that stopped part way. */
+  resume?: VideoResume;
+}
+
+/** What `video_partial` told the browser, sent back as it was: the clip plan and the finished clips by position. */
+interface VideoResume {
+  seconds: number;
+  clips: number[];
+  finished: Record<number, string>;
 }
 
 const INTENTS: readonly string[] = ["studio_photo", "storyboard", "video"];
@@ -94,6 +104,42 @@ function readApproval(value: unknown): Conversation["approve"] | null | undefine
   return Number.isInteger(sceneIndex) && (sceneIndex as number) >= 0 && (sceneIndex as number) < SCENE_COUNT
     ? { sceneIndex: sceneIndex as number }
     : null;
+}
+
+/** `null` means the field was sent but is not a clip plan this server could have made; no field means no resume. */
+function readResume(value: unknown): VideoResume | null | undefined {
+  if (value === undefined) return undefined;
+  const { seconds, clips, finished } = (value ?? {}) as { seconds?: unknown; clips?: unknown; finished?: unknown };
+  const validClips =
+    Array.isArray(clips) &&
+    clips.length >= 1 &&
+    clips.length <= SCENE_COUNT &&
+    clips.every(
+      (length) =>
+        Number.isInteger(length) &&
+        length >= CLIP_SECONDS.min &&
+        length <= CLIP_SECONDS.max &&
+        (length - CLIP_SECONDS.min) % CLIP_SECONDS.step === 0,
+    );
+  if (!validClips || typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) return null;
+  const total = (clips as number[]).reduce((sum, length) => sum + length, 0);
+  if (seconds > total) return null;
+
+  const entries = Object.entries((finished ?? {}) as Record<string, unknown>);
+  const ok = entries.every(
+    ([position, assetId]) =>
+      Number.isInteger(Number(position)) &&
+      Number(position) >= 0 &&
+      Number(position) < (clips as number[]).length &&
+      typeof assetId === "string" &&
+      isAssetId(assetId),
+  );
+  if (!ok) return null;
+  return {
+    seconds,
+    clips: clips as number[],
+    finished: Object.fromEntries(entries.map(([position, assetId]) => [Number(position), assetId as string])),
+  };
 }
 
 /** `null` means the field was sent but is not a list of up to four asset ids; no field means no frames. */
@@ -145,6 +191,7 @@ async function readConversation(request: Request): Promise<Conversation | undefi
     approve?: unknown;
     frames?: unknown;
     confirmVideo?: unknown;
+    resume?: unknown;
   };
   if (fields.lastImageAssetId !== undefined && (typeof fields.lastImageAssetId !== "string" || !isAssetId(fields.lastImageAssetId))) {
     return undefined;
@@ -152,11 +199,15 @@ async function readConversation(request: Request): Promise<Conversation | undefi
   const storyboard = readStoryboard(fields.storyboard);
   const approve = readApproval(fields.approve);
   const frames = readFrames(fields.frames);
+  const resume = readResume(fields.resume);
   // Approving needs the plan it approves.
-  if (storyboard === null || approve === null || (approve && !storyboard) || frames === null) return undefined;
+  if (storyboard === null || approve === null || (approve && !storyboard) || frames === null || resume === null) {
+    return undefined;
+  }
 
   return {
     frames,
+    resume,
     confirmVideo: fields.confirmVideo === true,
     messages: conversation,
     photoAssetId,
@@ -241,6 +292,21 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
               sceneIndex,
             });
           }
+          send({ type: "done" });
+          return;
+        }
+
+        // Remaking the missing clips of a video that stopped part way is an explicit action of the seller.
+        if (conversation.resume) {
+          const { seconds, clips, finished } = conversation.resume;
+          if (frames.length < clips.length) return reply(NEED_FRAMES_MESSAGE);
+          const kept: Record<number, { assetId: string; bytes: Uint8Array }> = {};
+          for (const [position, assetId] of Object.entries(finished)) {
+            const clip = await assets.read(assetId, "original");
+            if (clip?.mediaType !== "video/mp4") return reply(CLIP_NOT_FOUND_MESSAGE);
+            kept[Number(position)] = { assetId, bytes: clip.bytes };
+          }
+          await videos.generate({ frames, plan: { ok: true, seconds, clips }, finished: kept });
           send({ type: "done" });
           return;
         }
