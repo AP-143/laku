@@ -169,4 +169,24 @@ describe("usage meter under concurrent requests", () => {
 
     assert.equal((await readUsage(app)).monthUsd, 0);
   });
+
+  it("keeps the booking when the call times out, because the provider may still bill it", async () => {
+    const timedOut = Object.assign(new Error("The operation timed out"), { name: "TimeoutError" });
+    const app = createTestApp(fakeChatModel({ chunks: ["x"] }), fakeImageModel({ failWith: timedOut }));
+    const photoAssetId = await uploadPhoto(app);
+
+    await readEvents(await app.chat(studioRequest(photoAssetId)));
+
+    assert.equal((await readUsage(app)).monthUsd, 0.0336);
+  });
+
+  it("keeps the booking when the call is cancelled after it was sent", async () => {
+    const cancelled = Object.assign(new Error("This operation was aborted"), { name: "AbortError" });
+    const app = createTestApp(fakeChatModel({ chunks: ["x"] }), fakeImageModel({ failWith: cancelled }));
+    const photoAssetId = await uploadPhoto(app);
+
+    await readEvents(await app.chat(studioRequest(photoAssetId)));
+
+    assert.equal((await readUsage(app)).monthUsd, 0.0336);
+  });
 });

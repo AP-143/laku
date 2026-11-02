@@ -111,6 +111,15 @@ describe("studio photo details", () => {
     assert.equal(app.imageModel.calls[0].files?.length, 1);
   });
 
+  it("pins the output size to the one the booked price is for", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["unused"] }));
+    const photoAssetId = await uploadPhoto(app);
+
+    await readEvents(await app.chat(studioRequest(photoAssetId, { style: { preset: "clean_white" } })));
+
+    assert.deepEqual(app.imageModel.calls[0].providerOptions?.google, { imageConfig: { imageSize: "1K" } });
+  });
+
   it("makes a new version on retry and keeps the earlier one", async () => {
     const app = createTestApp(fakeChatModel({ chunks: ["unused"] }));
     const photoAssetId = await uploadPhoto(app);

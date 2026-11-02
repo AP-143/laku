@@ -49,6 +49,17 @@ function statusOf(error: unknown): number | undefined {
   return cause ? statusOf(cause) : undefined;
 }
 
+/**
+ * True when a failed paid call may still have been billed: it timed out or was cancelled after it was sent,
+ * so the provider could have done the work. Every other failure (a rejection, a refusal, no connection)
+ * is treated as not billed.
+ */
+export function mayStillBeBilled(error: unknown): boolean {
+  const { name, cause } = (error ?? {}) as { name?: unknown; cause?: unknown };
+  if (name === "TimeoutError" || name === "AbortError") return true;
+  return cause ? mayStillBeBilled(cause) : false;
+}
+
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error ?? "");
 }

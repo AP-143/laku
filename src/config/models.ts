@@ -15,6 +15,8 @@ export const MODELS = {
    * bake-off: faithful on 5 of 5 photos, against 4 of 5 for the earlier gateway model (bfl/flux-kontext-pro).
    */
   image: "gemini-nano-banana-2.1",
+  /** The output size every image call asks for, so the price booked in `COSTS.imageUsd` is the price paid. */
+  imageSize: "1K",
   /**
    * Image-to-video clips, called directly on the Google key (Interactions API). Not wired into the app
    * yet: Veo 3.1 was shut down in the Gemini API on 2026-10-22 and Gemini Omni Flash replaces it.

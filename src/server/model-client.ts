@@ -148,6 +148,7 @@ export function createModelClient(models: { chatModel: LanguageModel; imageModel
         model: models.imageModel,
         prompt: { images: [reference.bytes], text: prompt },
         aspectRatio,
+        providerOptions: { google: { imageConfig: { imageSize: MODELS.imageSize } } },
         maxRetries: 0,
         abortSignal: AbortSignal.timeout(IMAGE_TIMEOUT_MS),
       });

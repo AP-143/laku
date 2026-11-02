@@ -3,7 +3,7 @@ import { COSTS } from "../config/models";
 import type { AssetRole, ChatEvent, JobKind } from "../shared/chat-events";
 import type { AssetFile, AssetStore } from "./asset-store";
 import type { ModelClient } from "./model-client";
-import { DailyCapReachedError, QuotaExhaustedError } from "./model-errors";
+import { DailyCapReachedError, mayStillBeBilled, QuotaExhaustedError } from "./model-errors";
 import { preparePhoto } from "./photo-intake";
 import { readUsage, type UsageLedger } from "./usage-ledger";
 
@@ -57,8 +57,9 @@ export function createImageJobs(deps: {
       try {
         image = await models.generateImage({ prompt, reference: source, aspectRatio: kind === "storyboard_frame" ? "9:16" : "1:1" });
       } catch (error) {
-        // A call that failed is not billed, so the booking goes back.
-        await ledger.record(-COSTS.imageUsd);
+        // A call that was rejected is not billed, so the booking goes back. A timeout or a cancel may still be
+        // billed, so it stays booked: the limits would otherwise sit below the real spend.
+        if (!mayStillBeBilled(error)) await ledger.record(-COSTS.imageUsd);
         throw error;
       }
 
