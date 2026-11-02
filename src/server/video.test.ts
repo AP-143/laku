@@ -159,12 +159,26 @@ describe("confirming an expensive video", () => {
     const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 20 }));
     const frames = await uploadFrames(app);
 
-    const events = await readEvents(await app.chat(videoRequest("video 20 detik", frames, { confirmVideo: true })));
+    const events = await readEvents(await app.chat(videoRequest("video 20 detik", frames, { confirmedUsd: 2 })));
 
     assert.equal(confirmationOf(events), undefined);
     assert.ok(finishedVideo(events));
     assert.equal(app.videoModel.calls.length, 4);
     assert.equal((await usageOf(app)).monthUsd, 2);
+  });
+
+  it("asks again when the video would now cost more than the price the seller said yes to", async () => {
+    // The seller agreed to US$2.00, but this time the request is read as 30 seconds (US$3.00).
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 30 }));
+    const frames = await uploadFrames(app);
+
+    const events = await readEvents(await app.chat(videoRequest("video 20 detik", frames, { confirmedUsd: 2 })));
+
+    const ask = confirmationOf(events);
+    assert.ok(ask && ask.type === "confirmation_requested");
+    assert.equal(ask.estimatedUsd, 3);
+    assert.equal(app.videoModel.calls.length, 0);
+    assert.equal((await usageOf(app)).monthUsd, 0);
   });
 
   it("starts straight away at US$1 or less, with no question", async () => {

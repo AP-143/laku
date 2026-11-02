@@ -23,7 +23,7 @@ const NOT_A_PRODUCT_MESSAGE =
 const NEED_PHOTO_MESSAGE = "Kirim dulu foto produknya ya (klik ikon penjepit kertas), nanti aku bantu.";
 const NEED_FRAMES_MESSAGE = "Buat dulu storyboard dan gambar tiap scene-nya ya, baru aku buatkan videonya.";
 const CLIP_NOT_FOUND_MESSAGE = "Klip yang sudah jadi tidak ketemu lagi. Minta videonya dibuat dari awal ya.";
-const confirmVideoMessage =(seconds: number, clipCount: number, usd: number) => {
+const confirmVideoMessage = (seconds: number, clipCount: number, usd: number) => {
   const rupiah = (Math.round((usd * COSTS.idrPerUsd) / 100) * 100).toLocaleString("id-ID");
   return `Video ${seconds} detik (${clipCount} klip), perkiraan US$${usd.toFixed(2)} (sekitar Rp${rupiah}). Lanjut?`;
 };
@@ -60,8 +60,8 @@ interface Conversation {
   approve?: { sceneIndex?: number };
   /** The generated storyboard frames in scene order, which a video is made from. */
   frames: string[];
-  /** The seller said yes to the price of an expensive video. */
-  confirmVideo: boolean;
+  /** The price in US dollars the seller said yes to for an expensive video, quoted back to the server. */
+  confirmedUsd?: number;
   /** Remake only the missing clips of a video that stopped part way. */
   resume?: VideoResume;
 }
@@ -190,7 +190,7 @@ async function readConversation(request: Request): Promise<Conversation | undefi
     storyboard?: unknown;
     approve?: unknown;
     frames?: unknown;
-    confirmVideo?: unknown;
+    confirmedUsd?: unknown;
     resume?: unknown;
   };
   if (fields.lastImageAssetId !== undefined && (typeof fields.lastImageAssetId !== "string" || !isAssetId(fields.lastImageAssetId))) {
@@ -208,7 +208,7 @@ async function readConversation(request: Request): Promise<Conversation | undefi
   return {
     frames,
     resume,
-    confirmVideo: fields.confirmVideo === true,
+    confirmedUsd: typeof fields.confirmedUsd === "number" && Number.isFinite(fields.confirmedUsd) ? fields.confirmedUsd : undefined,
     messages: conversation,
     photoAssetId,
     lastImageAssetId: fields.lastImageAssetId as string | undefined,
@@ -331,9 +331,11 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
           const plan = planClips(seconds ?? DEFAULT_VIDEO_SECONDS, frames.length);
           if (!plan.ok) return reply(videoTooLongMessage(plan.maxSeconds));
 
-          // An expensive video waits for the seller's yes; nothing is booked or generated until then.
+          // An expensive video waits for the seller's yes to this price; nothing is booked or generated until then.
+          // The request is read again on the yes, so a video that now costs more than was agreed is asked about again.
           const estimatedUsd = videoCostUsd(plan.clips);
-          if (estimatedUsd > COSTS.videoConfirmAboveUsd && !conversation.confirmVideo) {
+          const agreed = conversation.confirmedUsd !== undefined && estimatedUsd <= conversation.confirmedUsd;
+          if (estimatedUsd > COSTS.videoConfirmAboveUsd && !agreed) {
             send({
               type: "confirmation_requested",
               confirmationId: randomUUID(),

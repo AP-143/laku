@@ -193,7 +193,7 @@ export default function ChatApp() {
             ]);
             break;
           case "confirmation_requested":
-            setItems((current) => [...current, { id: newId(), kind: "confirm", message: event.message, retry }]);
+            setItems((current) => [...current, { id: newId(), kind: "confirm", message: event.message, estimatedUsd: event.estimatedUsd, retry }]);
             break;
           case "usage_updated":
             setUsage({ monthUsd: event.monthUsd, budgetUsd: event.budgetUsd });
@@ -360,7 +360,8 @@ export default function ChatApp() {
       const item = itemsRef.current.find((candidate) => candidate.id === itemId);
       if (busy || !item || item.kind !== "confirm" || item.answer) return;
       patchItem(itemId, (current) => (current.kind === "confirm" ? { ...current, answer: yes ? "yes" : "no" } : current));
-      if (yes) void run({ ...item.retry, confirmVideo: true }, { frameIndexes: [] });
+      // The yes is for this price: the server asks again if the same request would now cost more.
+      if (yes) void run({ ...item.retry, confirmedUsd: item.estimatedUsd }, { frameIndexes: [] });
     },
     [busy, patchItem, run],
   );
