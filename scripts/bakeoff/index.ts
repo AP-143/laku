@@ -9,7 +9,7 @@
  *   npm run bakeoff -- --cap=1.2              refuse to run if the estimate is above US$1.2 (default)
  *   npm run bakeoff -- --only=image,video,speech   which parts to run (default: image,video)
  *   npm run bakeoff -- --use-case=studio,frame,sheet   which image jobs to run (default: studio,frame)
- *   npm run bakeoff -- --models=nano-banana,flash-image@512   only candidates whose id or id@size contains one of these
+ *   npm run bakeoff -- --models=nano-banana,flash-image@512   only image candidates whose id or id@size contains one of these
  *   npm run bakeoff -- --video-seconds=4      clip length asked for (0 = do not ask, let the model decide)
  *   npm run bakeoff -- --photos=some/folder
  *
@@ -147,7 +147,11 @@ async function generateStill(
  * video support for it yet). The length is not documented as a request field, so a 400 on `duration`
  * is retried once without it; a rejected request is not billed.
  */
-async function generateClip(apiKey: string, image: Buffer, seconds: number): Promise<{ data: Buffer; warnings: string[] }> {
+async function generateClip(
+  apiKey: string,
+  image: { bytes: Buffer; mediaType: string },
+  seconds: number,
+): Promise<{ data: Buffer; warnings: string[] }> {
   const warnings: string[] = [];
   const send = async (withDuration: boolean) => {
     const response = await fetch(INTERACTIONS_URL, {
@@ -156,7 +160,7 @@ async function generateClip(apiKey: string, image: Buffer, seconds: number): Pro
       body: JSON.stringify({
         model: BAKEOFF_CANDIDATES.video.id,
         input: [
-          { type: "image", data: image.toString("base64"), mime_type: "image/jpeg" },
+          { type: "image", data: image.bytes.toString("base64"), mime_type: image.mediaType },
           { type: "text", text: PROMPTS.video },
         ],
         response_format: {
@@ -177,7 +181,7 @@ async function generateClip(apiKey: string, image: Buffer, seconds: number): Pro
     body = await send(seconds > 0);
   } catch (error) {
     if (seconds > 0 && (error as { statusCode?: number }).statusCode === 400) {
-      warnings.push(`The API rejected duration "${seconds}s" (${(error as Error).message.slice(0, 160)}); retried without it.`);
+      warnings.push(`HTTP 400 when asking for "${seconds}s" (${(error as Error).message.slice(0, 160)}); retried once without a duration.`);
       body = await send(false);
     } else {
       throw error;
@@ -229,6 +233,7 @@ async function main() {
   // Plan and estimate before spending anything.
   // Omni's per-second price is derived from a token-rate footnote, and the clip length is only asked for.
   const videoEstimate: Estimate = { usd: BAKEOFF_CANDIDATES.video.usdPerSecond * (options.videoSeconds || VIDEO_SETTINGS.durationSeconds), guessed: true };
+  /** The Indonesian sample line is read aloud in roughly this long. */
   const speechSeconds = 12;
   const speechEstimate: Estimate = { usd: BAKEOFF_CANDIDATES.speech.usdPerAudioSecond * speechSeconds, guessed: true };
 
@@ -245,7 +250,7 @@ async function main() {
   if (options.parts.has("video")) {
     plannedUsd += videoEstimate.usd;
     planLines.push(
-      `  video  ${BAKEOFF_CANDIDATES.video.id}: 1 clip, ${options.videoSeconds || "model-chosen"}s at ${VIDEO_SETTINGS.resolution} = ${formatUsd(videoEstimate.usd)} (price derived, guessed)`,
+      `  video  ${BAKEOFF_CANDIDATES.video.id}: 1 clip, ${options.videoSeconds ? `${options.videoSeconds}s` : `model-chosen length (estimated at ${VIDEO_SETTINGS.durationSeconds}s)`} at ${VIDEO_SETTINGS.resolution} = ${formatUsd(videoEstimate.usd)} (price derived, guessed)`,
     );
   }
   if (options.parts.has("speech")) {
@@ -284,19 +289,37 @@ async function main() {
     await writeFile(path.join(runDir, "originals", `${name}.jpg`), prepared);
   }
 
-  let videoSource: { photo: string; image: Buffer; note: string } = {
+  let videoSource: { photo: string; image: Buffer; mediaType: string; note: string } = {
     photo: photoNames[0],
     image: photos.get(photoNames[0])!,
+    mediaType: "image/jpeg",
     note: `source: original photo ${photoNames[0]}`,
   };
 
-  // Once Google refuses on account grounds (for example no billing on the key's project), every later
-  // call would fail the same way, so stop instead of firing the rest.
-  let accountBlocked = false;
+  // Once Google refuses on billing or quota grounds (for example no billing on the key's project),
+  // every later call would fail the same way, so stop instead of firing the rest.
+  let stopRun = false;
   const skipReason = (nextUsd: number): string | undefined => {
-    if (accountBlocked) return "Skipped: Google rejected an earlier call for account reasons.";
+    if (stopRun) return "Skipped: Google refused an earlier call on billing or quota grounds.";
     if (runningUsd + nextUsd > options.capUsd) return "Spend cap reached.";
     return undefined;
+  };
+
+  type JobBase = Pick<JobResult, "kind" | "modelId" | "photo" | "useCase" | "estimatedUsd" | "priceGuessed">;
+  const recordSkip = (base: JobBase, reason: string) =>
+    results.push({ ...base, status: "skipped", seconds: 0, warnings: [], errorMessage: reason });
+  const recordFailure = (base: JobBase, error: unknown, started: number) => {
+    const errorClass = classifyError(error);
+    stopRun ||= errorClass === "account_blocked" || errorClass === "no_credits_or_quota";
+    results.push({
+      ...base,
+      status: "error",
+      errorClass,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      seconds: (Date.now() - started) / 1000,
+      warnings: [],
+    });
+    console.log(`FAILED ${base.modelId} ${base.useCase ?? base.kind} ${base.photo}: ${errorClass}`);
   };
 
   if (options.parts.has("image")) {
@@ -314,7 +337,7 @@ async function main() {
           };
           const skipped = skipReason(candidate.usd);
           if (skipped) {
-            results.push({ ...base, status: "skipped", seconds: 0, warnings: [], errorMessage: skipped });
+            recordSkip(base, skipped);
             continue;
           }
           const started = Date.now();
@@ -327,20 +350,15 @@ async function main() {
             console.log(`ok     ${label} ${useCase} ${photo}`);
 
             if (useCase === "frame" && videoSource.note.startsWith("source: original")) {
-              videoSource = { photo, image: Buffer.from(output.data), note: `source: ${label} frame of ${photo}` };
+              videoSource = {
+                photo,
+                image: Buffer.from(output.data),
+                mediaType: output.mediaType,
+                note: `source: ${label} frame of ${photo}`,
+              };
             }
           } catch (error) {
-            const errorClass = classifyError(error);
-            accountBlocked ||= errorClass === "account_blocked";
-            results.push({
-              ...base,
-              status: "error",
-              errorClass,
-              errorMessage: error instanceof Error ? error.message : String(error),
-              seconds: (Date.now() - started) / 1000,
-              warnings: [],
-            });
-            console.log(`FAILED ${label} ${useCase} ${photo}: ${errorClass}`);
+            recordFailure(base, error, started);
           }
         }
       }
@@ -352,16 +370,24 @@ async function main() {
     const base = { kind: "video" as const, modelId, photo: videoSource.photo, estimatedUsd: videoEstimate.usd, priceGuessed: true };
     const skipped = skipReason(videoEstimate.usd);
     if (skipped) {
-      results.push({ ...base, status: "skipped", seconds: 0, warnings: [], errorMessage: skipped });
+      recordSkip(base, skipped);
     } else {
       const started = Date.now();
       try {
-        const clip = await generateClip(apiKey, videoSource.image, options.videoSeconds);
+        const clip = await generateClip(apiKey, { bytes: videoSource.image, mediaType: videoSource.mediaType }, options.videoSeconds);
         const file = path.join("video", `${slug(modelId)}.mp4`);
         await writeFile(path.join(runDir, file), clip.data);
+
         // What the model really returned is what the cost estimate and the clip-splitting rules must follow.
-        const probe = await probeClip(path.join(runDir, file));
-        const usd = probe.seconds * BAKEOFF_CANDIDATES.video.usdPerSecond;
+        // The clip was billed either way, so a failed probe falls back to the estimate instead of booking US$0.
+        let probe: { seconds: number; hasAudio: boolean } | undefined;
+        try {
+          probe = await probeClip(path.join(runDir, file));
+          if (!(probe.seconds > 0)) probe = undefined;
+        } catch {
+          probe = undefined;
+        }
+        const usd = probe ? probe.seconds * BAKEOFF_CANDIDATES.video.usdPerSecond : videoEstimate.usd;
         runningUsd += usd;
         results.push({
           ...base,
@@ -369,31 +395,26 @@ async function main() {
           status: "ok",
           file,
           seconds: (Date.now() - started) / 1000,
-          warnings: [...clip.warnings, `clip length ${probe.seconds.toFixed(1)}s`, `audio track: ${probe.hasAudio ? "yes" : "no"}`],
+          clipSeconds: probe?.seconds,
+          hasAudio: probe?.hasAudio,
+          warnings: probe
+            ? [...clip.warnings, `clip length ${probe.seconds.toFixed(1)}s`, `audio track: ${probe.hasAudio ? "yes" : "no"}`]
+            : [...clip.warnings, "ffprobe could not read the clip: length and audio unknown, cost taken from the estimate"],
         });
-        console.log(`ok     ${modelId} video (${probe.seconds.toFixed(1)}s, audio ${probe.hasAudio ? "yes" : "no"})`);
+        console.log(`ok     ${modelId} video (${probe ? `${probe.seconds.toFixed(1)}s, audio ${probe.hasAudio ? "yes" : "no"}` : "length unknown"})`);
       } catch (error) {
-        const errorClass = classifyError(error);
-        accountBlocked ||= errorClass === "account_blocked";
-        results.push({
-          ...base,
-          status: "error",
-          errorClass,
-          errorMessage: error instanceof Error ? error.message : String(error),
-          seconds: (Date.now() - started) / 1000,
-          warnings: [],
-        });
-        console.log(`FAILED ${modelId} video: ${errorClass}`);
+        recordFailure(base, error, started);
       }
     }
   }
 
   if (options.parts.has("speech")) {
     const modelId = BAKEOFF_CANDIDATES.speech.id;
+    // A speech job has no source photo; "-" fills the column.
     const base = { kind: "speech" as const, modelId, photo: "-", estimatedUsd: speechEstimate.usd, priceGuessed: true };
     const skipped = skipReason(speechEstimate.usd);
     if (skipped) {
-      results.push({ ...base, status: "skipped", seconds: 0, warnings: [], errorMessage: skipped });
+      recordSkip(base, skipped);
     } else {
       const started = Date.now();
       try {
@@ -409,17 +430,7 @@ async function main() {
         results.push({ ...base, status: "ok", file, seconds: (Date.now() - started) / 1000, warnings: [] });
         console.log(`ok     ${modelId} speech`);
       } catch (error) {
-        const errorClass = classifyError(error);
-        accountBlocked ||= errorClass === "account_blocked";
-        results.push({
-          ...base,
-          status: "error",
-          errorClass,
-          errorMessage: error instanceof Error ? error.message : String(error),
-          seconds: (Date.now() - started) / 1000,
-          warnings: [],
-        });
-        console.log(`FAILED ${modelId} speech: ${errorClass}`);
+        recordFailure(base, error, started);
       }
     }
   }

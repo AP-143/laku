@@ -50,8 +50,10 @@ export const BAKEOFF_CANDIDATES = {
     { id: "gemini-3.1-flash-image", size: "512", usd: 0.045 },
     { id: "gemini-3.1-flash-image", size: "1K", usd: 0.067 },
   ] satisfies BakeoffImageCandidate[],
+  /** About US$0.10 per second: derived by Google's pricing page from 5,792 tokens per second of 720p video. Not measured yet. */
   video: { id: "gemini-omni-1.1-flash", usdPerSecond: 0.1 },
-  speech: { id: "gemini-3.8-flash-lite-tts", usdPerAudioSecond: 6 / 1_000_000 * 25 },
+  /** US$6 per 1M audio tokens until 2026-12-31 (US$12 after), at 25 audio tokens per second. */
+  speech: { id: "gemini-3.8-flash-lite-tts", usdPerAudioSecond: (6 / 1_000_000) * 25 },
 };
 
 /** Video output settings shared by the bake-off and the real video feature. */

@@ -24,6 +24,9 @@ export interface JobResult {
   file?: string;
   seconds: number;
   warnings: string[];
+  /** Video jobs only: what ffprobe measured in the saved clip. */
+  clipSeconds?: number;
+  hasAudio?: boolean;
 }
 
 export function classifyError(error: unknown): ErrorClass {
@@ -35,7 +38,7 @@ export function classifyError(error: unknown): ErrorClass {
   if (/credit card|add a card|valid card|billing (account|is not|must)|enable billing|free tier.*not available/i.test(message)) {
     return "account_blocked";
   }
-  if (status === 429 || /rate.?limit|too many requests/i.test(message)) return "rate_limit";
+  // Google answers an exhausted balance with HTTP 429 RESOURCE_EXHAUSTED too, so the message decides before the status.
   if (
     status === 402 ||
     /insufficient|credit|quota|billing|payment|not (available|included).*(free|plan)|free tier/i.test(
@@ -44,6 +47,7 @@ export function classifyError(error: unknown): ErrorClass {
   ) {
     return "no_credits_or_quota";
   }
+  if (status === 429 || /rate.?limit|too many requests/i.test(message)) return "rate_limit";
   if (/image (input|prompt)|reference|unsupported|not support|file input|input.*image/i.test(message)) {
     return "unsupported_input";
   }
