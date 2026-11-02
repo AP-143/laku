@@ -30,6 +30,8 @@ interface FakeChatModelOptions {
   voiceOver?: boolean;
   /** The narration script the writer answers with. */
   script?: string;
+  /** What the voice reviser finds in a message about changing the narration. */
+  voiceRevision?: { script?: string; voice?: "female" | "male" };
 }
 
 /** Which one-shot task a generate call is, read from the tag every internal prompt starts with. */
@@ -57,7 +59,9 @@ export function fakeChatModel(options: FakeChatModelOptions) {
                 ? JSON.stringify({ seconds: options.videoSeconds ?? null, voiceOver: options.voiceOver ?? false })
                 : task === "voice-script"
                   ? (options.script ?? "Ini naskah contoh untuk iklan produk.")
-                  : options.isProduct === false
+                  : task === "voice-revision"
+                    ? JSON.stringify({ script: options.voiceRevision?.script ?? null, voice: options.voiceRevision?.voice ?? null })
+                    : options.isProduct === false
                 ? "NO"
                 : "YES";
       return {

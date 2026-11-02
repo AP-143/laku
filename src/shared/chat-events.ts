@@ -29,7 +29,7 @@ export type ChatEvent =
    * The video has a narration: the script that was read aloud, the voice, and the silent video it was laid over
    * (kept so the script or the voice can be changed without making the clips again).
    */
-  | { type: "voice_over"; script: string; voice: string; silentAssetId: string }
+  | { type: "voice_over"; script: string; voice: string; silentAssetId: string; seconds: number }
   /**
    * A video stopped part way. The clips in `finished` (by position) are kept and saved; the rest can be remade by
    * sending `resume` with these same numbers. `failedIndex` is the first clip that did not come out.

@@ -29,6 +29,9 @@ export type ThreadItem =
       script?: string;
       /** The silent video the narration was laid over, so the voice can be changed without new clips. */
       silentAssetId?: string;
+      /** The voice of the narration and the length of the video, sent back when the seller asks for a change. */
+      voice?: string;
+      seconds?: number;
     }
   /** A video stopped part way: the clips kept so far, and what is needed to remake only the rest. */
   | {
@@ -70,6 +73,14 @@ export function lastPhotoAssetId(items: ThreadItem[]): string | undefined {
     if (item.kind === "user" && item.photoAssetId) return item.photoAssetId;
   }
   return undefined;
+}
+
+/** The newest video when it has a narration, which the seller can still ask to change. */
+export function narratedVideo(items: ThreadItem[]) {
+  const latest = items.findLast((item) => item.kind === "video");
+  if (!latest || latest.kind !== "video") return undefined;
+  const { script, silentAssetId, voice, seconds } = latest;
+  return script && silentAssetId && voice && seconds ? { silentAssetId, seconds, script, voice } : undefined;
 }
 
 /** The text of the newest storyboard's scenes, which a voice-over script is written from. */

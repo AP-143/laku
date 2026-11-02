@@ -23,8 +23,11 @@ import {
   planScenesPrompt,
   replaceScenePrompt,
   videoRequestPrompt,
+  parseVoiceRevision,
+  voiceRevisionPrompt,
   voiceScriptPrompt,
   type VideoRequest,
+  type VoiceRevision,
   type Intent,
   type IntentContext,
 } from "./chat-prompt";
@@ -69,8 +72,10 @@ export interface ModelClient {
   readVideoRequest(text: string): Promise<VideoRequest>;
   /** Writes the narration for a video of `seconds`, from its scenes. Throws if the model fails. */
   writeVoiceScript(request: { scenes: string[]; seconds: number; text: string }): Promise<string>;
-  /** Reads a script aloud in the app voice. Throws if the model fails. Never retries. */
-  speak(script: string): Promise<AssetFile>;
+  /** Reads what the seller wants changed in a narration. Throws if the model fails or answers badly. */
+  readVoiceRevision(text: string, currentScript: string): Promise<VoiceRevision>;
+  /** Reads a script aloud, in the app voice unless another is given. Throws if the model fails. Never retries. */
+  speak(script: string, voice?: string): Promise<AssetFile>;
   /** Makes one clip of `seconds` from a frame. Throws if the model fails. Never retries. */
   generateClip(request: { prompt: string; frame: AssetFile; seconds: number }): Promise<Uint8Array>;
 }
@@ -210,11 +215,21 @@ export function createModelClient(models: {
       return script;
     },
 
-    async speak(script) {
+    async readVoiceRevision(text, currentScript) {
+      const { text: answer } = await generateText({
+        model: models.chatModel,
+        messages: [{ role: "user", content: voiceRevisionPrompt(text, currentScript) }],
+        maxOutputTokens: MAX_SCRIPT_TOKENS,
+        maxRetries: 0,
+      });
+      return parseVoiceRevision(answer);
+    },
+
+    async speak(script, voice = MODELS.voice) {
       const { audio } = await generateSpeech({
         model: models.speechModel,
         text: script,
-        voice: MODELS.voice,
+        voice,
         maxRetries: 0,
         abortSignal: AbortSignal.timeout(SPEECH_TIMEOUT_MS),
       });

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { COSTS } from "../config/models";
+import { COSTS, VOICES } from "../config/models";
 import type { ChatIntent, StudioStyle } from "../shared/chat-events";
 import { SCENE_COUNT, SCENE_INDEXES } from "../shared/storyboard";
 import { CLIP_SECONDS, DEFAULT_VIDEO_SECONDS, planClips } from "../shared/video-plan";
@@ -22,6 +22,9 @@ const NOT_A_PRODUCT_MESSAGE =
   "Maaf, saat ini aku hanya bisa memproses foto produk. Coba kirim foto barang yang mau kamu jual ya.";
 const NEED_PHOTO_MESSAGE = "Kirim dulu foto produknya ya (klik ikon penjepit kertas), nanti aku bantu.";
 const NEED_FRAMES_MESSAGE = "Buat dulu storyboard dan gambar tiap scene-nya ya, baru aku buatkan videonya.";
+const NEED_NARRATED_VIDEO_MESSAGE = "Buat dulu video dengan voice over ya, baru narasi atau suaranya bisa kuubah.";
+const WHAT_TO_CHANGE_MESSAGE =
+  "Mau diubah apanya? Kamu bisa minta narasi dengan kata-kata lain, atau ganti suaranya jadi suara cewek atau cowok.";
 const CLIP_NOT_FOUND_MESSAGE = "Klip yang sudah jadi tidak ketemu lagi. Minta videonya dibuat dari awal ya.";
 const confirmVideoMessage = (seconds: number, clipCount: number, usd: number) => {
   const rupiah = (Math.round((usd * COSTS.idrPerUsd) / 100) * 100).toLocaleString("id-ID");
@@ -66,6 +69,15 @@ interface Conversation {
   confirmedUsd?: number;
   /** Remake only the missing clips of a video that stopped part way. */
   resume?: VideoResume;
+  /** The video with a narration that the seller may want to change, as `voice_over` described it. */
+  revise?: VoiceRevise;
+}
+
+interface VoiceRevise {
+  silentAssetId: string;
+  seconds: number;
+  script: string;
+  voice: string;
 }
 
 /** What `video_partial` told the browser, sent back as it was: the clip plan and the finished clips by position. */
@@ -144,6 +156,26 @@ function readResume(value: unknown): VideoResume | null | undefined {
   };
 }
 
+/** `null` means the field was sent but is not a narration this server could have made; no field means none. */
+function readRevise(value: unknown): VoiceRevise | null | undefined {
+  if (value === undefined) return undefined;
+  const { silentAssetId, seconds, script, voice } = (value ?? {}) as Record<string, unknown>;
+  const voices: readonly string[] = Object.values(VOICES);
+  const valid =
+    typeof silentAssetId === "string" &&
+    isAssetId(silentAssetId) &&
+    typeof seconds === "number" &&
+    Number.isFinite(seconds) &&
+    seconds > 0 &&
+    seconds <= SCENE_COUNT * CLIP_SECONDS.max &&
+    typeof script === "string" &&
+    script.trim() !== "" &&
+    script.length <= MAX_MESSAGE_CHARS &&
+    typeof voice === "string" &&
+    voices.includes(voice);
+  return valid ? { silentAssetId, seconds, script, voice } : null;
+}
+
 /** `null` means the field was sent but is not up to four short texts; no field means no scenes. */
 function readScenes(value: unknown): string[] | null {
   if (value === undefined) return [];
@@ -203,6 +235,7 @@ async function readConversation(request: Request): Promise<Conversation | undefi
     confirmedUsd?: unknown;
     resume?: unknown;
     scenes?: unknown;
+    revise?: unknown;
   };
   if (fields.lastImageAssetId !== undefined && (typeof fields.lastImageAssetId !== "string" || !isAssetId(fields.lastImageAssetId))) {
     return undefined;
@@ -212,15 +245,17 @@ async function readConversation(request: Request): Promise<Conversation | undefi
   const frames = readFrames(fields.frames);
   const resume = readResume(fields.resume);
   const scenes = readScenes(fields.scenes);
+  const revise = readRevise(fields.revise);
   // Approving needs the plan it approves.
-  if (storyboard === null || approve === null || (approve && !storyboard) || frames === null || resume === null || scenes === null) {
-    return undefined;
-  }
+  const invalid =
+    storyboard === null || approve === null || (approve && !storyboard) || frames === null || resume === null || scenes === null || revise === null;
+  if (invalid) return undefined;
 
   return {
     frames,
     scenes,
     resume,
+    revise,
     confirmedUsd: typeof fields.confirmedUsd === "number" && Number.isFinite(fields.confirmedUsd) ? fields.confirmedUsd : undefined,
     messages: conversation,
     photoAssetId,
@@ -329,13 +364,32 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
 
         const lastText = conversation.messages.at(-1)!.text.trim();
         let intent: Intent | undefined = conversation.intent;
-        if (!intent && lastText && (photo || previous || storyboard || frames.length > 0)) {
+        if (!intent && lastText && (photo || previous || storyboard || frames.length > 0 || conversation.revise)) {
           intent = await models.classifyIntent(lastText, {
             hasPhoto: Boolean(photo),
             hasPreviousResult: Boolean(previous),
             hasStoryboard: Boolean(storyboard),
             hasFrames: frames.length > 0,
+            hasNarration: Boolean(conversation.revise),
           });
+        }
+
+        if (intent === "revise_voice") {
+          const { revise } = conversation;
+          if (!revise) return reply(NEED_NARRATED_VIDEO_MESSAGE);
+          const silent = await assets.read(revise.silentAssetId, "original");
+          if (silent?.mediaType !== "video/mp4") return reply(CLIP_NOT_FOUND_MESSAGE);
+          const change = await models.readVoiceRevision(lastText, revise.script);
+          if (!change.script && !change.voice) return reply(WHAT_TO_CHANGE_MESSAGE);
+          await videos.reviseVoice({
+            silentAssetId: revise.silentAssetId,
+            silent: silent.bytes,
+            seconds: revise.seconds,
+            script: change.script ?? revise.script,
+            voice: change.voice ? VOICES[change.voice] : revise.voice,
+          });
+          send({ type: "done" });
+          return;
         }
 
         if (intent === "video") {

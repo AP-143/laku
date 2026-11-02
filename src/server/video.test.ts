@@ -354,6 +354,78 @@ describe("voice-over", () => {
   });
 });
 
+describe("revising the voice-over", () => {
+  const SCRIPT = "Ayo cobain produk keren ini sekarang juga, kualitasnya bikin kamu jatuh cinta!";
+
+  /** A finished video with a narration, and what a revision request needs to know about it. */
+  async function narratedVideo(chatOptions: Parameters<typeof fakeChatModel>[0]) {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10, voiceOver: true, script: SCRIPT }));
+    const frames = await uploadFrames(app);
+    const events = await readEvents(await app.chat(videoRequest("video 10 detik pakai voice over", frames)));
+    const voice = events.find((event) => event.type === "voice_over");
+    assert.ok(voice && voice.type === "voice_over");
+    // The same app, but now the chat model reads a revision (a new fake model stands in for it).
+    const revising = createTestApp(fakeChatModel(chatOptions), undefined, { videoModel: app.videoModel, speechModel: app.speechModel });
+    const silent = await app.store.read(voice.silentAssetId, "original");
+    const silentAssetId = await revising.store.saveVideo(new Uint8Array(silent!.bytes));
+    return {
+      app: revising,
+      first: app,
+      revise: { silentAssetId, seconds: voice.seconds, script: voice.script, voice: voice.voice },
+    };
+  }
+
+  const reviseRequest = (text: string, revise: object) => chatRequest({ messages: [{ role: "user", text }], revise });
+
+  it("changes the script and reads it again, without making any clip again", async () => {
+    const { app, revise } = await narratedVideo({ chunks: ["x"], intent: "REVISE_VOICE", voiceRevision: { script: "Halo semua, ini produk andalan kami!" } });
+    const clipsBefore = app.videoModel.calls.length;
+
+    const events = await readEvents(await app.chat(reviseRequest("ganti narasinya jadi: Halo semua, ini produk andalan kami!", revise)));
+
+    assert.equal(app.videoModel.calls.length, clipsBefore);
+    assert.equal(app.speechModel.calls.at(-1)?.text, "Halo semua, ini produk andalan kami!");
+    const ready = finishedVideo(events);
+    assert.ok(ready && ready.type === "asset_ready");
+    const probe = await probeVideo((await app.store.read(ready.assetId, "original"))!.bytes);
+    assert.equal(probe.hasAudio, true);
+    assert.ok(Math.abs(probe.seconds - 10) < 0.6, `length was ${probe.seconds}`);
+    const voice = events.find((event) => event.type === "voice_over");
+    assert.ok(voice && voice.type === "voice_over");
+    assert.equal(voice.script, "Halo semua, ini produk andalan kami!");
+    assert.equal(voice.silentAssetId, revise.silentAssetId);
+    // A revision costs only the voice: US$0.003 for 10 seconds.
+    assert.equal((await usageOf(app)).monthUsd, 0.003);
+    assert.deepEqual(events.at(-1), { type: "done" });
+  });
+
+  it("changes only the voice and keeps the script", async () => {
+    const { app, revise } = await narratedVideo({ chunks: ["x"], intent: "REVISE_VOICE", voiceRevision: { voice: "male" } });
+
+    const events = await readEvents(await app.chat(reviseRequest("pakai suara cowok", revise)));
+
+    const call = app.speechModel.calls.at(-1);
+    assert.equal(call?.text, SCRIPT);
+    assert.equal(call?.voice, "Charon");
+    const voice = events.find((event) => event.type === "voice_over");
+    assert.ok(voice && voice.type === "voice_over");
+    assert.equal(voice.script, SCRIPT);
+    assert.equal(voice.voice, "Charon");
+  });
+
+  it("asks what to change when it cannot tell, and spends nothing", async () => {
+    const { app, revise } = await narratedVideo({ chunks: ["x"], intent: "REVISE_VOICE", voiceRevision: {} });
+    const speechBefore = app.speechModel.calls.length;
+
+    const events = await readEvents(await app.chat(reviseRequest("hmm gimana ya", revise)));
+
+    assert.equal(app.speechModel.calls.length, speechBefore);
+    assert.equal(finishedVideo(events), undefined);
+    assert.equal((await usageOf(app)).monthUsd, 0);
+    assert.match(events.flatMap((e) => (e.type === "assistant_text" ? [e.text] : [])).join(""), /narasi|suara/i);
+  });
+});
+
 describe("video spending", () => {
   it("refuses up front when the budget cannot cover the video and says how many seconds it can", async () => {
     // US$1.50 spent today: US$0.50 is left of the day, which is 5 seconds.

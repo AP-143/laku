@@ -94,6 +94,33 @@ Message: ${JSON.stringify(text)}
 `.trim();
 }
 
+/** What a seller wants changed in a narration: a new script, a different voice, or both. Neither means unclear. */
+export interface VoiceRevision {
+  script?: string;
+  voice?: "female" | "male";
+}
+
+export function parseVoiceRevision(answer: string): VoiceRevision {
+  const { script, voice } = parseJsonObject(answer);
+  return {
+    script: typeof script === "string" && script.trim() ? script.trim() : undefined,
+    voice: voice === "female" || voice === "male" ? voice : undefined,
+  };
+}
+
+/** Reads what a seller wants changed in the narration of their video, from a message such as "pakai suara cowok". */
+export function voiceRevisionPrompt(text: string, currentScript: string): string {
+  return `
+[task: voice-revision]
+A seller of an online shop wants to change the narration of their ad video. The current narration is:
+${JSON.stringify(currentScript)}
+Answer with only a JSON object {"script": <string or null>, "voice": <"female", "male" or null>}.
+"script" is the complete new narration if they want other words (write it in natural Indonesian of about the same length), otherwise null.
+"voice" is "female" for a woman's voice or "male" for a man's voice if they ask for one, otherwise null.
+Message: ${JSON.stringify(text)}
+`.trim();
+}
+
 /** Spoken Indonesian runs at about 2.5 to 3 words per second, so a script is sized to the video length. */
 export function wordRange(seconds: number): { min: number; max: number } {
   return { min: Math.round(seconds * 2.5), max: Math.round(seconds * 3) };
@@ -114,7 +141,7 @@ The seller asked: ${JSON.stringify(request.text)}
 `.trim();
 }
 
-export type Intent = "studio_photo" | "revise_photo" | "storyboard" | "edit_scene" | "video" | "chat";
+export type Intent = "studio_photo" | "revise_photo" | "storyboard" | "edit_scene" | "video" | "revise_voice" | "chat";
 
 /** What the router can offer for this turn; it must not answer with something that is not available. */
 export interface IntentContext {
@@ -123,6 +150,8 @@ export interface IntentContext {
   hasStoryboard: boolean;
   /** The storyboard already has generated frames, which a video is made from. */
   hasFrames: boolean;
+  /** A video with a voice-over was just made, whose narration can still be changed. */
+  hasNarration: boolean;
 }
 
 /** Routes a typed message to a feature. One cheap call, one word back. */
@@ -136,8 +165,9 @@ REVISE: they want a change to the studio photo that was just made (only if a pre
 STORYBOARD: they want a storyboard or ad scenes made from a product photo.
 EDIT_SCENE: they want to change or replace a scene of the storyboard in progress (only if one exists).
 VIDEO: they want a video ad made from the storyboard frames (only if frames exist).
+REVISE_VOICE: they want to change the narration or the voice of the video that was just made (only if it has one).
 CHAT: anything else, including questions and greetings.
-Product photo attached: ${yesNo(context.hasPhoto)}. Previous result exists: ${yesNo(context.hasPreviousResult)}. Storyboard in progress: ${yesNo(context.hasStoryboard)}. Storyboard frames exist: ${yesNo(context.hasFrames)}.
+Product photo attached: ${yesNo(context.hasPhoto)}. Previous result exists: ${yesNo(context.hasPreviousResult)}. Storyboard in progress: ${yesNo(context.hasStoryboard)}. Storyboard frames exist: ${yesNo(context.hasFrames)}. Video with narration exists: ${yesNo(context.hasNarration)}.
 Message: ${JSON.stringify(text)}
 `.trim();
 }
@@ -148,6 +178,7 @@ const INTENT_WORDS: Record<string, Intent> = {
   STORYBOARD: "storyboard",
   EDIT_SCENE: "edit_scene",
   VIDEO: "video",
+  REVISE_VOICE: "revise_voice",
 };
 
 /** Anything the router says that is not a known word is treated as plain chat. */

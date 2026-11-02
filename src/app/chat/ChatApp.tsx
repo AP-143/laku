@@ -13,6 +13,7 @@ import { SCENE_INDEXES } from "../../shared/storyboard";
 import {
   lastPhotoAssetId,
   lastStudioAssetId,
+  narratedVideo,
   openStoryboard,
   storyboardFrames,
   storyboardScenes,
@@ -184,7 +185,7 @@ export default function ChatApp() {
               const index = current.findLastIndex((item) => item.kind === "video");
               return current.map((item, position) =>
                 position === index && item.kind === "video"
-                  ? { ...item, script: event.script, silentAssetId: event.silentAssetId }
+                  ? { ...item, script: event.script, silentAssetId: event.silentAssetId, voice: event.voice, seconds: event.seconds }
                   : item,
               );
             });
@@ -259,6 +260,8 @@ export default function ChatApp() {
       // The finished storyboard frames, so a typed "video 10 detik" can be made from them.
       frames: frames.length > 0 ? frames : undefined,
       scenes: frames.length > 0 ? storyboardScenes(itemsRef.current) : undefined,
+      // The video with a narration, so "ganti narasinya..." or "pakai suara cowok" can change it without new clips.
+      revise: narratedVideo(itemsRef.current),
       // The newest result, or else the photo sent earlier, so "bikin foto studio" works on a later turn.
       lastImageAssetId: lastStudioAssetId(itemsRef.current) ?? lastPhotoAssetId(itemsRef.current),
       storyboard: open ? { photoAssetId: open.sourceAssetId, scenes: open.scenes } : undefined,

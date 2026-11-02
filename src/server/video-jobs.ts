@@ -158,7 +158,48 @@ export function createVideoJobs(deps: {
         role: "video",
         sourceAssetId: frames[0].assetId,
       });
-      if (narration) send({ type: "voice_over", script: narration.script, voice: MODELS.voice, silentAssetId });
+      if (narration) {
+        send({ type: "voice_over", script: narration.script, voice: MODELS.voice, silentAssetId, seconds: plan.seconds });
+      }
+
+      const { monthUsd, budgetUsd } = await readUsage(ledger);
+      send({ type: "usage_updated", monthUsd, budgetUsd });
+    },
+
+    /**
+     * Reads a new script, or the same one in another voice, over the silent video of an earlier try.
+     * No video model is called, so only the voice is booked.
+     */
+    async reviseVoice(request: { silentAssetId: string; silent: Uint8Array; seconds: number; script: string; voice: string }) {
+      const { silentAssetId, silent, seconds, script, voice } = request;
+      const cost = roundUsd(seconds * COSTS.speechUsdPerSecond);
+      const reservation = await ledger.reserve(cost, { monthlyUsd: COSTS.monthlyBudgetUsd, dailyUsd: COSTS.dailyBudgetUsd });
+      if (!reservation.ok) {
+        if (reservation.limit === "daily") {
+          throw new DailyCapReachedError(reservation.resetsAt, (await readUsage(ledger)).remainingUsd);
+        }
+        throw new QuotaExhaustedError();
+      }
+
+      let assetId: string;
+      try {
+        const spoken = await models.speak(script, voice);
+        assetId = await assets.saveVideo(await addVoice(silent, spoken.bytes, seconds));
+      } catch (error) {
+        // A voice that was rejected is not billed; one that timed out may still be.
+        if (!mayStillBeBilled(error)) await ledger.record(-cost);
+        throw error;
+      }
+
+      send({
+        type: "asset_ready",
+        assetId,
+        kind: "video",
+        url: `/api/assets/${assetId}`,
+        role: "video",
+        sourceAssetId: silentAssetId,
+      });
+      send({ type: "voice_over", script, voice, silentAssetId, seconds });
 
       const { monthUsd, budgetUsd } = await readUsage(ledger);
       send({ type: "usage_updated", monthUsd, budgetUsd });

@@ -40,6 +40,9 @@ export interface BakeoffImageCandidate {
   usd: number;
 }
 
+/** The two narration voices a seller can ask for ("suara cewek" or "suara cowok"): Gemini prebuilt voices. */
+export const VOICES = { female: "Kore", male: "Charon" } as const;
+
 /** Candidates the live bake-off script compares, all called directly on the Google key. Edit to try others. */
 export const BAKEOFF_CANDIDATES = {
   image: [
