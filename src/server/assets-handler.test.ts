@@ -44,6 +44,74 @@ function readRequest(assetId: string, variant?: string): Request {
   return new Request(`http://localhost/api/assets/${assetId}${variant ? `?variant=${variant}` : ""}`);
 }
 
+/** Safari and iOS only play a video if the server can answer for a part of it, so ranges are served. */
+describe("serving a video in parts", () => {
+  async function storedVideo() {
+    const store = createAssetStore(await mkdtemp(path.join(os.tmpdir(), "laku-assets-")));
+    const bytes = Uint8Array.from({ length: 1000 }, (_, index) => index % 251);
+    const assetId = await store.saveVideo(bytes);
+    const read = (range?: string) =>
+      createAssetReadHandler(store)(
+        new Request(`http://localhost/api/assets/${assetId}`, { headers: range ? { range } : {} }),
+        assetId,
+      );
+    return { read, bytes };
+  }
+
+  it("says it can serve parts and serves the whole file when no part is asked for", async () => {
+    const { read, bytes } = await storedVideo();
+
+    const response = await read();
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("accept-ranges"), "bytes");
+    assert.equal(response.headers.get("content-type"), "video/mp4");
+    assert.deepEqual(new Uint8Array(await response.arrayBuffer()), bytes);
+  });
+
+  it("serves just the bytes asked for, with their place in the file", async () => {
+    const { read, bytes } = await storedVideo();
+
+    const response = await read("bytes=100-199");
+
+    assert.equal(response.status, 206);
+    assert.equal(response.headers.get("content-range"), "bytes 100-199/1000");
+    assert.equal(response.headers.get("content-length"), "100");
+    assert.deepEqual(new Uint8Array(await response.arrayBuffer()), bytes.slice(100, 200));
+  });
+
+  it("serves from a start to the end, and the last bytes of the file", async () => {
+    const { read, bytes } = await storedVideo();
+
+    const fromStart = await read("bytes=900-");
+    assert.equal(fromStart.headers.get("content-range"), "bytes 900-999/1000");
+    assert.deepEqual(new Uint8Array(await fromStart.arrayBuffer()), bytes.slice(900));
+
+    const last = await read("bytes=-50");
+    assert.equal(last.status, 206);
+    assert.equal(last.headers.get("content-range"), "bytes 950-999/1000");
+    assert.deepEqual(new Uint8Array(await last.arrayBuffer()), bytes.slice(950));
+  });
+
+  it("refuses a part that starts beyond the end, and says how long the file is", async () => {
+    const { read } = await storedVideo();
+
+    const response = await read("bytes=2000-3000");
+
+    assert.equal(response.status, 416);
+    assert.equal(response.headers.get("content-range"), "bytes */1000");
+  });
+
+  it("serves the whole file when the range cannot be understood", async () => {
+    const { read, bytes } = await storedVideo();
+
+    const response = await read("bytes=0-10,20-30");
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(new Uint8Array(await response.arrayBuffer()), bytes);
+  });
+});
+
 describe("photo upload", () => {
   for (const format of ["jpeg", "png", "webp"] as const) {
     it(`accepts a ${format} photo and serves the original back by its id`, async () => {

@@ -126,6 +126,20 @@ export function wordRange(seconds: number): { min: number; max: number } {
   return { min: Math.round(seconds * 2.5), max: Math.round(seconds * 3) };
 }
 
+/** A narration may run a little over the words that fit the length, because the pace of speech varies. */
+export const NARRATION_WORD_SLACK = 5;
+/** Indonesian words average about 7 letters plus a space; this leaves room for long words without allowing padding. */
+const MAX_CHARS_PER_WORD = 10;
+
+/**
+ * Whether a narration is short enough for a video of `seconds`. The voice is billed by how long it speaks, which
+ * follows the letters more than the words, so both are bounded.
+ */
+export function narrationFits(script: string, seconds: number): boolean {
+  const maxWords = wordRange(seconds).max + NARRATION_WORD_SLACK;
+  return script.trim().split(/\s+/).length <= maxWords && script.trim().length <= maxWords * MAX_CHARS_PER_WORD;
+}
+
 /** Writes the narration for an ad video, sized to its length. */
 export function voiceScriptPrompt(request: { scenes: string[]; seconds: number; text: string }): string {
   const { min, max } = wordRange(request.seconds);

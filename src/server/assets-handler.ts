@@ -64,12 +64,45 @@ export function createAssetReadHandler(store: AssetStore): AssetReadHandler {
     const file = await store.read(assetId, variant);
     if (!file) return new Response("Not found", { status: 404 });
 
-    const headers: Record<string, string> = { "content-type": file.mediaType };
+    const headers: Record<string, string> = { "content-type": file.mediaType, "accept-ranges": "bytes" };
     if (params.get("download")) {
       // The id is safe in a header (it passed the store's id check), and the extension follows the file type.
       const extension = file.mediaType.split("/")[1].replace("jpeg", "jpg");
       headers["content-disposition"] = `attachment; filename="laku-${assetId.slice(0, 8)}.${extension}"`;
     }
+
+    // Safari and iOS only play a video if the server can answer for a part of it.
+    const size = file.bytes.byteLength;
+    const range = readRange(request.headers.get("range"), size);
+    if (range === "unsatisfiable") {
+      return new Response(null, { status: 416, headers: { ...headers, "content-range": `bytes */${size}` } });
+    }
+    if (range) {
+      const part = file.bytes.slice(range.start, range.end + 1);
+      return new Response(part as BodyInit, {
+        status: 206,
+        headers: { ...headers, "content-range": `bytes ${range.start}-${range.end}/${size}`, "content-length": String(part.byteLength) },
+      });
+    }
     return new Response(file.bytes as BodyInit, { headers });
   };
+}
+
+/**
+ * Reads a single "bytes=start-end" range. A range it cannot understand (several ranges, nonsense) is ignored, so the
+ * whole file is served; one that starts beyond the end is unsatisfiable.
+ */
+function readRange(header: string | null, size: number): { start: number; end: number } | "unsatisfiable" | undefined {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header?.trim() ?? "");
+  if (!match || (match[1] === "" && match[2] === "")) return undefined;
+
+  if (match[1] === "") {
+    // "-50" means the last 50 bytes.
+    const length = Number(match[2]);
+    return length === 0 ? "unsatisfiable" : { start: Math.max(size - length, 0), end: size - 1 };
+  }
+  const start = Number(match[1]);
+  const end = match[2] === "" ? size - 1 : Math.min(Number(match[2]), size - 1);
+  if (start >= size) return "unsatisfiable";
+  return end < start ? undefined : { start, end };
 }

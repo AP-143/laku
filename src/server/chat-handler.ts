@@ -5,7 +5,7 @@ import { SCENE_COUNT, SCENE_INDEXES } from "../shared/storyboard";
 import { CLIP_SECONDS, DEFAULT_VIDEO_SECONDS, planClips } from "../shared/video-plan";
 import { isAssetId, type AssetFile, type AssetStore } from "./asset-store";
 import { readBoundedBytes } from "./bounded-body";
-import { wordRange, type Intent } from "./chat-prompt";
+import { narrationFits, NARRATION_WORD_SLACK, wordRange, type Intent } from "./chat-prompt";
 import { eventResponse } from "./event-response";
 import { NotAProductError, createImageJobs } from "./image-jobs";
 import { framePrompt, revisionPrompt, studioPhotoPrompt } from "./image-prompts";
@@ -84,9 +84,6 @@ interface VoiceRevise {
   script: string;
   voice: string;
 }
-
-/** A narration may run a little over the words that fit the length, because the pace of speech varies. */
-const NARRATION_WORD_SLACK = 5;
 
 /** What `video_partial` told the browser, sent back as it was: the clip plan and the finished clips by position. */
 interface VideoResume {
@@ -404,8 +401,9 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
           // The price and the length of the narration follow the video itself, never what the request says about it.
           const seconds = await probeSeconds(silent.bytes);
           const script = change.script ?? revise.script;
-          const maxWords = wordRange(seconds).max + NARRATION_WORD_SLACK;
-          if (script.trim().split(/\s+/).length > maxWords) return reply(NARRATION_TOO_LONG_MESSAGE(seconds, maxWords));
+          if (!narrationFits(script, seconds)) {
+            return reply(NARRATION_TOO_LONG_MESSAGE(seconds, wordRange(seconds).max + NARRATION_WORD_SLACK));
+          }
           await videos.reviseVoice({
             silentAssetId: revise.silentAssetId,
             silent: silent.bytes,

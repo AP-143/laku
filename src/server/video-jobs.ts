@@ -3,6 +3,7 @@ import { COSTS, MODELS } from "../config/models";
 import type { ChatEvent } from "../shared/chat-events";
 import { CLIP_SECONDS, type ClipPlan } from "../shared/video-plan";
 import type { AssetFile, AssetStore } from "./asset-store";
+import { narrationFits } from "./chat-prompt";
 import { clipPrompt } from "./image-prompts";
 import { NotAProductError } from "./image-jobs";
 import type { ModelClient } from "./model-client";
@@ -143,6 +144,8 @@ export function createVideoJobs(deps: {
         let spoken = false;
         try {
           const script = await models.writeVoiceScript({ scenes: voiceOver.scenes, seconds: plan.seconds, text: voiceOver.text });
+          // The script comes from a model, so it is checked before anything is read aloud and billed.
+          if (!narrationFits(script, plan.seconds)) throw new Error("The script is too long for the video.");
           const voice = await models.speak(script);
           spoken = true;
           assetId = await assets.saveVideo(await addVoice(silent, voice.bytes, plan.seconds));

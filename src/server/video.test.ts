@@ -376,6 +376,18 @@ describe("voice-over", () => {
     assert.equal((await usageOf(app)).monthUsd, 1.003);
   });
 
+  it("does not read a written script aloud when it is far too long for the video, and gives the voice back", async () => {
+    const stretched = Array.from({ length: 28 }, () => "a".repeat(80)).join(" ");
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10, voiceOver: true, script: stretched }));
+    const frames = await uploadFrames(app);
+
+    const events = await readEvents(await app.chat(videoRequest("video 10 detik pakai voice over", frames)));
+
+    assert.ok(finishedVideo(events));
+    assert.equal(app.speechModel.calls.length, 0);
+    assert.equal((await usageOf(app)).monthUsd, 1);
+  });
+
   it("books the voice together with the video, so a budget that covers only the video is refused", async () => {
     // US$1.00 spent today: the 10 s video (US$1.00) alone would fit the US$2.00 day, with the voice it does not.
     const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10, voiceOver: true }), undefined, {
@@ -489,6 +501,19 @@ describe("revising the voice-over", () => {
     assert.equal(finishedVideo(events), undefined);
     assert.equal((await usageOf(app)).monthUsd, 0);
     assert.match(events.flatMap((e) => (e.type === "assistant_text" ? [e.text] : [])).join(""), /terlalu panjang/i);
+  });
+
+  it("refuses a script that has few words but is far too long in letters, since the voice is billed by its length", async () => {
+    // 30 words fit a 10 second video, but each of these is 80 letters long.
+    const stretched = Array.from({ length: 30 }, () => "a".repeat(80)).join(" ");
+    const { app, revise } = await narratedVideo({ chunks: ["x"], intent: "REVISE_VOICE", voiceRevision: { script: stretched } });
+    const speechBefore = app.speechModel.calls.length;
+
+    const events = await readEvents(await app.chat(reviseRequest("ganti narasinya", revise)));
+
+    assert.equal(app.speechModel.calls.length, speechBefore);
+    assert.equal(finishedVideo(events), undefined);
+    assert.equal((await usageOf(app)).monthUsd, 0);
   });
 
   it("asks what to change when it cannot tell, and spends nothing", async () => {
