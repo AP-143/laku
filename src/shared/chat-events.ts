@@ -41,6 +41,8 @@ export type ChatEvent =
       finished: Record<number, string>;
       failedIndex: number;
       sourceAssetId: string;
+      /** The seller asked for a voice-over, so it is added when the missing clips are remade. */
+      voiceOver: boolean;
     }
   /** The four proposed scenes of a storyboard. Nothing is generated until the user approves them. */
   | { type: "storyboard_scenes"; sourceAssetId: string; scenes: string[] }

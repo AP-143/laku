@@ -126,6 +126,7 @@ export function createVideoJobs(deps: {
             finished: kept,
             failedIndex: index,
             sourceAssetId: frames[0].assetId,
+            voiceOver: Boolean(voiceOver),
           });
           // What stays booked is real spend, so the meter shows it now.
           const { monthUsd, budgetUsd } = await readUsage(ledger);

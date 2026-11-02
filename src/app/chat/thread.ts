@@ -41,6 +41,8 @@ export type ThreadItem =
       clips: number[];
       finished: Record<number, string>;
       failedIndex: number;
+      /** The seller asked for a voice-over, so the resume asks for it again. */
+      voiceOver: boolean;
       /** The storyboard frames the video is made from, sent again with the resume. */
       frames: string[];
       /** The seller already asked to remake the rest. */

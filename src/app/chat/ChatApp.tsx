@@ -201,6 +201,7 @@ export default function ChatApp() {
                 clips: event.clips,
                 finished: event.finished,
                 failedIndex: event.failedIndex,
+                voiceOver: event.voiceOver,
                 frames: Array.isArray(body.frames) ? (body.frames as string[]) : [],
               },
             ]);
@@ -362,7 +363,9 @@ export default function ChatApp() {
         {
           messages: [{ role: "user", text: "Coba ulang bagian yang gagal." }],
           frames: item.frames,
-          resume: { seconds: item.seconds, clips: item.clips, finished: item.finished },
+          // The scenes let the script be written again when the first try asked for a voice-over.
+          scenes: item.voiceOver ? storyboardScenes(itemsRef.current) : undefined,
+          resume: { seconds: item.seconds, clips: item.clips, finished: item.finished, voiceOver: item.voiceOver },
         },
         { frameIndexes: [] },
       );

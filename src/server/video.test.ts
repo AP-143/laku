@@ -283,6 +283,45 @@ describe("recovering from a failed clip", () => {
     assert.deepEqual(events.findLast((event) => event.type === "usage_updated"), { type: "usage_updated", monthUsd: 0.6, budgetUsd: 4 });
   });
 
+  it("remembers that a voice-over was asked for, and adds it when the missing clips are remade", async () => {
+    const model = fakeVideoModel({ failOnClip: 1, failWith: rejected });
+    const chat = fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10, voiceOver: true });
+    const app = createTestApp(chat, undefined, { videoModel: model });
+    const frames = await uploadFrames(app);
+    const first = await readEvents(await app.chat(videoRequest("video 10 detik pakai voice over", frames, { scenes: ["A", "B"] })));
+    const partial = partialOf(first);
+    assert.ok(partial && partial.type === "video_partial");
+    assert.equal(partial.voiceOver, true);
+
+    const resumed = await readEvents(
+      await app.chat(
+        videoRequest("Coba ulang bagian yang gagal.", frames, {
+          scenes: ["A", "B"],
+          resume: { seconds: partial.seconds, clips: partial.clips, finished: partial.finished, voiceOver: partial.voiceOver },
+        }),
+      ),
+    );
+
+    const ready = finishedVideo(resumed);
+    assert.ok(ready && ready.type === "asset_ready");
+    assert.equal((await probeVideo((await app.store.read(ready.assetId, "original"))!.bytes)).hasAudio, true);
+    assert.equal(app.speechModel.calls.length, 1);
+    assert.ok(resumed.some((event) => event.type === "voice_over"));
+    // US$0.60 stays from the first try, the remade 4 s clip adds US$0.40 and the voice US$0.003.
+    assert.equal((await usageOf(app)).monthUsd, 1.003);
+  });
+
+  it("does not add a voice-over to a resumed video that did not ask for one", async () => {
+    const { app, frames, events } = await failSecondClip();
+    const partial = partialOf(events);
+    assert.ok(partial && partial.type === "video_partial");
+    assert.equal(partial.voiceOver, false);
+
+    await app.chat(videoRequest("Coba ulang bagian yang gagal.", frames, { resume: { seconds: 10, clips: partial.clips, finished: partial.finished } }));
+
+    assert.equal(app.speechModel.calls.length, 0);
+  });
+
   it("books only the clips still missing when it resumes", async () => {
     const { app, frames, events } = await failSecondClip();
     const partial = partialOf(events);

@@ -90,6 +90,8 @@ interface VideoResume {
   seconds: number;
   clips: number[];
   finished: Record<number, string>;
+  /** The seller asked for a voice-over in the first try. */
+  voiceOver: boolean;
 }
 
 const INTENTS: readonly string[] = ["studio_photo", "storyboard", "video"];
@@ -128,7 +130,12 @@ function readApproval(value: unknown): Conversation["approve"] | null | undefine
 /** `null` means the field was sent but is not a clip plan this server could have made; no field means no resume. */
 function readResume(value: unknown): VideoResume | null | undefined {
   if (value === undefined) return undefined;
-  const { seconds, clips, finished } = (value ?? {}) as { seconds?: unknown; clips?: unknown; finished?: unknown };
+  const { seconds, clips, finished, voiceOver } = (value ?? {}) as {
+    seconds?: unknown;
+    clips?: unknown;
+    finished?: unknown;
+    voiceOver?: unknown;
+  };
   const validClips =
     Array.isArray(clips) &&
     clips.length >= 1 &&
@@ -158,6 +165,7 @@ function readResume(value: unknown): VideoResume | null | undefined {
     seconds,
     clips: clips as number[],
     finished: Object.fromEntries(entries.map(([position, assetId]) => [Number(position), assetId as string])),
+    voiceOver: voiceOver === true,
   };
 }
 
@@ -370,7 +378,14 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
             if (clip?.mediaType !== "video/mp4") return reply(CLIP_NOT_FOUND_MESSAGE);
             kept[Number(position)] = { assetId, bytes: clip.bytes };
           }
-          await videos.generate({ frames, plan: { ok: true, seconds, clips }, finished: kept });
+          await videos.generate({
+            frames,
+            plan: { ok: true, seconds, clips },
+            finished: kept,
+            voiceOver: conversation.resume.voiceOver
+              ? { scenes: conversation.scenes, text: conversation.messages.at(-1)!.text.trim() }
+              : undefined,
+          });
           send({ type: "done" });
           return;
         }
