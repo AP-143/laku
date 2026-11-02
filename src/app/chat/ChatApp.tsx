@@ -15,6 +15,7 @@ import {
   lastStudioAssetId,
   openStoryboard,
   storyboardFrames,
+  storyboardScenes,
   styleOf,
   type Preset,
   type RetryRequest,
@@ -177,6 +178,17 @@ export default function ChatApp() {
             }
             break;
           }
+          case "voice_over":
+            // The narration belongs to the video that was just added.
+            setItems((current) => {
+              const index = current.findLastIndex((item) => item.kind === "video");
+              return current.map((item, position) =>
+                position === index && item.kind === "video"
+                  ? { ...item, script: event.script, silentAssetId: event.silentAssetId }
+                  : item,
+              );
+            });
+            break;
           case "video_partial":
             videoStopped = true;
             setItems((current) => [
@@ -246,6 +258,7 @@ export default function ChatApp() {
       messages,
       // The finished storyboard frames, so a typed "video 10 detik" can be made from them.
       frames: frames.length > 0 ? frames : undefined,
+      scenes: frames.length > 0 ? storyboardScenes(itemsRef.current) : undefined,
       // The newest result, or else the photo sent earlier, so "bikin foto studio" works on a later turn.
       lastImageAssetId: lastStudioAssetId(itemsRef.current) ?? lastPhotoAssetId(itemsRef.current),
       storyboard: open ? { photoAssetId: open.sourceAssetId, scenes: open.scenes } : undefined,

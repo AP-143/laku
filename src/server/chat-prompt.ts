@@ -69,19 +69,48 @@ export function parseReplacement(answer: string): { index: number; text: string 
   return { index: (scene as number) - 1, text: text.trim() };
 }
 
-/** The video length the seller asked for, in seconds, or none when the message names no length. */
-export function parseVideoRequest(answer: string): { seconds?: number } {
-  const { seconds } = parseJsonObject(answer);
-  return typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0 ? { seconds } : {};
+/** What the seller asked for in a video request: the length in seconds (none if not named) and a voice-over. */
+export interface VideoRequest {
+  seconds?: number;
+  voiceOver: boolean;
 }
 
-/** Reads how long a video the seller wants, from a message such as "bikinin video iklan 10 detik". */
+export function parseVideoRequest(answer: string): VideoRequest {
+  const { seconds, voiceOver } = parseJsonObject(answer);
+  return {
+    seconds: typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0 ? seconds : undefined,
+    voiceOver: voiceOver === true,
+  };
+}
+
+/** Reads how long a video the seller wants and whether it needs a voice-over, from a message such as "video 10 detik pakai voice over". */
 export function videoRequestPrompt(text: string): string {
   return `
 [task: video-request]
-A seller of an online shop asks for an ad video. Answer with only a JSON object {"seconds": <number>} holding the
-video length in seconds they asked for (convert minutes to seconds), or {"seconds": null} if they name no length.
+A seller of an online shop asks for an ad video. Answer with only a JSON object {"seconds": <number or null>, "voiceOver": <true or false>}.
+"seconds" is the video length in seconds they asked for (convert minutes to seconds), or null if they name no length.
+"voiceOver" is true only if they ask for narration, a voice-over, a voice, or a narrator.
 Message: ${JSON.stringify(text)}
+`.trim();
+}
+
+/** Spoken Indonesian runs at about 2.5 to 3 words per second, so a script is sized to the video length. */
+export function wordRange(seconds: number): { min: number; max: number } {
+  return { min: Math.round(seconds * 2.5), max: Math.round(seconds * 3) };
+}
+
+/** Writes the narration for an ad video, sized to its length. */
+export function voiceScriptPrompt(request: { scenes: string[]; seconds: number; text: string }): string {
+  const { min, max } = wordRange(request.seconds);
+  const scenes = request.scenes.length > 0 ? request.scenes.map((scene, index) => `${index + 1}. ${scene}`).join("\n") : "(none given)";
+  return `
+[task: voice-script]
+Write the narration for a ${request.seconds} second ad video of a product sold by a small online shop.
+Write in natural, friendly Indonesian, in one paragraph of ${min} to ${max} words so it can be read aloud in ${request.seconds} seconds.
+Do not invent prices, discounts or claims that were not given. Answer with only the narration text, no title and no quotes.
+Scenes of the video:
+${scenes}
+The seller asked: ${JSON.stringify(request.text)}
 `.trim();
 }
 

@@ -20,7 +20,16 @@ export type ThreadItem =
       busy?: number[];
       approved: boolean;
     }
-  | { id: string; kind: "video"; assetId: string; sourceAssetId: string }
+  | {
+      id: string;
+      kind: "video";
+      assetId: string;
+      sourceAssetId: string;
+      /** The narration read aloud, when the seller asked for a voice-over. */
+      script?: string;
+      /** The silent video the narration was laid over, so the voice can be changed without new clips. */
+      silentAssetId?: string;
+    }
   /** A video stopped part way: the clips kept so far, and what is needed to remake only the rest. */
   | {
       id: string;
@@ -61,6 +70,11 @@ export function lastPhotoAssetId(items: ThreadItem[]): string | undefined {
     if (item.kind === "user" && item.photoAssetId) return item.photoAssetId;
   }
   return undefined;
+}
+
+/** The text of the newest storyboard's scenes, which a voice-over script is written from. */
+export function storyboardScenes(items: ThreadItem[]): string[] {
+  return items.findLast((item) => item.kind === "scenes")?.scenes ?? [];
 }
 
 /** The finished frames of the newest storyboard in scene order, which a video is made from. */

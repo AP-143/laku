@@ -26,6 +26,10 @@ interface FakeChatModelOptions {
   replacement?: { scene: number; text: string };
   /** The video length the request reader finds in the message; leave out for "no length said". */
   videoSeconds?: number;
+  /** Whether the request reader finds a request for a voice-over in the message. */
+  voiceOver?: boolean;
+  /** The narration script the writer answers with. */
+  script?: string;
 }
 
 /** Which one-shot task a generate call is, read from the tag every internal prompt starts with. */
@@ -50,8 +54,10 @@ export function fakeChatModel(options: FakeChatModelOptions) {
             : task === "replace-scene"
               ? JSON.stringify(options.replacement)
               : task === "video-request"
-                ? JSON.stringify({ seconds: options.videoSeconds ?? null })
-                : options.isProduct === false
+                ? JSON.stringify({ seconds: options.videoSeconds ?? null, voiceOver: options.voiceOver ?? false })
+                : task === "voice-script"
+                  ? (options.script ?? "Ini naskah contoh untuk iklan produk.")
+                  : options.isProduct === false
                 ? "NO"
                 : "YES";
       return {

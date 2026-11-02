@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { COSTS } from "../config/models";
+import { COSTS, MODELS } from "../config/models";
 import type { ChatEvent } from "../shared/chat-events";
 import { CLIP_SECONDS, type ClipPlan } from "../shared/video-plan";
 import type { AssetFile, AssetStore } from "./asset-store";
@@ -14,7 +14,7 @@ import {
   VideoNotAffordableError,
 } from "./model-errors";
 import { readUsage, type UsageLedger } from "./usage-ledger";
-import { joinClips } from "./video-join";
+import { addVoice, joinClips } from "./video-join";
 
 export interface StoryboardFrame {
   assetId: string;
@@ -42,13 +42,14 @@ export function createVideoJobs(deps: {
 }) {
   const { models, assets, ledger, send, isProduct } = deps;
 
-  /** How many seconds of video the month and the day still have room for. */
-  async function affordableSeconds(): Promise<number> {
+  /** How many seconds of video (with its narration, when asked for) the month and the day still have room for. */
+  async function affordableSeconds(withVoice: boolean): Promise<number> {
     const left = Math.min(
       COSTS.monthlyBudgetUsd - (await ledger.monthTotal()),
       COSTS.dailyBudgetUsd - (await ledger.dayTotal()),
     );
-    return Math.floor(Math.max(0, left) / COSTS.videoUsdPerSecond + 1e-9);
+    const perSecond = COSTS.videoUsdPerSecond + (withVoice ? COSTS.speechUsdPerSecond : 0);
+    return Math.floor(Math.max(0, left) / perSecond + 1e-9);
   }
 
   return {
@@ -60,8 +61,10 @@ export function createVideoJobs(deps: {
       frames: StoryboardFrame[];
       plan: Extract<ClipPlan, { ok: true }>;
       finished?: Record<number, { assetId: string; bytes: Uint8Array }>;
+      /** Asked for a narration: the scenes the script is written from, and what the seller said. */
+      voiceOver?: { scenes: string[]; text: string };
     }) {
-      const { plan } = request;
+      const { plan, voiceOver } = request;
       const finished = request.finished ?? {};
       const frames = request.frames.slice(0, plan.clips.length);
       for (const frame of frames) {
@@ -71,13 +74,15 @@ export function createVideoJobs(deps: {
       // Only the clips still to be made are paid for, and they are booked before the first one, so
       // simultaneous requests cannot squeeze under a limit.
       const missing = plan.clips.filter((_, index) => !finished[index]);
-      const reservation = await ledger.reserve(costOf(sum(missing)), {
+      // The narration is booked with the video, so a budget that covers only the picture is refused up front.
+      const voiceCost = voiceOver ? roundUsd(plan.seconds * COSTS.speechUsdPerSecond) : 0;
+      const reservation = await ledger.reserve(roundUsd(costOf(sum(missing)) + voiceCost), {
         monthlyUsd: COSTS.monthlyBudgetUsd,
         dailyUsd: COSTS.dailyBudgetUsd,
       });
       if (!reservation.ok) {
         // A shorter video may still fit; only when not even the shortest clip does, the plain limit message is clearer.
-        const affordable = await affordableSeconds();
+        const affordable = await affordableSeconds(Boolean(voiceOver));
         if (affordable >= CLIP_SECONDS.min) throw new VideoNotAffordableError(affordable);
         if (reservation.limit === "daily") {
           throw new DailyCapReachedError(reservation.resetsAt, (await readUsage(ledger)).remainingUsd);
@@ -123,7 +128,28 @@ export function createVideoJobs(deps: {
         }
       }
 
-      const assetId = await assets.saveVideo(await joinClips(made, plan.seconds));
+      const silent = await joinClips(made, plan.seconds);
+      const silentAssetId = await assets.saveVideo(silent);
+
+      // The narration is laid over the silent video. If it fails, the seller still gets the silent video.
+      let assetId = silentAssetId;
+      let narration: { script: string } | undefined;
+      if (voiceOver) {
+        try {
+          const script = await models.writeVoiceScript({ scenes: voiceOver.scenes, seconds: plan.seconds, text: voiceOver.text });
+          const voice = await models.speak(script);
+          assetId = await assets.saveVideo(await addVoice(silent, voice.bytes, plan.seconds));
+          narration = { script };
+        } catch (error) {
+          // A voice that was rejected is not billed; one that timed out may still be.
+          if (!mayStillBeBilled(error)) await ledger.record(-voiceCost);
+          send({
+            type: "assistant_text",
+            text: "Suaranya belum berhasil dibuat, jadi ini videonya tanpa suara. Coba minta voice over lagi nanti ya.",
+          });
+        }
+      }
+
       send({
         type: "asset_ready",
         assetId,
@@ -132,6 +158,7 @@ export function createVideoJobs(deps: {
         role: "video",
         sourceAssetId: frames[0].assetId,
       });
+      if (narration) send({ type: "voice_over", script: narration.script, voice: MODELS.voice, silentAssetId });
 
       const { monthUsd, budgetUsd } = await readUsage(ledger);
       send({ type: "usage_updated", monthUsd, budgetUsd });

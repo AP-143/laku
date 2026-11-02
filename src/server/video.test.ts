@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ChatEvent } from "../shared/chat-events";
 import { fakeChatModel } from "./testing/fake-models";
+import { fakeSpeechModel } from "./testing/fake-speech-model";
 import { fakeVideoModel } from "./testing/fake-video-model";
 import { readEvents } from "./testing/events";
 import { chatRequest, createTestApp } from "./testing/harness";
@@ -269,6 +270,87 @@ describe("recovering from a failed clip", () => {
     assert.ok(finishedVideo(resumed));
     assert.equal((await usageOf(tight)).monthUsd, 2);
     void frames;
+  });
+});
+
+describe("voice-over", () => {
+  const SCRIPT = "Ayo cobain produk keren ini sekarang juga, kualitasnya bikin kamu jatuh cinta!";
+  const SCENES = ["Scene A", "Scene B", "Scene C", "Scene D"];
+  const voiceOverOf = (events: ChatEvent[]) => events.find((event) => event.type === "voice_over");
+
+  it("lays one narration over the whole video, from a script written for its length and scenes, and shows the script", async () => {
+    const chat = fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10, voiceOver: true, script: SCRIPT });
+    const app = createTestApp(chat);
+    const frames = await uploadFrames(app);
+
+    const events = await readEvents(
+      await app.chat(videoRequest("video 10 detik pakai voice over", frames, { scenes: SCENES })),
+    );
+
+    // The script is written once, for about 25 to 30 spoken words in 10 seconds, from the scenes.
+    const written = chat.doGenerateCalls.filter((call) => JSON.stringify(call.prompt).includes("[task: voice-script]"));
+    assert.equal(written.length, 1);
+    assert.match(JSON.stringify(written[0].prompt), /25 to 30 words/);
+    assert.match(JSON.stringify(written[0].prompt), /Scene A/);
+
+    // It is read aloud once, with one voice, and laid over the video.
+    assert.deepEqual(app.speechModel.calls.map((call) => call.text), [SCRIPT]);
+    const ready = finishedVideo(events);
+    assert.ok(ready && ready.type === "asset_ready");
+    const probe = await probeVideo((await app.store.read(ready.assetId, "original"))!.bytes);
+    assert.equal(probe.hasAudio, true);
+    assert.ok(Math.abs(probe.seconds - 10) < 0.6, `length was ${probe.seconds}`);
+
+    const voice = voiceOverOf(events);
+    assert.ok(voice && voice.type === "voice_over");
+    assert.equal(voice.script, SCRIPT);
+    // The video is US$1.00 and the voice a few thousandths of a dollar, both on the meter.
+    assert.equal((await usageOf(app)).monthUsd, 1.003);
+    assert.deepEqual(events.at(-1), { type: "done" });
+  });
+
+  it("makes a silent video when no voice-over is asked for", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10, voiceOver: false }));
+    const frames = await uploadFrames(app);
+
+    const events = await readEvents(await app.chat(videoRequest("video 10 detik", frames)));
+
+    assert.equal(app.speechModel.calls.length, 0);
+    assert.equal(voiceOverOf(events), undefined);
+    assert.equal((await usageOf(app)).monthUsd, 1);
+  });
+
+  it("books the voice together with the video, so a budget that covers only the video is refused", async () => {
+    // US$1.00 spent today: the 10 s video (US$1.00) alone would fit the US$2.00 day, with the voice it does not.
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10, voiceOver: true }), undefined, {
+      startingTodayUsd: 1,
+    });
+    const frames = await uploadFrames(app);
+
+    const events = await readEvents(await app.chat(videoRequest("video 10 detik pakai voice over", frames)));
+
+    assert.equal(app.videoModel.calls.length, 0);
+    assert.equal(finishedVideo(events), undefined);
+    assert.equal((await usageOf(app)).monthUsd, 1);
+  });
+
+  it("still gives the silent video when the voice fails, says so, and gives the voice back", async () => {
+    const failing = fakeSpeechModel({ failWith: Object.assign(new Error("bad request"), { statusCode: 400 }) });
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10, voiceOver: true }), undefined, {
+      speechModel: failing,
+    });
+    const frames = await uploadFrames(app);
+
+    const events = await readEvents(await app.chat(videoRequest("video 10 detik pakai voice over", frames)));
+
+    const ready = finishedVideo(events);
+    assert.ok(ready && ready.type === "asset_ready");
+    assert.equal((await probeVideo((await app.store.read(ready.assetId, "original"))!.bytes)).hasAudio, false);
+    const text = events.flatMap((event) => (event.type === "assistant_text" ? [event.text] : [])).join("");
+    assert.match(text, /suara/i);
+    assert.equal(voiceOverOf(events), undefined);
+    assert.equal((await usageOf(app)).monthUsd, 1);
+    assert.deepEqual(events.at(-1), { type: "done" });
   });
 });
 

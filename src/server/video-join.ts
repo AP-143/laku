@@ -7,6 +7,34 @@ import { promisify } from "node:util";
 const run = promisify(execFile);
 
 /**
+ * Lays one narration over a silent video, cut to `seconds` so a narration that runs long does not extend the video.
+ * The picture is copied as it is, only the sound is added. Needs ffmpeg on the machine.
+ */
+export async function addVoice(video: Uint8Array, voice: Uint8Array, seconds: number): Promise<Uint8Array> {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "laku-voice-"));
+  try {
+    await writeFile(path.join(dir, "video.mp4"), video);
+    await writeFile(path.join(dir, "voice.audio"), voice);
+    await run(
+      "ffmpeg",
+      [
+        "-v", "error", "-y",
+        "-i", "video.mp4", "-i", "voice.audio",
+        "-map", "0:v", "-map", "1:a",
+        "-c:v", "copy", "-c:a", "aac",
+        "-t", String(seconds),
+        "-movflags", "+faststart",
+        "out.mp4",
+      ],
+      { cwd: dir },
+    );
+    return new Uint8Array(await readFile(path.join(dir, "out.mp4")));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+/**
  * Joins clips in order into one silent MP4 of `seconds` (the clips can add up to a little more, which is
  * cut off the end). The audio track the video model made is dropped, so a voice-over can be laid on later.
  * Needs ffmpeg on the machine.

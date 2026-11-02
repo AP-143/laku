@@ -637,6 +637,13 @@
   justify-items: center;
 }
 
+.chat .script {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+}
+
 .chat .video-player {
   width: auto;
   max-width: 100%;

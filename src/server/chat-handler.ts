@@ -60,6 +60,8 @@ interface Conversation {
   approve?: { sceneIndex?: number };
   /** The generated storyboard frames in scene order, which a video is made from. */
   frames: string[];
+  /** The text of the storyboard scenes, which a voice-over script is written from (can be empty). */
+  scenes: string[];
   /** The price in US dollars the seller said yes to for an expensive video, quoted back to the server. */
   confirmedUsd?: number;
   /** Remake only the missing clips of a video that stopped part way. */
@@ -142,6 +144,14 @@ function readResume(value: unknown): VideoResume | null | undefined {
   };
 }
 
+/** `null` means the field was sent but is not up to four short texts; no field means no scenes. */
+function readScenes(value: unknown): string[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > SCENE_COUNT) return null;
+  if (!value.every((scene) => typeof scene === "string" && scene.length <= MAX_SCENE_CHARS)) return null;
+  return (value as string[]).map((scene) => scene.trim()).filter(Boolean);
+}
+
 /** `null` means the field was sent but is not a list of up to four asset ids; no field means no frames. */
 function readFrames(value: unknown): string[] | null {
   if (value === undefined) return [];
@@ -192,6 +202,7 @@ async function readConversation(request: Request): Promise<Conversation | undefi
     frames?: unknown;
     confirmedUsd?: unknown;
     resume?: unknown;
+    scenes?: unknown;
   };
   if (fields.lastImageAssetId !== undefined && (typeof fields.lastImageAssetId !== "string" || !isAssetId(fields.lastImageAssetId))) {
     return undefined;
@@ -200,13 +211,15 @@ async function readConversation(request: Request): Promise<Conversation | undefi
   const approve = readApproval(fields.approve);
   const frames = readFrames(fields.frames);
   const resume = readResume(fields.resume);
+  const scenes = readScenes(fields.scenes);
   // Approving needs the plan it approves.
-  if (storyboard === null || approve === null || (approve && !storyboard) || frames === null || resume === null) {
+  if (storyboard === null || approve === null || (approve && !storyboard) || frames === null || resume === null || scenes === null) {
     return undefined;
   }
 
   return {
     frames,
+    scenes,
     resume,
     confirmedUsd: typeof fields.confirmedUsd === "number" && Number.isFinite(fields.confirmedUsd) ? fields.confirmedUsd : undefined,
     messages: conversation,
@@ -327,8 +340,8 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
 
         if (intent === "video") {
           if (frames.length === 0) return reply(NEED_FRAMES_MESSAGE);
-          const { seconds } = lastText ? await models.readVideoRequest(lastText) : { seconds: undefined };
-          const plan = planClips(seconds ?? DEFAULT_VIDEO_SECONDS, frames.length);
+          const asked = lastText ? await models.readVideoRequest(lastText) : { seconds: undefined, voiceOver: false };
+          const plan = planClips(asked.seconds ?? DEFAULT_VIDEO_SECONDS, frames.length);
           if (!plan.ok) return reply(videoTooLongMessage(plan.maxSeconds));
 
           // An expensive video waits for the seller's yes to this price; nothing is booked or generated until then.
@@ -345,7 +358,11 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
             send({ type: "done" });
             return;
           }
-          await videos.generate({ frames, plan });
+          await videos.generate({
+            frames,
+            plan,
+            voiceOver: asked.voiceOver ? { scenes: conversation.scenes, text: lastText } : undefined,
+          });
           send({ type: "done" });
           return;
         }

@@ -1,5 +1,14 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { generateImage, generateText, streamText, type ImageModel, type LanguageModel, type ModelMessage } from "ai";
+import {
+  generateImage,
+  generateSpeech,
+  generateText,
+  streamText,
+  type ImageModel,
+  type LanguageModel,
+  type ModelMessage,
+  type SpeechModel,
+} from "ai";
 import { MODELS } from "../config/models";
 import type { AssetFile } from "./asset-store";
 import { createOmniVideoModel, type VideoModel } from "./video-model";
@@ -14,6 +23,8 @@ import {
   planScenesPrompt,
   replaceScenePrompt,
   videoRequestPrompt,
+  voiceScriptPrompt,
+  type VideoRequest,
   type Intent,
   type IntentContext,
 } from "./chat-prompt";
@@ -54,14 +65,22 @@ export interface ModelClient {
   replaceScene(scenes: string[], instruction: string): Promise<{ index: number; text: string }>;
   /** Makes one image from a reference photo and an instruction. Throws if the model fails. Never retries. */
   generateImage(request: { prompt: string; reference: AssetFile; aspectRatio: ImageAspectRatio }): Promise<AssetFile>;
-  /** Reads the video length the seller asked for. Throws if the model fails or answers badly. */
-  readVideoRequest(text: string): Promise<{ seconds?: number }>;
+  /** Reads the video length and the voice-over the seller asked for. Throws if the model fails or answers badly. */
+  readVideoRequest(text: string): Promise<VideoRequest>;
+  /** Writes the narration for a video of `seconds`, from its scenes. Throws if the model fails. */
+  writeVoiceScript(request: { scenes: string[]; seconds: number; text: string }): Promise<string>;
+  /** Reads a script aloud in the app voice. Throws if the model fails. Never retries. */
+  speak(script: string): Promise<AssetFile>;
   /** Makes one clip of `seconds` from a frame. Throws if the model fails. Never retries. */
   generateClip(request: { prompt: string; frame: AssetFile; seconds: number }): Promise<Uint8Array>;
 }
 
 /** Image generation is slow; this keeps one stuck call from hanging a request forever. */
 const IMAGE_TIMEOUT_MS = 3 * 60_000;
+/** Reading a script aloud takes seconds; this only stops one stuck call from hanging a request. */
+const SPEECH_TIMEOUT_MS = 2 * 60_000;
+/** A narration is under a hundred words (a video is at most 32 seconds). */
+const MAX_SCRIPT_TOKENS = 400;
 
 /** Turns one chat message into the SDK's shape, attaching the photo as a file part when there is one. */
 function toModelMessage(message: ChatMessage): ModelMessage {
@@ -80,6 +99,7 @@ export function createModelClient(models: {
   chatModel: LanguageModel;
   imageModel: ImageModel;
   videoModel: VideoModel;
+  speechModel: SpeechModel;
 }): ModelClient {
   return {
     async *streamChatReply(messages) {
@@ -177,6 +197,29 @@ export function createModelClient(models: {
     },
 
     generateClip: (request) => models.videoModel.generate(request),
+
+    async writeVoiceScript(request) {
+      const { text } = await generateText({
+        model: models.chatModel,
+        messages: [{ role: "user", content: voiceScriptPrompt(request) }],
+        maxOutputTokens: MAX_SCRIPT_TOKENS,
+        maxRetries: 0,
+      });
+      const script = text.trim();
+      if (!script) throw new Error("The model did not write a script.");
+      return script;
+    },
+
+    async speak(script) {
+      const { audio } = await generateSpeech({
+        model: models.speechModel,
+        text: script,
+        voice: MODELS.voice,
+        maxRetries: 0,
+        abortSignal: AbortSignal.timeout(SPEECH_TIMEOUT_MS),
+      });
+      return { bytes: audio.uint8Array, mediaType: audio.mediaType };
+    },
   };
 }
 
@@ -187,5 +230,6 @@ export function createDefaultModelClient(): ModelClient {
     chatModel: google(MODELS.chat),
     imageModel: google.image(MODELS.image),
     videoModel: createOmniVideoModel(process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? ""),
+    speechModel: google.speech(MODELS.speech),
   });
 }

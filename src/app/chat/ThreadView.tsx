@@ -136,6 +136,11 @@ export function ThreadView({
               <figure key={item.id} className="result result-video">
                 <video className="video-player" src={assetUrl(item.assetId)} controls playsInline preload="metadata" aria-label="Video iklan hasil LAKU" />
                 <figcaption>Video iklan</figcaption>
+                {item.script && (
+                  <p className="script">
+                    <strong>Naskah voice over:</strong> {item.script}
+                  </p>
+                )}
                 <div className="actions">
                   <a className="btn btn-primary" href={downloadUrl(item.assetId)} download>
                     Unduh

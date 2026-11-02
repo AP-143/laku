@@ -23,6 +23,10 @@ export const MODELS = {
    * Measured 2026-11-02 (see BAKEOFF_NOTES): a 4 s clip came back at 720x1280 with an audio track, about US$0.10 per second.
    */
   video: "gemini-omni-1.1-flash",
+  /** Reads the voice-over aloud, called directly on the Google key (measured 2026-11-02: 12 s of Indonesian in 4 s). */
+  speech: "gemini-3.8-flash-lite-tts",
+  /** The one prebuilt voice used for every narration, so a video sounds the same from start to end. */
+  voice: "Kore",
 } as const;
 
 /**
@@ -127,6 +131,11 @@ export const COSTS = {
   monthlyBudgetUsd: 4,
   /** One second of video from `MODELS.video` at 720p (about US$0.10, see the bake-off notes). */
   videoUsdPerSecond: 0.1,
+  /**
+   * One second of narration: US$12 per 1M audio tokens (the price from 2027-01-01; US$6 until then) at 25 tokens
+   * per second, so the estimate is already the higher one.
+   */
+  speechUsdPerSecond: 0.0003,
   /** A video estimated above this is only made after the seller says yes; cheaper ones start at once. */
   videoConfirmAboveUsd: 1,
   /** Only to show rupiah next to dollars in a question to the seller; a rough rate, not a quote. */
