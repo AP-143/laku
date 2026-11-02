@@ -20,6 +20,7 @@ export type ThreadItem =
       busy?: number[];
       approved: boolean;
     }
+  | { id: string; kind: "video"; assetId: string; sourceAssetId: string }
   | { id: string; kind: "error"; message: string; code?: ErrorCode; retryable: boolean; retry?: RetryRequest };
 
 export const PRESET_LABELS = {
@@ -45,6 +46,15 @@ export function lastPhotoAssetId(items: ThreadItem[]): string | undefined {
     if (item.kind === "user" && item.photoAssetId) return item.photoAssetId;
   }
   return undefined;
+}
+
+/** The finished frames of the newest storyboard in scene order, which a video is made from. */
+export function storyboardFrames(items: ThreadItem[]): string[] {
+  const latest = items.findLast((item) => item.kind === "scenes");
+  if (!latest) return [];
+  return Object.entries(latest.frames)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([, assetId]) => assetId);
 }
 
 /**

@@ -79,6 +79,19 @@ export function ThreadView({ items, progress, busy, onRetry, onEditScene, onMake
               </figure>
             );
 
+          case "video":
+            return (
+              <figure key={item.id} className="result result-video">
+                <video className="video-player" src={assetUrl(item.assetId)} controls playsInline preload="metadata" aria-label="Video iklan hasil LAKU" />
+                <figcaption>Video iklan</figcaption>
+                <div className="actions">
+                  <a className="btn btn-primary" href={downloadUrl(item.assetId)} download>
+                    Unduh
+                  </a>
+                </div>
+              </figure>
+            );
+
           case "scenes": {
             const framesStarted = item.approved;
             return (

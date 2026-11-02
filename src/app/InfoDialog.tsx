@@ -22,7 +22,7 @@ const TOPICS: Record<Topic, { title: string; body: ReactNode }> = {
         </li>
         <li>
           <strong>Video</strong>
-          <span>Segera hadir. Belum tersedia di versi gratis ini.</span>
+          <span>Video iklan tanpa suara dari gambar storyboard. Kamu sebut panjangnya di chat, misalnya “video 10 detik”.</span>
         </li>
       </ul>
     ),

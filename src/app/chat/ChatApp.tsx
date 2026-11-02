@@ -10,7 +10,16 @@ import { Composer, type AttachedPhoto } from "./Composer";
 import { loadConversation, saveConversation } from "./saved-conversation";
 import { ThreadView, type Progress } from "./ThreadView";
 import { SCENE_INDEXES } from "../../shared/storyboard";
-import { lastPhotoAssetId, lastStudioAssetId, openStoryboard, styleOf, type Preset, type RetryRequest, type ThreadItem } from "./thread";
+import {
+  lastPhotoAssetId,
+  lastStudioAssetId,
+  openStoryboard,
+  storyboardFrames,
+  styleOf,
+  type Preset,
+  type RetryRequest,
+  type ThreadItem,
+} from "./thread";
 import "./chat.css";
 
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
@@ -125,7 +134,7 @@ export default function ChatApp() {
                 item.kind === "scenes" ? { ...item, busy: [...(item.busy ?? []), sceneIndex] } : item,
               );
             }
-            setProgress((current) => current ?? { message: "Sedang membuat gambar…" });
+            setProgress((current) => current ?? { message: event.kind === "video" ? "Sedang membuat video…" : "Sedang membuat gambar…" });
             break;
           }
           case "job_progress":
@@ -149,6 +158,9 @@ export default function ChatApp() {
                 ...current,
                 { id: newId(), kind: "studio", assetId: event.assetId, sourceAssetId, retry },
               ]);
+            } else if (event.role === "video" && event.sourceAssetId) {
+              const sourceAssetId = event.sourceAssetId;
+              setItems((current) => [...current, { id: newId(), kind: "video", assetId: event.assetId, sourceAssetId }]);
             } else if (event.role === "storyboard_frame" && context.scenesItemId && event.sceneIndex !== undefined) {
               const sceneIndex = event.sceneIndex;
               patchItem(context.scenesItemId, (item) =>
@@ -202,8 +214,11 @@ export default function ChatApp() {
       { role: "user", ...lastMessage },
     ];
     const open = openStoryboard(itemsRef.current);
+    const frames = storyboardFrames(itemsRef.current);
     return {
       messages,
+      // The finished storyboard frames, so a typed "video 10 detik" can be made from them.
+      frames: frames.length > 0 ? frames : undefined,
       // The newest result, or else the photo sent earlier, so "bikin foto studio" works on a later turn.
       lastImageAssetId: lastStudioAssetId(itemsRef.current) ?? lastPhotoAssetId(itemsRef.current),
       storyboard: open ? { photoAssetId: open.sourceAssetId, scenes: open.scenes } : undefined,

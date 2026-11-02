@@ -632,6 +632,20 @@
   background: #ecebe8;
 }
 
+.chat .result-video {
+  display: grid;
+  justify-items: center;
+}
+
+.chat .video-player {
+  width: auto;
+  max-width: 100%;
+  max-height: 70vh;
+  aspect-ratio: 9 / 16;
+  border-radius: 12px;
+  background: #111;
+}
+
 .chat figcaption {
   margin-top: 6px;
   font-size: 12px;

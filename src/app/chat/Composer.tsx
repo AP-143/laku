@@ -94,7 +94,7 @@ export function Composer({ ref, ...props }: ComposerProps) {
       : intent === "studio_photo"
         ? "Lampirkan foto produk, lalu ceritakan gaya fotonya (boleh dikosongkan)…"
         : intent === "video"
-          ? "Fitur video belum tersedia, tapi kamu boleh coba tanya ya…"
+          ? "Tulis panjang videonya, misalnya “video iklan 10 detik dari storyboard” (storyboard harus sudah punya gambar)…"
           : "Lampirkan foto produkmu, lalu ceritakan mau dibuat apa, misalnya “bikinin foto studio background putih”…";
 
   return (
