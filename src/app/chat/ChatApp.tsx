@@ -363,8 +363,8 @@ export default function ChatApp() {
             <div className="foot-row">
               <span className="rule" />
               {usage && (
-                <span className="usage" title="Perkiraan pemakaian kredit gratis bulan ini">
-                  Kuota gratis bulan ini: {formatUsd(usage.monthUsd)} / {formatUsd(usage.budgetUsd)}
+                <span className="usage" title="Perkiraan pemakaian saldo bulan ini">
+                  Pemakaian bulan ini: {formatUsd(usage.monthUsd)} / {formatUsd(usage.budgetUsd)}
                 </span>
               )}
             </div>

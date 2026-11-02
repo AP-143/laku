@@ -35,7 +35,7 @@ export type ChatEvent =
   | { type: "done" };
 
 /** Lets the UI tell the common failures apart; `message` is still what the user reads. */
-export type ErrorCode = "rate_limited" | "quota_exhausted";
+export type ErrorCode = "rate_limited" | "quota_exhausted" | "daily_cap_reached";
 
 export type JobKind = "studio_photo" | "storyboard_frame" | "video";
 export type AssetKind = "image" | "video";

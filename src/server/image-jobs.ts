@@ -3,7 +3,7 @@ import { COSTS } from "../config/models";
 import type { AssetRole, ChatEvent, JobKind } from "../shared/chat-events";
 import type { AssetFile, AssetStore } from "./asset-store";
 import type { ModelClient } from "./model-client";
-import { QuotaExhaustedError } from "./model-errors";
+import { DailyCapReachedError, QuotaExhaustedError } from "./model-errors";
 import { preparePhoto } from "./photo-intake";
 import { readUsage, type UsageLedger } from "./usage-ledger";
 
@@ -39,9 +39,18 @@ export function createImageJobs(deps: {
     async generate({ prompt, source, sourceAssetId, kind, role, sceneIndex }: ImageJobRequest) {
       if (!(await isProduct(source))) throw new NotAProductError();
 
-      // The free credit is the hard limit, so a generation that would pass it never starts.
-      // The cost is booked before the call, so simultaneous requests cannot both squeeze under the limit.
-      if (!(await ledger.reserve(COSTS.imageUsd, COSTS.monthlyBudgetUsd))) throw new QuotaExhaustedError();
+      // The balance is the hard limit, so a generation that would pass the month or the day never starts.
+      // The cost is booked before the call, so simultaneous requests cannot both squeeze under a limit.
+      const reservation = await ledger.reserve(COSTS.imageUsd, {
+        monthlyUsd: COSTS.monthlyBudgetUsd,
+        dailyUsd: COSTS.dailyBudgetUsd,
+      });
+      if (!reservation.ok) {
+        if (reservation.limit === "daily") {
+          throw new DailyCapReachedError(reservation.resetsAt, (await readUsage(ledger)).remainingUsd);
+        }
+        throw new QuotaExhaustedError();
+      }
 
       send({ type: "job_started", jobId: randomUUID(), kind });
       let image;

@@ -11,11 +11,16 @@ import { fakeChatModel } from "./fake-models";
 import { fakeImageModel, type FakeImageModel } from "./fake-image-model";
 
 interface TestAppOptions {
-  /** The pretend current time, for month rollover. Change `app.clock.now` later to move time on. */
+  /** The pretend current time, for month and day rollover. Change `app.clock.now` later to move time on. */
   now?: Date;
-  /** Spend already on the meter this month. */
+  /** Spend already on the meter this month, booked on the first day so it does not count towards today. */
   startingMonthUsd?: number;
+  /** Spend already on the meter today. */
+  startingTodayUsd?: number;
 }
+
+/** A mid-month, mid-day default, so no test depends on the real date. */
+const DEFAULT_NOW = new Date("2026-11-15T12:00:00Z");
 
 /** The app's request handlers wired to fake models and throwaway storage. */
 export function createTestApp(
@@ -25,12 +30,16 @@ export function createTestApp(
 ) {
   const dir = mkdtempSync(path.join(os.tmpdir(), "laku-test-"));
   const store = createAssetStore(path.join(dir, "assets"));
-  const clock = { now: options.now ?? new Date() };
+  const clock = { now: options.now ?? DEFAULT_NOW };
   const ledgerFile = path.join(dir, "usage.jsonl");
   const ledger = createUsageLedger(ledgerFile, () => clock.now);
-  if (options.startingMonthUsd) {
-    writeFileSync(ledgerFile, `${JSON.stringify({ at: clock.now.toISOString(), usd: options.startingMonthUsd })}
-`);
+  const monthStart = new Date(Date.UTC(clock.now.getUTCFullYear(), clock.now.getUTCMonth(), 1));
+  const starting = [
+    options.startingMonthUsd ? { at: monthStart, usd: options.startingMonthUsd } : undefined,
+    options.startingTodayUsd ? { at: clock.now, usd: options.startingTodayUsd } : undefined,
+  ].filter((entry) => entry !== undefined);
+  if (starting.length > 0) {
+    writeFileSync(ledgerFile, starting.map((entry) => `${JSON.stringify({ at: entry.at.toISOString(), usd: entry.usd })}\n`).join(""));
   }
   return {
     chat: createChatHandler(createModelClient({ chatModel: model, imageModel }), store, ledger),

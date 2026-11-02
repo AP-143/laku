@@ -1,3 +1,4 @@
+import { COSTS } from "../config/models";
 import type { ChatEvent } from "../shared/chat-events";
 
 /** Turns whatever a model call threw into the one error event the user sees. */
@@ -5,16 +6,41 @@ import type { ChatEvent } from "../shared/chat-events";
 type ErrorEvent = Extract<ChatEvent, { type: "error" }>;
 
 const RATE_LIMITED_MESSAGE = "Terlalu banyak permintaan dalam waktu singkat. Tunggu sebentar lalu coba lagi ya.";
-const QUOTA_EXHAUSTED_MESSAGE = "Kuota gratis bulan ini sudah habis. Coba lagi nanti atau bulan depan ya.";
+const QUOTA_EXHAUSTED_MESSAGE = "Kuota bulan ini sudah habis. Coba lagi nanti atau bulan depan ya.";
 const REFUSED_MESSAGE = "Fotonya ditolak oleh model gambar. Coba foto lain, atau ubah permintaanmu, lalu coba lagi ya.";
 const UNSUPPORTED_MESSAGE = "Model gambar tidak bisa memakai fotonya. Coba foto lain (JPG, PNG, atau WebP) lalu coba lagi ya.";
 const NETWORK_MESSAGE = "Koneksi ke layanan AI bermasalah. Cek internetmu lalu coba lagi ya.";
 const GENERIC_MESSAGE = "Maaf, ada gangguan saat memproses pesanmu. Coba lagi ya.";
 const LOCAL_QUOTA_MESSAGE =
-  "Kuota gratis bulan ini sudah habis, jadi aku berhenti dulu supaya tidak ada biaya. Coba lagi bulan depan ya.";
+  "Kuota bulan ini sudah habis, jadi aku berhenti dulu supaya tidak ada biaya. Coba lagi bulan depan ya.";
 
 /** The local usage meter says the free credit is gone, so no model was called at all. */
 export class QuotaExhaustedError extends Error {}
+
+/** Today's spend cap is reached, so no model was called. The balance of the month is not gone yet. */
+export class DailyCapReachedError extends Error {
+  constructor(
+    /** When the day ends and today's total starts again from zero (00:00 UTC). */
+    readonly resetsAt: Date,
+    /** What is left of this month's budget, in US dollars. */
+    readonly remainingMonthUsd: number,
+  ) {
+    super("Daily spend cap reached");
+  }
+}
+
+/** The reset time in the seller's own clock (WIB, UTC+7), as "07.00". */
+function wibClock(date: Date): string {
+  const hours = (date.getUTCHours() + 7) % 24;
+  return `${String(hours).padStart(2, "0")}.${String(date.getUTCMinutes()).padStart(2, "0")}`;
+}
+
+function dailyCapMessage(error: DailyCapReachedError): string {
+  return (
+    `Batas pemakaian hari ini (US$${COSTS.dailyBudgetUsd.toFixed(2)}) sudah tercapai, jadi aku berhenti dulu supaya tidak ada biaya berlebih. ` +
+    `Sisa anggaran bulan ini US$${error.remainingMonthUsd.toFixed(2)}. Bisa dipakai lagi sekitar pukul ${wibClock(error.resetsAt)} WIB.`
+  );
+}
 
 function statusOf(error: unknown): number | undefined {
   const { statusCode, status, cause } = (error ?? {}) as { statusCode?: unknown; status?: unknown; cause?: unknown };
@@ -28,6 +54,9 @@ function messageOf(error: unknown): string {
 }
 
 export function describeFailure(error: unknown): ErrorEvent {
+  if (error instanceof DailyCapReachedError) {
+    return { type: "error", message: dailyCapMessage(error), retryable: true, code: "daily_cap_reached" };
+  }
   if (error instanceof QuotaExhaustedError) {
     return { type: "error", message: LOCAL_QUOTA_MESSAGE, retryable: true, code: "quota_exhausted" };
   }

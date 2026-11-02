@@ -98,6 +98,8 @@ first candidate, untested.
 export const COSTS = {
   /** One image from `MODELS.image` (about US$0.04, see the bake-off notes). */
   imageUsd: 0.04,
-  /** The gateway's monthly free credit. The app never plans to spend past it. */
-  monthlyBudgetUsd: 5,
+  /** The prepaid Google balance (about Rp70,000). The app never plans to spend past it. */
+  monthlyBudgetUsd: 4,
+  /** Stops a bug or a loop from burning the whole balance in one day; normal use stays well under it. */
+  dailyBudgetUsd: 2,
 } as const;
