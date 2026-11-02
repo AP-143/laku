@@ -61,6 +61,8 @@ export const VIDEO_SETTINGS = {
  * Filled in by the developer after reviewing a live run of the bake-off script.
  */
 export const BAKEOFF_NOTES = `
+History: the first run, through the Vercel AI Gateway (no longer used by the app; the newer run is below).
+
 Run of 2026-11-01 on 5 real product photos (skincare set, gamepad, sticker tumbler, juice bottle, tea cup),
 studio photo plus 9:16 lifestyle frame, judged by eye against the originals.
 
@@ -115,7 +117,7 @@ Speech: gemini-3.8-flash-lite-tts made 11.9 s of Indonesian narration (24 kHz mo
 US$0.002 (US$6 per 1M audio tokens until 2026-12-31, US$12 after; 25 tokens per second).
 `.trim();
 
-/** Estimated spend, used by the usage meter. Prices change, so re-check them against the gateway catalogue. */
+/** Estimated spend, used by the usage meter. Prices change, so re-check them against Google's pricing page. */
 export const COSTS = {
   /** One image from `MODELS.image` at 1K (US$0.0336 on Google's pricing page, see the bake-off notes). */
   imageUsd: 0.0336,

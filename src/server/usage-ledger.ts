@@ -4,8 +4,8 @@ import { COSTS } from "../config/models";
 
 /**
  * The usage meter's ledger: a local estimate of spend, one line per paid call.
- * It is only an estimate (the gateway has the real balance), but it is what the UI shows
- * and what stops the app from planning past the free credit.
+ * It is only an estimate (the Google AI Studio balance is the real one), but it is what the UI shows
+ * and what stops the app from planning past the monthly and daily limits.
  */
 export interface UsageLedger {
   record(usd: number): Promise<void>;

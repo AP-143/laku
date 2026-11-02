@@ -18,13 +18,14 @@ This version of Next.js has breaking changes: APIs, conventions, and file struct
 
 ## Models and the live bake-off
 
-All model IDs live in `src/config/models.ts`. The chat model runs directly on the free Google AI Studio key (not through the Vercel AI Gateway); image models will use the gateway. Inside the app, only `src/server/model-client.ts` talks to models (the manual bake-off script is the exception). `npm run bakeoff -- --dry-run` prints the plan and estimated spend without calling any model; `npm run bakeoff` runs the live comparison (spends free-tier credit, capped by `--cap`, default US$2). Keep generated outputs under `storage/` (git-ignored).
+All model IDs live in `src/config/models.ts`. Every model runs directly on the Google AI Studio key (`GOOGLE_GENERATIVE_AI_API_KEY`), never through the Vercel AI Gateway: text on `gemini-3.5-flash-lite`, studio photos and storyboard frames on `gemini-nano-banana-2.1`. Video (Gemini Omni Flash) and voice-over (Gemini TTS) are planned, see the open tickets. Inside the app, only `src/server/model-client.ts` talks to models (the manual bake-off script is the exception). `npm run bakeoff -- --dry-run` prints the plan and estimated spend without calling any model; `npm run bakeoff` runs the live comparison, spends the prepaid balance, and refuses to start above `--cap` (default US$1.2). Narrow a run with `--only`, `--use-case` and `--models`. Keep generated outputs under `storage/` (git-ignored).
 
-## Gateway account facts (verified 2026-11-01)
+## Google account facts (verified 2026-11-02)
 
-- The AI Gateway needs a valid card on file before it unlocks the US$5 monthly free credit. Do not buy credits and keep auto top-up off; set a budget on the API key.
-- The free tier covers only a subset of models. `bfl/flux-kontext-pro` works on it; `meta/muse-image-1.0` and `google/gemini-nano-banana-2.1` do not.
-- Every video model is refused unless the paid balance is at least US$10, so video is not available on the free credit.
+- Image and video models have no free tier: billing must be enabled on the project that owns the key. The account uses a prepaid balance (about US$4) with auto-reload off, so the balance is the hard stop. Google has no balance API: check AI Studio before and after a bake-off run.
+- The app also limits its own spend: US$4 per month and US$2 per day (`COSTS` in `src/config/models.ts`), both estimates.
+- Veo 3.1 was shut down in the Gemini API on 2026-10-22. Video uses Gemini Omni Flash (`gemini-omni-1.1-flash`) through the Interactions API, about US$0.10 per second; its clips come with an audio track.
+- The old gateway experiments are kept only as history in `BAKEOFF_NOTES`.
 
 ## Tests
 
