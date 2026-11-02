@@ -1,0 +1,104 @@
+/* The Fitur / Cara Kerja / Kontak dialog. Rendered into <body>, so it carries its own look for both pages. */
+
+.info-dialog {
+  margin: auto;
+  width: min(460px, calc(100vw - 32px));
+  padding: 0;
+  border: 0;
+  border-radius: 20px;
+  background: #fff;
+  color: #1d1d1d;
+  font-family: var(--font-inter), Inter, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+}
+
+.info-dialog::backdrop {
+  background: rgba(10, 13, 18, 0.55);
+  backdrop-filter: blur(4px);
+}
+
+.info-card {
+  padding: 24px 24px 20px;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.info-card h2 {
+  margin-bottom: 14px;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.info-card ul,
+.info-card ol {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-left: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.info-card ul li {
+  display: flex;
+  flex-direction: column;
+}
+
+.info-card ul strong {
+  color: #c4622d;
+}
+
+.info-card ol li {
+  counter-increment: step;
+  padding-left: 34px;
+  position: relative;
+}
+
+.info-card ol li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 1px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(163deg, #fbbc94 0%, #f49d70 46%, #e88654 100%);
+}
+
+.info-card p {
+  margin-top: 14px;
+  color: #3a3a3a;
+}
+
+.info-card p:first-of-type:only-child {
+  margin-top: 0;
+}
+
+.info-close {
+  margin-top: 18px;
+  height: 40px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 999px;
+  background: #1b1b1b;
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.info-close:hover {
+  background: #000;
+}
+
+.info-dialog :focus-visible {
+  outline: 2px solid #e88654;
+  outline-offset: 2px;
+}

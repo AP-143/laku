@@ -12,6 +12,8 @@ Supplied by the user as the visual spec for the LAKU chat page. Adaptations agre
 - The background video is downloaded into `public/media/`.
 - Do not add the "no JS except anim class" restriction: the page needs real application code.
 
+- Product pass: the page follows the landing page's light look (paper background with white strokes from `PaperBackground`, heavy ink type, black pill buttons, orange accent) instead of the dark lake video, so there is no background video on this page. Like the landing page it has no logo or wordmark: the nav is plain text links on the left and "Chat Baru" on the right, with no burger menu on phones (the links wrap instead). The headline uses the landing page's type unit (`--fs`, weight 800, tracking -0.045em). The footer copies the landing footer (paragraph with an orange drop cap, a rule, and the monthly quota as plain text at the right). The nav links Fitur / Cara Kerja / Kontak open a small dialog, and three clickable example requests sit under the empty composer. The dark-theme details below (brand, burger, logos row) are superseded by this note.
+
 ---
 
 Recreate this page as ONE self-contained HTML file (inline CSS + JS). Match it pixel-faithfully. Do not invent extra sections, extra pages, extra copy, or a different visual language. The entire website is this single full-viewport hero.

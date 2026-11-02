@@ -1,0 +1,11 @@
+.paper {
+  position: absolute;
+  inset: 0;
+  background: #f2f2f1;
+}
+
+.paper svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

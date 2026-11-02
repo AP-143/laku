@@ -10,6 +10,7 @@
   --ink-soft: #3a3a3a;
   --rule: #a9a9a6;
   --button: #1b1b1b;
+  --accent: #e88654;
 
   position: fixed;
   inset: 0;
@@ -54,16 +55,9 @@
 
 /* ---------- paper and lines ---------- */
 
-.landing .paper {
+.landing .paper-wrap {
   position: absolute;
   inset: 0;
-  background: var(--paper);
-}
-
-.landing .paper svg {
-  width: 100%;
-  height: 100%;
-  display: block;
 }
 
 /* ---------- nav ---------- */
@@ -132,19 +126,6 @@
   letter-spacing: normal;
 }
 
-.landing .pill video {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  height: 100%;
-  min-width: 4.2em;
-  width: 100%;
-  object-fit: cover;
-  object-position: center top;
-  opacity: 1;
-}
-
 .landing .hair {
   position: absolute;
   inset: 0;
@@ -153,38 +134,12 @@
   pointer-events: none;
 }
 
-.landing .icons {
+.landing .pill video {
   position: absolute;
   inset: 0;
-  opacity: 0.85;
-  pointer-events: none;
-}
-
-.landing .icon {
-  position: absolute;
-  top: 50%;
-  width: 0.14em;
-  height: 0.14em;
-  min-width: 18px;
-  min-height: 18px;
-  transform: translateY(-50%);
-  display: block;
-  padding: 0;
-}
-
-.landing .icon svg,
-svg.icon {
   width: 100%;
   height: 100%;
-}
-
-.landing .icon-left {
-  left: 0.2em;
-}
-
-.landing .icon-right {
-  right: 0.2em;
-  pointer-events: auto;
+  object-fit: cover;
 }
 
 /* ---------- footer ---------- */
@@ -215,7 +170,7 @@ svg.icon {
   font-weight: 650;
   line-height: 0.8;
   margin-right: 0.08em;
-  color: var(--ink);
+  color: var(--accent);
 }
 
 .landing .foot-row {
@@ -269,7 +224,7 @@ svg.icon {
   opacity: 1;
 }
 
-.landing.pre .paper {
+.landing.pre .paper-wrap {
   opacity: 0;
 }
 
@@ -283,10 +238,6 @@ svg.icon {
 
 .landing.pre .rule {
   transform: scaleX(0);
-}
-
-.landing.pre .icons {
-  opacity: 0;
 }
 
 /* ---------- PHONE ---------- */
@@ -308,10 +259,6 @@ svg.icon {
   .landing .pill {
     width: calc(100vw - 40px);
     height: calc((100vw - 40px) / 1.85);
-  }
-
-  .landing .pill video {
-    min-width: 100%;
   }
 
   .landing .top {

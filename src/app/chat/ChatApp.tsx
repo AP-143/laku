@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChatEvent, ChatIntent } from "../../shared/chat-events";
+import { useInfoDialog } from "../InfoDialog";
+import { PaperBackground } from "../PaperBackground";
 import { assetUrl, fetchUsage, sendChat, uploadPhoto } from "./chat-client";
 import { Composer, type AttachedPhoto } from "./Composer";
 import { loadConversation, saveConversation } from "./saved-conversation";
@@ -47,13 +49,13 @@ export default function ChatApp() {
   const [note, setNote] = useState<string | undefined>();
   const [usage, setUsage] = useState<Usage | undefined>();
   const [menu, setMenu] = useState(false);
+  const info = useInfoDialog();
   // The entrance animation plays once on first paint, then its class is removed.
   const [animating, setAnimating] = useState(true);
 
   const itemsRef = useRef(items);
   const cardRef = useRef<HTMLFormElement>(null);
   const flipFrom = useRef<DOMRect | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
 
   const inThread = items.length > 0;
 
@@ -78,15 +80,6 @@ export default function ChatApp() {
   useEffect(() => {
     if (ready) saveConversation(items);
   }, [items, ready]);
-
-  // Honour the system's reduced-motion setting for the background video too.
-  useEffect(() => {
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const apply = () => (query.matches ? videoRef.current?.pause() : void videoRef.current?.play().catch(() => {}));
-    apply();
-    query.addEventListener("change", apply);
-    return () => query.removeEventListener("change", apply);
-  }, []);
 
   // When the first message turns the hero into a thread, glide the composer to its new place.
   useLayoutEffect(() => {
@@ -313,61 +306,19 @@ export default function ChatApp() {
   return (
     <div className={`chat${inThread ? " is-thread" : ""}${animating ? " anim" : ""}`}>
       <div className="stage">
-        <video
-          ref={videoRef}
-          className="stage-video"
-          src="/media/lake.mp4"
-          autoPlay
-          muted
-          loop
-          playsInline
-          preload="auto"
-          aria-hidden="true"
-        />
-        <div className="stage-dim" aria-hidden="true" />
+        <PaperBackground />
         <div className="frame">
-          <input type="checkbox" id="menu" className="menu-toggle" aria-hidden="true" tabIndex={-1} />
           <header className="nav">
-            <Link className="brand" href="/" aria-label="LAKU beranda">
-              <svg className="mark" viewBox="0 0 34 34" aria-hidden="true">
-                <circle cx="17" cy="17" r="17" fill="#9C86CE" />
-                <circle cx="17" cy="17" r="8.6" fill="#fff" />
-                <circle cx="17" cy="17" r="3.7" fill="#151519" />
-              </svg>
-              <span className="wordmark">LAKU</span>
-            </Link>
             <nav className="links" aria-label="Menu utama">
               <Link href="/">Beranda</Link>
-              <a href="#">Fitur</a>
-              <a href="#">Cara Kerja</a>
-              <a href="#">Kontak</a>
+              <a {...info.link("fitur")}>Fitur</a>
+              <a {...info.link("cara-kerja")}>Cara Kerja</a>
+              <a {...info.link("kontak")}>Kontak</a>
             </nav>
-            <button type="button" className="cta" onClick={newChat} disabled={busy || !inThread}>
-              <span>Chat Baru</span>
+            <button type="button" className="new-chat" onClick={newChat} disabled={busy || !inThread}>
+              Chat Baru
             </button>
-            <label className="burger" htmlFor="menu" aria-label="Buka menu">
-              <svg viewBox="0 0 17 12" aria-hidden="true">
-                <path d="M0 1h17M0 11h17" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" />
-              </svg>
-            </label>
           </header>
-          <div className="sheet">
-            <div className="sheet-panel">
-              <Link href="/">Beranda</Link>
-              <a href="#">Fitur</a>
-              <a href="#">Cara Kerja</a>
-              <a href="#">Kontak</a>
-              <button type="button" className="sheet-cta" onClick={newChat} disabled={busy || !inThread}>
-                Chat Baru
-              </button>
-            </div>
-          </div>
-
-          {usage && (
-            <p className="usage" title="Perkiraan pemakaian kredit gratis bulan ini">
-              Kuota gratis bulan ini: {formatUsd(usage.monthUsd)} / {formatUsd(usage.budgetUsd)}
-            </p>
-          )}
 
           <main className="hero">
             <h1 className="h1">Ubah foto produkmu jadi konten studio.</h1>
@@ -399,14 +350,28 @@ export default function ChatApp() {
               busy={busy}
               onSubmit={submit}
               inThread={inThread}
+              onSuggest={(suggestion) => {
+                setText(suggestion.text);
+                setIntent(suggestion.intent);
+                if (suggestion.preset) setPreset(suggestion.preset);
+              }}
             />
           </main>
 
-          <footer className="proof">
-            <p>Dibuat untuk penjual online Indonesia</p>
+          <footer className="foot">
+            <p>Dibuat untuk penjual online Indonesia — foto studio dan storyboard iklan dari satu foto produk.</p>
+            <div className="foot-row">
+              <span className="rule" />
+              {usage && (
+                <span className="usage" title="Perkiraan pemakaian kredit gratis bulan ini">
+                  Kuota gratis bulan ini: {formatUsd(usage.monthUsd)} / {formatUsd(usage.budgetUsd)}
+                </span>
+              )}
+            </div>
           </footer>
         </div>
       </div>
+      {info.dialog}
     </div>
   );
 }

@@ -2,6 +2,8 @@
 
 Supplied by the user as the visual spec for the LAKU landing page. Adaptations agreed in the spec (issue "LAKU"): brand word is **LAKU** (LA | pill | KU) instead of WILD, copy is Indonesian, the CTA navigates to `/chat`, the reveal plays only on page load, social links are removed, media is downloaded into `public/media/`.
 
+- Product pass: the island video inside the pill is replaced by a looping 4 s video (1080x540) made from the user-supplied "01 Otomasi Produk" animated WebP (a 3D cyberpunk scene: a person with a robotic arm, a laptop and a glowing AI orb), converted with `scripts/make-landing-video.mjs` (ffmpeg, no AI model). The files live in `public/media/landing/`. The drop-cap uses the orange accent and the nav links Fitur / Cara Kerja / Kontak open a small dialog.
+
 ---
 
 # Prompt: Wild pill hero

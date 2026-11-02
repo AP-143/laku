@@ -11,7 +11,15 @@ export interface AttachedPhoto {
   uploading: boolean;
 }
 
+/** Ready-made requests shown under the empty composer, so a new seller sees what to ask for. */
+const SUGGESTIONS: Array<{ label: string; text: string; intent: ChatIntent; preset?: Preset }> = [
+  { label: "Foto studio latar putih", text: "Bikinin foto studio dengan latar putih bersih", intent: "studio_photo", preset: "clean_white" },
+  { label: "Foto lifestyle meja kayu", text: "Bikinin foto lifestyle di atas meja kayu dengan cahaya pagi", intent: "studio_photo", preset: "lifestyle" },
+  { label: "Storyboard 4 scene untuk Reels", text: "Bikinin storyboard 4 scene untuk Reels", intent: "storyboard" },
+];
+
 interface ComposerProps {
+  onSuggest: (suggestion: { text: string; intent: ChatIntent; preset?: Preset }) => void;
   /** The card, so the page can animate it when the hero turns into a thread. */
   ref?: Ref<HTMLFormElement>;
   text: string;
@@ -218,6 +226,15 @@ export function Composer({ ref, ...props }: ComposerProps) {
           </div>
         </div>
       </form>
+      {!props.inThread && (
+        <div className="suggest" role="group" aria-label="Contoh permintaan">
+          {SUGGESTIONS.map((suggestion) => (
+            <button key={suggestion.label} type="button" onClick={() => props.onSuggest(suggestion)}>
+              {suggestion.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
