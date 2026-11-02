@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { fakeChatModel } from "./testing/fake-models";
+import { fakeImageModel } from "./testing/fake-image-model";
 import { readEvents } from "./testing/events";
 import { chatRequest, createTestApp } from "./testing/harness";
 import { makePhoto, uploadRequest } from "./testing/photos";
@@ -73,5 +74,30 @@ describe("usage meter", () => {
     assert.match(error?.type === "error" ? error.message : "", /kuota/i);
     assert.equal(app.imageModel.calls.length, 0);
     assert.equal(events.some((e) => e.type === "done"), false);
+  });
+});
+
+describe("usage meter under concurrent requests", () => {
+  it("never lets simultaneous requests pass the free credit together", async () => {
+    // Room for exactly one more image (US$0.04 of the US$5 budget).
+    const app = createTestApp(fakeChatModel({ chunks: ["x"] }), undefined, { startingMonthUsd: 4.95 });
+    const photoAssetId = await uploadPhoto(app);
+
+    const turns = await Promise.all(
+      [1, 2, 3].map(async () => readEvents(await app.chat(studioRequest(photoAssetId)))),
+    );
+
+    assert.equal(app.imageModel.calls.length, 1);
+    assert.equal(turns.filter((events) => events.some((e) => e.type === "asset_ready")).length, 1);
+  });
+
+  it("gives the reservation back when the model call fails", async () => {
+    const failing = fakeImageModel({ failWith: new Error("boom") });
+    const app = createTestApp(fakeChatModel({ chunks: ["x"] }), failing);
+    const photoAssetId = await uploadPhoto(app);
+
+    await readEvents(await app.chat(studioRequest(photoAssetId)));
+
+    assert.equal((await readUsage(app)).monthUsd, 0);
   });
 });

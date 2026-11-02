@@ -3,7 +3,7 @@ import { isAssetId, type AssetFile, type AssetStore } from "./asset-store";
 import { readBoundedBytes } from "./bounded-body";
 import type { Intent } from "./chat-prompt";
 import { eventResponse } from "./event-response";
-import { createImageJobs } from "./image-jobs";
+import { NotAProductError, createImageJobs } from "./image-jobs";
 import { framePrompt, revisionPrompt, studioPhotoPrompt } from "./image-prompts";
 import { describeFailure } from "./model-errors";
 import type { ChatMessage, ModelClient } from "./model-client";
@@ -160,7 +160,13 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
     }
 
     return eventResponse(async (send) => {
-      const jobs = createImageJobs({ models, assets, ledger, send });
+      // Each image is looked at once per request, however many generations use it.
+      const verdicts = new Map<AssetFile, Promise<boolean>>();
+      const isProduct = (image: AssetFile) => {
+        if (!verdicts.has(image)) verdicts.set(image, models.isProductPhoto(image));
+        return verdicts.get(image)!;
+      };
+      const jobs = createImageJobs({ models, assets, ledger, send, isProduct });
 
       function reply(text: string) {
         send({ type: "assistant_text", text });
@@ -201,7 +207,7 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         }
 
         // The cheap check comes first, so nothing costly ever runs for a photo that is not a product.
-        if (photo && !(await models.isProductPhoto(photo))) return reply(NOT_A_PRODUCT_MESSAGE);
+        if (photo && !(await isProduct(photo))) return reply(NOT_A_PRODUCT_MESSAGE);
 
         if (conversation.intent === "video") return reply(VIDEO_UNAVAILABLE_MESSAGE);
 
@@ -268,6 +274,7 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         }
         send({ type: "done" });
       } catch (error) {
+        if (error instanceof NotAProductError) return reply(NOT_A_PRODUCT_MESSAGE);
         // No automatic retry: the user decides whether to try again.
         send(describeFailure(error));
       }

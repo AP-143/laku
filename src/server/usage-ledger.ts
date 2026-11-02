@@ -9,6 +9,12 @@ import { COSTS } from "../config/models";
  */
 export interface UsageLedger {
   record(usd: number): Promise<void>;
+  /**
+   * Books `usd` only if the month's total would stay within `limit`; returns whether it did.
+   * Check and booking happen as one step, so simultaneous requests cannot pass the limit together.
+   * Give the money back with `record(-usd)` if the paid call then fails.
+   */
+  reserve(usd: number, limit: number): Promise<boolean>;
   /** The estimated spend of the current calendar month (UTC, like the gateway's billing month). */
   monthTotal(): Promise<number>;
 }
@@ -17,10 +23,25 @@ const roundUsd = (usd: number) => Math.round(usd * 10_000) / 10_000;
 const monthOf = (date: Date) => date.toISOString().slice(0, 7);
 
 export function createUsageLedger(filePath: string, now: () => Date = () => new Date()): UsageLedger {
-  return {
-    async record(usd) {
-      await mkdir(path.dirname(filePath), { recursive: true });
-      await appendFile(filePath, `${JSON.stringify({ at: now().toISOString(), usd })}\n`);
+  async function record(usd: number) {
+    await mkdir(path.dirname(filePath), { recursive: true });
+    await appendFile(filePath, `${JSON.stringify({ at: now().toISOString(), usd })}\n`);
+  }
+
+  // One reservation at a time within this process. (Several server processes would need a real lock.)
+  let queue: Promise<unknown> = Promise.resolve();
+
+  const ledger: UsageLedger = {
+    record,
+
+    reserve(usd, limit) {
+      const turn = queue.then(async () => {
+        if (roundUsd((await ledger.monthTotal()) + usd) > limit) return false;
+        await record(usd);
+        return true;
+      });
+      queue = turn.catch(() => undefined);
+      return turn;
     },
 
     async monthTotal() {
@@ -44,6 +65,7 @@ export function createUsageLedger(filePath: string, now: () => Date = () => new 
       return roundUsd(total);
     },
   };
+  return ledger;
 }
 
 export function createDefaultUsageLedger(): UsageLedger {

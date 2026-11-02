@@ -191,3 +191,36 @@ describe("storyboard", () => {
     assert.equal(app.imageModel.calls.length, 0);
   });
 });
+
+describe("product gate on every paid path", () => {
+  it("refuses to generate frames from a photo that is not a product, even without attaching it", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], scenes: SCENES, isProduct: false }));
+    const photoAssetId = await uploadPhoto(app);
+
+    const events = await readEvents(
+      await app.chat(
+        chatRequest({
+          messages: [{ role: "user", text: "Setuju" }],
+          storyboard: { photoAssetId, scenes: SCENES },
+          approve: {},
+        }),
+      ),
+    );
+
+    assert.equal(app.imageModel.calls.length, 0);
+    assert.equal(events.some((e) => e.type === "job_started" || e.type === "asset_ready"), false);
+    assert.match(events.flatMap((e) => (e.type === "assistant_text" ? [e.text] : [])).join(""), /foto produk/i);
+  });
+
+  it("refuses to revise an image that is not a product", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "REVISE", isProduct: false }));
+    const lastImageAssetId = await uploadPhoto(app);
+
+    const events = await readEvents(
+      await app.chat(chatRequest({ messages: [{ role: "user", text: "lebih terang" }], lastImageAssetId })),
+    );
+
+    assert.equal(app.imageModel.calls.length, 0);
+    assert.equal(events.some((e) => e.type === "asset_ready"), false);
+  });
+});
