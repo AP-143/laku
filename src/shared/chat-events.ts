@@ -13,14 +13,40 @@ export type ChatEvent =
   /** Progress of a running generation. */
   | { type: "job_progress"; jobId: string; message: string; percent?: number }
   /** A generated file is ready to show or download. */
-  | { type: "asset_ready"; assetId: string; kind: AssetKind; url: string }
+  | {
+      type: "asset_ready";
+      assetId: string;
+      kind: AssetKind;
+      url: string;
+      /** What the asset is, when the bot generated it (an uploaded photo has no role). */
+      role?: AssetRole;
+      /** The asset this one was made from, so the UI can show before and after side by side. */
+      sourceAssetId?: string;
+      /** For a storyboard frame: which scene (0 to 3) it shows. */
+      sceneIndex?: number;
+    }
+  /** The four proposed scenes of a storyboard. Nothing is generated until the user approves them. */
+  | { type: "storyboard_scenes"; sourceAssetId: string; scenes: string[] }
   /** Something went wrong. `message` is shown to the user as is, so it is Indonesian. */
-  | { type: "error"; message: string; retryable: boolean }
+  | { type: "error"; message: string; retryable: boolean; code?: ErrorCode }
+  /** This month's estimated spend changed (sent after every paid generation). */
+  | { type: "usage_updated"; monthUsd: number; budgetUsd: number }
   /** Always the last event of a successful stream. */
   | { type: "done" };
 
+/** Lets the UI tell the common failures apart; `message` is still what the user reads. */
+export type ErrorCode = "rate_limited" | "quota_exhausted";
+
 export type JobKind = "studio_photo" | "storyboard_frame" | "video";
 export type AssetKind = "image" | "video";
+export type AssetRole = "studio_photo" | "storyboard_frame";
+
+/** The shortcut chips in the composer. */
+export type ChatIntent = "studio_photo" | "storyboard" | "video";
+
+export type StylePreset = "clean_white" | "solid_color" | "lifestyle";
+/** A look for the studio photo: one of the presets, or the seller's own words. */
+export type StudioStyle = { preset: StylePreset } | { text: string };
 
 export const CHAT_EVENTS_CONTENT_TYPE = "application/x-ndjson; charset=utf-8";
 

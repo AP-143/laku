@@ -1,5 +1,6 @@
 import { simulateReadableStream } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
+import type { LanguageModelV4CallOptions } from "@ai-sdk/provider";
 
 const TEXT_PART_ID = "text-1";
 
@@ -17,6 +18,17 @@ interface FakeChatModelOptions {
   isProduct?: boolean;
   /** Make the product check itself fail. */
   failProductCheck?: boolean;
+  /** What the intent router answers for any message (STUDIO, REVISE, STORYBOARD, EDIT_SCENE or CHAT). */
+  intent?: string;
+  /** The four scenes the planner proposes. */
+  scenes?: string[];
+  /** The scene the editor rewrites (scene is 1 to 4). */
+  replacement?: { scene: number; text: string };
+}
+
+/** Which one-shot task a generate call is, read from the tag every internal prompt starts with. */
+function taskOf(callOptions: LanguageModelV4CallOptions): string | undefined {
+  return JSON.stringify(callOptions.prompt).match(/\[task: ([a-z-]+)\]/)?.[1];
 }
 
 /**
@@ -25,10 +37,21 @@ interface FakeChatModelOptions {
  */
 export function fakeChatModel(options: FakeChatModelOptions) {
   return new MockLanguageModelV4({
-    doGenerate: async () => {
-      if (options.failProductCheck) throw new Error("fake product check failure");
+    doGenerate: async (callOptions) => {
+      const task = taskOf(callOptions);
+      if (task === "product-check" && options.failProductCheck) throw new Error("fake product check failure");
+      const answer =
+        task === "intent"
+          ? (options.intent ?? "CHAT")
+          : task === "plan-scenes"
+            ? JSON.stringify({ scenes: options.scenes })
+            : task === "replace-scene"
+              ? JSON.stringify(options.replacement)
+              : options.isProduct === false
+                ? "NO"
+                : "YES";
       return {
-        content: [{ type: "text" as const, text: options.isProduct === false ? "NO" : "YES" }],
+        content: [{ type: "text" as const, text: answer }],
         finishReason: { unified: "stop" as const, raw: undefined },
         usage,
         warnings: [],

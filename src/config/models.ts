@@ -84,3 +84,11 @@ Video: not usable on the free credit. Every video model is refused with "Video g
 balance of $10". Feature 3 (video) is deferred until paid credit is available; the model above is only the
 first candidate, untested.
 `.trim();
+
+/** Estimated spend, used by the usage meter. Prices change, so re-check them against the gateway catalogue. */
+export const COSTS = {
+  /** One image from `MODELS.image` (about US$0.04, see the bake-off notes). */
+  imageUsd: 0.04,
+  /** The gateway's monthly free credit. The app never plans to spend past it. */
+  monthlyBudgetUsd: 5,
+} as const;

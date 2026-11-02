@@ -1,20 +1,33 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { generateText, streamText, type LanguageModel, type ModelMessage } from "ai";
+import { generateImage, generateText, streamText, type ImageModel, type LanguageModel, type ModelMessage } from "ai";
 import { MODELS } from "../config/models";
 import type { AssetFile } from "./asset-store";
-import { CHAT_SYSTEM_PROMPT, PRODUCT_CHECK_PROMPT } from "./chat-prompt";
+import {
+  CHAT_SYSTEM_PROMPT,
+  PRODUCT_CHECK_PROMPT,
+  intentPrompt,
+  parseIntent,
+  parseReplacement,
+  parseScenes,
+  planScenesPrompt,
+  replaceScenePrompt,
+  type Intent,
+  type IntentContext,
+} from "./chat-prompt";
 
 /**
  * The model client: the only module that talks to AI models.
  * Everything else asks it for results and never imports a model SDK.
  * The chat model runs directly on the free Google AI Studio key, not through the Vercel AI Gateway
- * (image generation will use the gateway).
+ * (image generation goes through the gateway).
  */
 
 /** Chat replies are short by design; this also caps what one request can make the model produce. */
 const MAX_REPLY_TOKENS = 1024;
-/** The product check only needs one word back. */
+/** The product check and the intent router only need one word back. */
 const MAX_CHECK_TOKENS = 16;
+/** Four short scenes, or one rewritten scene, as JSON. */
+const MAX_SCENE_TOKENS = 600;
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -28,7 +41,18 @@ export interface ModelClient {
   streamChatReply(messages: ChatMessage[]): AsyncIterable<string>;
   /** True when the photo mainly shows something that could be sold. Throws if the model fails. */
   isProductPhoto(photo: AssetFile): Promise<boolean>;
+  /** Decides which feature a typed message asks for. Throws if the model fails. */
+  classifyIntent(text: string, context: IntentContext): Promise<Intent>;
+  /** Proposes exactly 4 scene descriptions for a storyboard. Throws if the model fails or answers badly. */
+  planScenes(photo: AssetFile, request: string): Promise<string[]>;
+  /** Rewrites the one scene the instruction is about. Throws if the model fails or answers badly. */
+  replaceScene(scenes: string[], instruction: string): Promise<{ index: number; text: string }>;
+  /** Makes one image from a reference photo and an instruction. Throws if the model fails. Never retries. */
+  generateImage(request: { prompt: string; reference: AssetFile }): Promise<AssetFile>;
 }
+
+/** Image generation is slow; this keeps one stuck call from hanging a request forever. */
+const IMAGE_TIMEOUT_MS = 3 * 60_000;
 
 /** Turns one chat message into the SDK's shape, attaching the photo as a file part when there is one. */
 function toModelMessage(message: ChatMessage): ModelMessage {
@@ -43,7 +67,7 @@ function toModelMessage(message: ChatMessage): ModelMessage {
   };
 }
 
-export function createModelClient(models: { chatModel: LanguageModel }): ModelClient {
+export function createModelClient(models: { chatModel: LanguageModel; imageModel: ImageModel }): ModelClient {
   return {
     async *streamChatReply(messages) {
       const result = streamText({
@@ -78,11 +102,59 @@ export function createModelClient(models: { chatModel: LanguageModel }): ModelCl
       });
       return text.trim().toUpperCase().startsWith("YES");
     },
+
+    async classifyIntent(text, context) {
+      const { text: answer } = await generateText({
+        model: models.chatModel,
+        messages: [{ role: "user", content: intentPrompt(text, context) }],
+        maxOutputTokens: MAX_CHECK_TOKENS,
+        maxRetries: 0,
+      });
+      return parseIntent(answer);
+    },
+
+    async planScenes(photo, request) {
+      const { text } = await generateText({
+        model: models.chatModel,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: planScenesPrompt(request) },
+              { type: "file", mediaType: photo.mediaType, data: photo.bytes },
+            ],
+          },
+        ],
+        maxOutputTokens: MAX_SCENE_TOKENS,
+        maxRetries: 0,
+      });
+      return parseScenes(text);
+    },
+
+    async replaceScene(scenes, instruction) {
+      const { text } = await generateText({
+        model: models.chatModel,
+        messages: [{ role: "user", content: replaceScenePrompt(scenes, instruction) }],
+        maxOutputTokens: MAX_SCENE_TOKENS,
+        maxRetries: 0,
+      });
+      return parseReplacement(text);
+    },
+
+    async generateImage({ prompt, reference }) {
+      const result = await generateImage({
+        model: models.imageModel,
+        prompt: { images: [reference.bytes], text: prompt },
+        maxRetries: 0,
+        abortSignal: AbortSignal.timeout(IMAGE_TIMEOUT_MS),
+      });
+      return { bytes: result.image.uint8Array, mediaType: result.image.mediaType };
+    },
   };
 }
 
 /** The real model client: the chat model runs on the free Google AI Studio key. */
 export function createDefaultModelClient(): ModelClient {
   const google = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY });
-  return createModelClient({ chatModel: google(MODELS.chat) });
+  return createModelClient({ chatModel: google(MODELS.chat), imageModel: MODELS.image.id });
 }
