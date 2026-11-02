@@ -24,35 +24,42 @@ export const MODELS = {
   /** Studio photos and storyboard frames. */
   image: { id: "bfl/flux-kontext-pro", api: "image" } satisfies ImageModelConfig,
   /**
-   * Image-to-video clips (480p, 3 s, 9:16, no audio). NOT usable on the free credit: the gateway
-   * requires a paid balance of at least US$10 for any video model. Feature 3 is deferred (see notes).
+   * Image-to-video clips, called directly on the Google key (Interactions API). Not wired into the app
+   * yet: Veo 3.1 was shut down in the Gemini API on 2026-10-22 and Gemini Omni Flash replaces it.
+   * Clip length and per-second price are still unmeasured (see the bake-off).
    */
-  video: "spacexai/grok-imagine-video-1.5-lite",
+  video: "gemini-omni-1.1-flash",
 } as const;
 
-/** Candidates the live bake-off script compares. Edit this list to try other models. */
+/**
+ * One image model at one output size, as the bake-off compares it. `usd` is the price of one image at
+ * that size from Google's pricing page (read 2026-11-02); prices change, so re-check before relying on them.
+ */
+export interface BakeoffImageCandidate {
+  id: string;
+  /** "512" is 0.5K, which only gemini-3.1-flash-image supports. */
+  size: "512" | "1K";
+  usd: number;
+}
+
+/** Candidates the live bake-off script compares, all called directly on the Google key. Edit to try others. */
 export const BAKEOFF_CANDIDATES = {
-  // Free-tier models that kept the product label text intact in the first single-photo probe.
-  // meta/muse-image-1.0 and google/gemini-nano-banana-2.1 were the original picks but are not on the free tier.
   image: [
-    { id: "spacexai/grok-imagine-image", api: "image" },
-    { id: "bfl/flux-kontext-pro", api: "image" },
-    { id: "bytedance/seedream-5.0-lite", api: "image" },
-  ] satisfies ImageModelConfig[],
-  video: [
-    "spacexai/grok-imagine-video-1.5-lite",
-    "google/veo-3.1-lite-generate-001",
-    "bytedance/seedance-2.0-mini",
-  ],
+    { id: "gemini-nano-banana-2.1", size: "1K", usd: 0.0336 },
+    { id: "gemini-3.1-flash-lite-image", size: "1K", usd: 0.0336 },
+    { id: "gemini-3.1-flash-image", size: "512", usd: 0.045 },
+    { id: "gemini-3.1-flash-image", size: "1K", usd: 0.067 },
+  ] satisfies BakeoffImageCandidate[],
+  video: { id: "gemini-omni-1.1-flash", usdPerSecond: 0.1 },
+  speech: { id: "gemini-3.8-flash-lite-tts", usdPerAudioSecond: 6 / 1_000_000 * 25 },
 };
 
 /** Video output settings shared by the bake-off and the real video feature. */
 export const VIDEO_SETTINGS = {
   aspectRatio: "9:16",
-  resolution: "480x854",
-  /** Used to look up per-second pricing in the gateway catalogue. */
-  pricingTier: "480p",
-  durationSeconds: 3,
+  resolution: "720p",
+  /** Asked for in the request; the bake-off measures what the model really returns. */
+  durationSeconds: 4,
 } as const;
 
 /**

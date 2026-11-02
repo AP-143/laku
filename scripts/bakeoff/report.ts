@@ -8,12 +8,13 @@ export type ErrorClass =
   | "other";
 
 export interface JobResult {
-  kind: "image" | "video";
+  kind: "image" | "video" | "speech";
+  /** Model id; image candidates add the output size ("gemini-3.1-flash-image@512"). */
   modelId: string;
   /** Original photo file name the job used (video jobs record the source photo). */
   photo: string;
-  /** Image jobs only. */
-  useCase?: "studio" | "frame";
+  /** Image jobs only. A sheet is one image holding all four storyboard scenes. */
+  useCase?: "studio" | "frame" | "sheet";
   status: "ok" | "error" | "skipped";
   errorClass?: ErrorClass;
   errorMessage?: string;
@@ -30,8 +31,10 @@ export function classifyError(error: unknown): ErrorClass {
     (error as { status?: number })?.status;
   const message = error instanceof Error ? error.message : String(error);
 
-  // The gateway refuses every call until a card is on file, whatever the model. Check this first.
-  if (/credit card|add a card|valid card/i.test(message)) return "account_blocked";
+  // Billing is not enabled on the key's project, whatever the model. Check this first.
+  if (/credit card|add a card|valid card|billing (account|is not|must)|enable billing|free tier.*not available/i.test(message)) {
+    return "account_blocked";
+  }
   if (status === 429 || /rate.?limit|too many requests/i.test(message)) return "rate_limit";
   if (
     status === 402 ||
@@ -48,7 +51,7 @@ export function classifyError(error: unknown): ErrorClass {
 }
 
 const ERROR_LABELS: Record<ErrorClass, string> = {
-  account_blocked: "gateway account needs a credit card on file",
+  account_blocked: "Google project has no billing enabled for this model",
   rate_limit: "rate limit (HTTP 429)",
   no_credits_or_quota: "credits or quota",
   unsupported_input: "image input not accepted",
@@ -57,7 +60,7 @@ const ERROR_LABELS: Record<ErrorClass, string> = {
 
 interface ModelSummary {
   modelId: string;
-  kind: "image" | "video";
+  kind: JobResult["kind"];
   ok: number;
   failed: number;
   failureReasons: Map<ErrorClass, number>;
@@ -85,14 +88,14 @@ export function summarize(results: JobResult[]): ModelSummary[] {
   return [...byModel.values()];
 }
 
-export function formatSummary(results: JobResult[], balanceBefore?: string, balanceAfter?: string): string {
+export function formatSummary(results: JobResult[]): string {
   const lines: string[] = ["", "=== Bake-off summary ==="];
   const summaries = summarize(results);
 
-  for (const kind of ["image", "video"] as const) {
+  for (const kind of ["image", "video", "speech"] as const) {
     const rows = summaries.filter((summary) => summary.kind === kind);
     if (rows.length === 0) continue;
-    lines.push("", kind === "image" ? "Image models" : "Video models");
+    lines.push("", { image: "Image models", video: "Video models", speech: "Speech models" }[kind]);
     for (const row of rows) {
       const reasons = [...row.failureReasons.entries()]
         .map(([reason, count]) => `${count}x ${ERROR_LABELS[reason]}`)
@@ -110,48 +113,24 @@ export function formatSummary(results: JobResult[], balanceBefore?: string, bala
     .reduce((sum, result) => sum + result.estimatedUsd, 0);
   lines.push("", `Total estimated spend (successful calls): ${formatUsd(charged)}`);
 
-  if (balanceBefore !== undefined && balanceAfter !== undefined) {
-    const used = Number(balanceBefore) - Number(balanceAfter);
-    lines.push(
-      `Gateway balance: ${balanceBefore} before, ${balanceAfter} after (actual drop ${formatUsd(used)}).`,
-    );
-  }
+  lines.push("The real spend is the drop in your Google AI Studio balance: note it before and after this run.");
 
   const attempted = results.filter((result) => result.status !== "skipped");
   if (attempted.length > 0 && attempted.every((result) => result.errorClass === "account_blocked")) {
     lines.push(
       "",
-      "NOTHING WAS TESTED: the gateway rejected every call because the account has no credit card on file.",
-      "This says nothing about the image or video models. Add a card to unlock the free credit, then run again.",
+      "NOTHING WAS TESTED: Google rejected every call because the key's project has no billing for these models.",
+      "This says nothing about the models. Check that the key in .env.local belongs to the project you topped up.",
     );
     return lines.join("\n");
   }
 
   const videoRuns = results.filter((result) => result.kind === "video" && result.status !== "skipped");
-  if (videoRuns.length > 0) {
-    const anyOk = videoRuns.some((result) => result.status === "ok");
-    const allCreditProblems = videoRuns.every(
-      (result) => result.status === "error" && result.errorClass === "no_credits_or_quota",
+  if (videoRuns.length > 0 && !videoRuns.some((result) => result.status === "ok")) {
+    lines.push(
+      "",
+      "VIDEO PRODUCED NOTHING: check the error reason above (a 400 usually means a request field the API rejects).",
     );
-    const imageInput = anyOk
-      ? "accepted"
-      : videoRuns.some((result) => result.errorClass === "unsupported_input")
-        ? "rejected by at least one model"
-        : "unknown (no call got far enough for the gateway to evaluate the image)";
-    lines.push("", `Video image input through the gateway: ${imageInput}.`);
-    if (anyOk) {
-      lines.push("Video: at least one candidate produced a clip through the gateway with the current credit.");
-    } else if (allCreditProblems) {
-      lines.push(
-        "VIDEO IS NOT AVAILABLE ON THE CURRENT CREDIT: every video candidate was refused on credits, quota or a minimum balance.",
-        "Recommendation: defer feature 3 (video) and ship features 1 and 2 first.",
-      );
-    } else {
-      lines.push(
-        "VIDEO PRODUCED NOTHING: no video candidate succeeded. Check the error reasons above and the viewer;",
-        "if the reason is credits or quota, defer feature 3 (video).",
-      );
-    }
   }
 
   return lines.join("\n");
@@ -172,7 +151,15 @@ export function buildViewerHtml(results: JobResult[], photos: string[], videoSou
     return `<td class="fail">${escapeHtml(result.errorClass ?? result.status)}<small>${escapeHtml((result.errorMessage ?? "").slice(0, 160))}</small></td>`;
   };
 
-  const sections = (["studio", "frame"] as const).map((useCase) => {
+  const titles = {
+    studio: "Studio photo (clean white background)",
+    frame: "Storyboard frame (lifestyle scene, 9:16)",
+    sheet: "Storyboard sheet (4 scenes in one image)",
+  } as const;
+  const usedCases = (["studio", "frame", "sheet"] as const).filter((useCase) =>
+    results.some((r) => r.kind === "image" && r.useCase === useCase),
+  );
+  const sections = usedCases.map((useCase) => {
     const head = `<tr><th>Original</th>${imageModels.map((m) => `<th>${escapeHtml(m)}</th>`).join("")}</tr>`;
     const rows = photos
       .map((photo) => {
@@ -184,17 +171,26 @@ export function buildViewerHtml(results: JobResult[], photos: string[], videoSou
         return `<tr><td><img src="originals/${escapeHtml(photo)}.jpg" loading="lazy"><small>${escapeHtml(photo)}</small></td>${cells}</tr>`;
       })
       .join("");
-    return `<h2>${useCase === "studio" ? "Studio photo (clean white background)" : "Storyboard frame (lifestyle scene, 9:16)"}</h2><table>${head}${rows}</table>`;
+    return `<h2>${titles[useCase]}</h2><table>${head}${rows}</table>`;
   });
 
-  const videos = results
-    .filter((r) => r.kind === "video")
-    .map((r) =>
-      r.status === "ok" && r.file
-        ? `<figure><video src="${escapeHtml(r.file)}" controls muted loop playsinline></video><figcaption>${escapeHtml(r.modelId)} (${formatUsd(r.estimatedUsd)}, ${r.seconds.toFixed(0)}s)</figcaption></figure>`
-        : `<figure class="fail"><figcaption>${escapeHtml(r.modelId)}: ${escapeHtml(r.errorClass ?? r.status)}<br><small>${escapeHtml((r.errorMessage ?? "").slice(0, 200))}</small></figcaption></figure>`,
-    )
-    .join("");
+  const media = (kind: "video" | "speech") =>
+    results
+      .filter((r) => r.kind === kind)
+      .map((r) => {
+        if (r.status !== "ok" || !r.file) {
+          return `<figure class="fail"><figcaption>${escapeHtml(r.modelId)}: ${escapeHtml(r.errorClass ?? r.status)}<br><small>${escapeHtml((r.errorMessage ?? "").slice(0, 200))}</small></figcaption></figure>`;
+        }
+        const player =
+          kind === "video"
+            ? `<video src="${escapeHtml(r.file)}" controls loop playsinline></video>`
+            : `<audio src="${escapeHtml(r.file)}" controls></audio>`;
+        const notes = r.warnings.map((warning) => `<br><small>${escapeHtml(warning)}</small>`).join("");
+        return `<figure>${player}<figcaption>${escapeHtml(r.modelId)} (${formatUsd(r.estimatedUsd)}, ${r.seconds.toFixed(0)}s to make)${notes}</figcaption></figure>`;
+      })
+      .join("");
+  const videos = media("video");
+  const speech = media("speech");
 
   return `<!doctype html><html lang="en"><meta charset="utf-8"><title>LAKU bake-off</title>
 <style>
@@ -211,5 +207,7 @@ video{max-width:240px;display:block}
 ${sections.join("")}
 <h2>Video (${escapeHtml(videoSourceNote)})</h2>
 ${videos || "<p>No video jobs ran.</p>"}
+<h2>Voice-over sample</h2>
+${speech || "<p>No speech jobs ran.</p>"}
 </html>`;
 }
