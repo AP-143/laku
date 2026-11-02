@@ -18,8 +18,7 @@ import {
 /**
  * The model client: the only module that talks to AI models.
  * Everything else asks it for results and never imports a model SDK.
- * The chat model runs directly on the free Google AI Studio key, not through the Vercel AI Gateway
- * (image generation goes through the gateway).
+ * Every model runs directly on the Google AI Studio key, not through the Vercel AI Gateway.
  */
 
 /** Chat replies are short by design; this also caps what one request can make the model produce. */
@@ -28,6 +27,9 @@ const MAX_REPLY_TOKENS = 1024;
 const MAX_CHECK_TOKENS = 16;
 /** Four short scenes, or one rewritten scene, as JSON. */
 const MAX_SCENE_TOKENS = 600;
+
+/** Studio photos are square; storyboard frames are vertical so they can feed a vertical video. */
+export type ImageAspectRatio = "1:1" | "9:16";
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -48,7 +50,7 @@ export interface ModelClient {
   /** Rewrites the one scene the instruction is about. Throws if the model fails or answers badly. */
   replaceScene(scenes: string[], instruction: string): Promise<{ index: number; text: string }>;
   /** Makes one image from a reference photo and an instruction. Throws if the model fails. Never retries. */
-  generateImage(request: { prompt: string; reference: AssetFile }): Promise<AssetFile>;
+  generateImage(request: { prompt: string; reference: AssetFile; aspectRatio: ImageAspectRatio }): Promise<AssetFile>;
 }
 
 /** Image generation is slow; this keeps one stuck call from hanging a request forever. */
@@ -141,10 +143,11 @@ export function createModelClient(models: { chatModel: LanguageModel; imageModel
       return parseReplacement(text);
     },
 
-    async generateImage({ prompt, reference }) {
+    async generateImage({ prompt, reference, aspectRatio }) {
       const result = await generateImage({
         model: models.imageModel,
         prompt: { images: [reference.bytes], text: prompt },
+        aspectRatio,
         maxRetries: 0,
         abortSignal: AbortSignal.timeout(IMAGE_TIMEOUT_MS),
       });
@@ -156,5 +159,5 @@ export function createModelClient(models: { chatModel: LanguageModel; imageModel
 /** The real model client: the chat model runs on the free Google AI Studio key. */
 export function createDefaultModelClient(): ModelClient {
   const google = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY });
-  return createModelClient({ chatModel: google(MODELS.chat), imageModel: MODELS.image.id });
+  return createModelClient({ chatModel: google(MODELS.chat), imageModel: google.image(MODELS.image) });
 }

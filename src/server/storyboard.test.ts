@@ -103,7 +103,9 @@ describe("storyboard", () => {
     SCENES.forEach((scene, index) => assert.match(app.imageModel.calls[index].prompt ?? "", new RegExp(scene)));
     assert.ok(events.some((e) => e.type === "job_progress"));
     const lastUsage = events.findLast((e) => e.type === "usage_updated");
-    assert.equal(lastUsage?.type === "usage_updated" && lastUsage.monthUsd, 0.16);
+    assert.equal(lastUsage?.type === "usage_updated" && lastUsage.monthUsd, 0.1344);
+    // Frames are vertical (9:16) so they can feed a vertical video later.
+    assert.ok(app.imageModel.calls.every((call) => call.aspectRatio === "9:16"));
     assert.deepEqual(events.at(-1), { type: "done" });
   });
 

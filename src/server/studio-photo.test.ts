@@ -101,6 +101,16 @@ describe("studio photo details", () => {
     assert.match(prompt, /meja kayu/);
   });
 
+  it("asks the image model for a square photo made from the seller's photo", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["unused"] }));
+    const photoAssetId = await uploadPhoto(app);
+
+    await readEvents(await app.chat(studioRequest(photoAssetId, { style: { preset: "clean_white" } })));
+
+    assert.equal(app.imageModel.calls[0].aspectRatio, "1:1");
+    assert.equal(app.imageModel.calls[0].files?.length, 1);
+  });
+
   it("makes a new version on retry and keeps the earlier one", async () => {
     const app = createTestApp(fakeChatModel({ chunks: ["unused"] }));
     const photoAssetId = await uploadPhoto(app);

@@ -55,7 +55,7 @@ export function createImageJobs(deps: {
       send({ type: "job_started", jobId: randomUUID(), kind });
       let image;
       try {
-        image = await models.generateImage({ prompt, reference: source });
+        image = await models.generateImage({ prompt, reference: source, aspectRatio: kind === "storyboard_frame" ? "9:16" : "1:1" });
       } catch (error) {
         // A call that failed is not billed, so the booking goes back.
         await ledger.record(-COSTS.imageUsd);

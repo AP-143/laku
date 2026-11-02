@@ -38,9 +38,9 @@ describe("usage meter", () => {
     const first = await readEvents(await app.chat(studioRequest(photoAssetId)));
     const second = await readEvents(await app.chat(studioRequest(photoAssetId)));
 
-    assert.deepEqual(first.find((e) => e.type === "usage_updated"), { type: "usage_updated", monthUsd: 0.04, budgetUsd: 4 });
-    assert.deepEqual(second.find((e) => e.type === "usage_updated"), { type: "usage_updated", monthUsd: 0.08, budgetUsd: 4 });
-    assert.deepEqual(await readUsage(app), { monthUsd: 0.08, budgetUsd: 4, remainingUsd: 3.92 });
+    assert.deepEqual(first.find((e) => e.type === "usage_updated"), { type: "usage_updated", monthUsd: 0.0336, budgetUsd: 4 });
+    assert.deepEqual(second.find((e) => e.type === "usage_updated"), { type: "usage_updated", monthUsd: 0.0672, budgetUsd: 4 });
+    assert.deepEqual(await readUsage(app), { monthUsd: 0.0672, budgetUsd: 4, remainingUsd: 3.9328 });
   });
 
   it("does not charge for a turn that makes no image", async () => {
@@ -56,7 +56,7 @@ describe("usage meter", () => {
     const app = createTestApp(fakeChatModel({ chunks: ["x"] }), undefined, { now: new Date("2026-10-31T12:00:00Z") });
     const photoAssetId = await uploadPhoto(app);
     await readEvents(await app.chat(studioRequest(photoAssetId)));
-    assert.equal((await readUsage(app)).monthUsd, 0.04);
+    assert.equal((await readUsage(app)).monthUsd, 0.0336);
 
     app.clock.now = new Date("2026-11-01T12:00:00Z");
 
@@ -118,7 +118,7 @@ describe("daily spend cap", () => {
   });
 
   it("never lets simultaneous requests pass the cap together", async () => {
-    // Room for exactly one more image (US$0.04 of the US$2 daily cap).
+    // Room for exactly one more image (US$0.0336 of the US$2 daily cap).
     const app = createTestApp(fakeChatModel({ chunks: ["x"] }), undefined, { startingTodayUsd: 1.95 });
     const photoAssetId = await uploadPhoto(app);
 
@@ -148,7 +148,7 @@ describe("daily spend cap", () => {
 
 describe("usage meter under concurrent requests", () => {
   it("never lets simultaneous requests pass the free credit together", async () => {
-    // Room for exactly one more image (US$0.04 of the US$4 budget).
+    // Room for exactly one more image (US$0.0336 of the US$4 budget).
     const app = createTestApp(fakeChatModel({ chunks: ["x"] }), undefined, { startingMonthUsd: 3.95 });
     const photoAssetId = await uploadPhoto(app);
 

@@ -1,28 +1,20 @@
 /**
  * The single place where model IDs live. Logic must read from here and never hard-code a model.
- *
- * `image.api` tells the gateway client which AI SDK call a model needs:
- * - "image": a dedicated image model, called with generateImage (supports a reference photo)
- * - "language": a language model that can output images, called with generateText and read from `files`
  */
-
-export type ImageApi = "image" | "language";
-
-export interface ImageModelConfig {
-  id: string;
-  api: ImageApi;
-}
 
 /** Models in use by the app. Updated from the bake-off evidence below. */
 export const MODELS = {
   /**
-   * Chat LLM with vision, called directly with the free Google AI Studio key (so this is a Google model
+   * Chat LLM with vision, called directly with the Google AI Studio key (so this is a Google model
    * ID, not a gateway "provider/model" ID). Verified live on 2026-11-01: replies in Indonesian and reads
    * images. gemini-3.6-flash also worked; gemini-2.5-flash-lite is closed to new users.
    */
   chat: "gemini-3.5-flash-lite",
-  /** Studio photos and storyboard frames. */
-  image: { id: "bfl/flux-kontext-pro", api: "image" } satisfies ImageModelConfig,
+  /**
+   * Studio photos and storyboard frames, called directly on the Google key at 1K. Chosen by the 2026-11-02
+   * bake-off: faithful on 5 of 5 photos, against 4 of 5 for the earlier gateway model (bfl/flux-kontext-pro).
+   */
+  image: "gemini-nano-banana-2.1",
   /**
    * Image-to-video clips, called directly on the Google key (Interactions API). Not wired into the app
    * yet: Veo 3.1 was shut down in the Gemini API on 2026-10-22 and Gemini Omni Flash replaces it.
@@ -125,8 +117,8 @@ US$0.002 (US$6 per 1M audio tokens until 2026-12-31, US$12 after; 25 tokens per 
 
 /** Estimated spend, used by the usage meter. Prices change, so re-check them against the gateway catalogue. */
 export const COSTS = {
-  /** One image from `MODELS.image` (about US$0.04, see the bake-off notes). */
-  imageUsd: 0.04,
+  /** One image from `MODELS.image` at 1K (US$0.0336 on Google's pricing page, see the bake-off notes). */
+  imageUsd: 0.0336,
   /** The prepaid Google balance (about Rp70,000). The app never plans to spend past it. */
   monthlyBudgetUsd: 4,
   /** Stops a bug or a loop from burning the whole balance in one day; normal use stays well under it. */
