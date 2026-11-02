@@ -32,6 +32,14 @@ export function revisionPrompt(instruction: string): string {
   return `Revise this product photo as the seller asked: ${instruction}. Change only what was asked. ${KEEP_PRODUCT}`;
 }
 
+/** The motion for one video clip made from a storyboard frame. */
+export function clipPrompt(): string {
+  return (
+    "Gentle cinematic camera push-in on the product with soft light shifts. " +
+    "The product stays exactly the same and does not change shape, logo or text. No people, no new objects."
+  );
+}
+
 export function framePrompt(scene: string): string {
   return (
     `Create one scene of a vertical 9:16 advertisement storyboard, using this exact product. Scene: ${scene}. ` +

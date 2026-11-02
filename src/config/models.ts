@@ -125,6 +125,8 @@ export const COSTS = {
   imageUsd: 0.0336,
   /** The prepaid Google balance (about Rp70,000). The app never plans to spend past it. */
   monthlyBudgetUsd: 4,
+  /** One second of video from `MODELS.video` at 720p (about US$0.10, see the bake-off notes). */
+  videoUsdPerSecond: 0.1,
   /** Stops a bug or a loop from burning the whole balance in one day; normal use stays well under it. */
   dailyBudgetUsd: 2,
 } as const;

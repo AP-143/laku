@@ -1,0 +1,102 @@
+import { randomUUID } from "node:crypto";
+import { COSTS } from "../config/models";
+import type { ChatEvent } from "../shared/chat-events";
+import { CLIP_SECONDS, type ClipPlan } from "../shared/video-plan";
+import type { AssetFile, AssetStore } from "./asset-store";
+import { clipPrompt } from "./image-prompts";
+import { NotAProductError } from "./image-jobs";
+import type { ModelClient } from "./model-client";
+import { DailyCapReachedError, mayStillBeBilled, QuotaExhaustedError, VideoNotAffordableError } from "./model-errors";
+import { readUsage, type UsageLedger } from "./usage-ledger";
+import { joinClips } from "./video-join";
+
+export interface StoryboardFrame {
+  assetId: string;
+  file: AssetFile;
+}
+
+const roundUsd = (usd: number) => Math.round(usd * 10_000) / 10_000;
+const costOf = (seconds: number) => roundUsd(seconds * COSTS.videoUsdPerSecond);
+const sum = (numbers: number[]) => numbers.reduce((total, value) => total + value, 0);
+
+/**
+ * Runs one video from start to finish: product check, budget reservation, clips, joining, saving, events.
+ * It throws on failure and never retries, so the caller decides what the user sees.
+ */
+export function createVideoJobs(deps: {
+  models: ModelClient;
+  assets: AssetStore;
+  ledger: UsageLedger;
+  send: (event: ChatEvent) => void;
+  /** Asked about every frame a clip is made from, so no paid path skips the product check. */
+  isProduct: (image: AssetFile) => Promise<boolean>;
+}) {
+  const { models, assets, ledger, send, isProduct } = deps;
+
+  /** How many seconds of video the month and the day still have room for. */
+  async function affordableSeconds(): Promise<number> {
+    const left = Math.min(
+      COSTS.monthlyBudgetUsd - (await ledger.monthTotal()),
+      COSTS.dailyBudgetUsd - (await ledger.dayTotal()),
+    );
+    return Math.floor(Math.max(0, left) / COSTS.videoUsdPerSecond + 1e-9);
+  }
+
+  return {
+    /** `frames` are the storyboard frames in scene order; clip `i` is made from frame `i`. */
+    async generate(request: { frames: StoryboardFrame[]; plan: Extract<ClipPlan, { ok: true }> }) {
+      const { plan } = request;
+      const frames = request.frames.slice(0, plan.clips.length);
+      for (const frame of frames) {
+        if (!(await isProduct(frame.file))) throw new NotAProductError();
+      }
+
+      // The whole video is booked before the first clip, so simultaneous requests cannot squeeze under a limit.
+      const reservation = await ledger.reserve(costOf(sum(plan.clips)), {
+        monthlyUsd: COSTS.monthlyBudgetUsd,
+        dailyUsd: COSTS.dailyBudgetUsd,
+      });
+      if (!reservation.ok) {
+        // A shorter video may still fit; only when not even the shortest clip does, the plain limit message is clearer.
+        const affordable = await affordableSeconds();
+        if (affordable >= CLIP_SECONDS.min) throw new VideoNotAffordableError(affordable);
+        if (reservation.limit === "daily") {
+          throw new DailyCapReachedError(reservation.resetsAt, (await readUsage(ledger)).remainingUsd);
+        }
+        throw new QuotaExhaustedError();
+      }
+
+      send({ type: "job_started", jobId: randomUUID(), kind: "video" });
+      const made: Uint8Array[] = [];
+      for (const [index, seconds] of plan.clips.entries()) {
+        send({
+          type: "job_progress",
+          jobId: "video",
+          message: `Membuat klip ${index + 1} dari ${plan.clips.length}`,
+          percent: Math.round((index / plan.clips.length) * 100),
+        });
+        try {
+          made.push(await models.generateClip({ prompt: clipPrompt(), frame: frames[index].file, seconds }));
+        } catch (error) {
+          // Clips that were not made are given back. A clip that timed out may still be billed, so it stays booked.
+          const notBilled = plan.clips.slice(index + (mayStillBeBilled(error) ? 1 : 0));
+          await ledger.record(-costOf(sum(notBilled)));
+          throw error;
+        }
+      }
+
+      const assetId = await assets.saveVideo(await joinClips(made, plan.seconds));
+      send({
+        type: "asset_ready",
+        assetId,
+        kind: "video",
+        url: `/api/assets/${assetId}`,
+        role: "video",
+        sourceAssetId: frames[0].assetId,
+      });
+
+      const { monthUsd, budgetUsd } = await readUsage(ledger);
+      send({ type: "usage_updated", monthUsd, budgetUsd });
+    },
+  };
+}

@@ -39,7 +39,7 @@ export type ErrorCode = "rate_limited" | "quota_exhausted" | "daily_cap_reached"
 
 export type JobKind = "studio_photo" | "storyboard_frame" | "video";
 export type AssetKind = "image" | "video";
-export type AssetRole = "studio_photo" | "storyboard_frame";
+export type AssetRole = "studio_photo" | "storyboard_frame" | "video";
 
 /** The shortcut chips in the composer. */
 export type ChatIntent = "studio_photo" | "storyboard" | "video";

@@ -29,6 +29,13 @@ export class DailyCapReachedError extends Error {
   }
 }
 
+/** The video asked for costs more than the budget has left, but a shorter one fits. No model was called. */
+export class VideoNotAffordableError extends Error {
+  constructor(/** The most seconds of video the remaining budget covers. */ readonly affordableSeconds: number) {
+    super("The video does not fit the remaining budget");
+  }
+}
+
 /** The reset time in the seller's own clock (WIB, UTC+7), as "07.00". */
 function wibClock(date: Date): string {
   const hours = (date.getUTCHours() + 7) % 24;
@@ -67,6 +74,14 @@ function messageOf(error: unknown): string {
 export function describeFailure(error: unknown): ErrorEvent {
   if (error instanceof DailyCapReachedError) {
     return { type: "error", message: dailyCapMessage(error), retryable: true, code: "daily_cap_reached" };
+  }
+  if (error instanceof VideoNotAffordableError) {
+    return {
+      type: "error",
+      message: `Sisa anggaranmu baru cukup untuk sekitar ${error.affordableSeconds} detik video. Minta video yang lebih pendek ya.`,
+      retryable: true,
+      code: "quota_exhausted",
+    };
   }
   if (error instanceof QuotaExhaustedError) {
     return { type: "error", message: LOCAL_QUOTA_MESSAGE, retryable: true, code: "quota_exhausted" };

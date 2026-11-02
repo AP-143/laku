@@ -1,5 +1,6 @@
 import type { ChatIntent, StudioStyle } from "../shared/chat-events";
 import { SCENE_COUNT, SCENE_INDEXES } from "../shared/storyboard";
+import { DEFAULT_VIDEO_SECONDS, planClips } from "../shared/video-plan";
 import { isAssetId, type AssetFile, type AssetStore } from "./asset-store";
 import { readBoundedBytes } from "./bounded-body";
 import type { Intent } from "./chat-prompt";
@@ -9,6 +10,7 @@ import { framePrompt, revisionPrompt, studioPhotoPrompt } from "./image-prompts"
 import { describeFailure } from "./model-errors";
 import type { ChatMessage, ModelClient } from "./model-client";
 import type { UsageLedger } from "./usage-ledger";
+import { createVideoJobs } from "./video-jobs";
 
 export type ChatHandler = (request: Request) => Promise<Response>;
 
@@ -17,7 +19,9 @@ const PHOTO_NOT_FOUND_MESSAGE = "Fotonya tidak ketemu. Coba unggah lagi ya.";
 const NOT_A_PRODUCT_MESSAGE =
   "Maaf, saat ini aku hanya bisa memproses foto produk. Coba kirim foto barang yang mau kamu jual ya.";
 const NEED_PHOTO_MESSAGE = "Kirim dulu foto produknya ya (klik ikon penjepit kertas), nanti aku bantu.";
-const VIDEO_UNAVAILABLE_MESSAGE = "Fitur video belum tersedia. Untuk sekarang aku bisa bikin foto studio dan storyboard ya.";
+const NEED_FRAMES_MESSAGE = "Buat dulu storyboard dan gambar tiap scene-nya ya, baru aku buatkan videonya.";
+const videoTooLongMessage = (maxSeconds: number) =>
+  `Storyboard-mu bisa dijadikan video maksimal ${maxSeconds} detik. Coba minta video yang lebih pendek ya.`;
 const SCENES_PROPOSED_MESSAGE =
   "Ini usulan 4 scene storyboard-nya. Kamu bisa ubah teksnya atau minta aku ganti scene tertentu. Kalau sudah cocok, setujui dulu ya, baru aku buatkan gambarnya.";
 const SCENE_REPLACED_MESSAGE = "Sudah kuganti. Kalau sudah cocok, setujui supaya aku buatkan gambarnya ya.";
@@ -47,6 +51,8 @@ interface Conversation {
   storyboard?: Storyboard;
   /** The user approved the storyboard: generate frames for all scenes, or only for `sceneIndex`. */
   approve?: { sceneIndex?: number };
+  /** The generated storyboard frames in scene order, which a video is made from. */
+  frames: string[];
 }
 
 const INTENTS: readonly string[] = ["studio_photo", "storyboard", "video"];
@@ -80,6 +86,13 @@ function readApproval(value: unknown): Conversation["approve"] | null | undefine
   return Number.isInteger(sceneIndex) && (sceneIndex as number) >= 0 && (sceneIndex as number) < SCENE_COUNT
     ? { sceneIndex: sceneIndex as number }
     : null;
+}
+
+/** `null` means the field was sent but is not a list of up to four asset ids; no field means no frames. */
+function readFrames(value: unknown): string[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > SCENE_COUNT) return null;
+  return value.every((id) => typeof id === "string" && isAssetId(id)) ? (value as string[]) : null;
 }
 
 /** Returns the conversation, or undefined when the request is not a valid, reasonably sized turn. */
@@ -116,16 +129,25 @@ async function readConversation(request: Request): Promise<Conversation | undefi
   const photoAssetId = photoIds.at(-1);
   if (last.role !== "user" || (last.text.trim() === "" && !photoAssetId)) return undefined;
 
-  const fields = body as { intent?: unknown; style?: unknown; lastImageAssetId?: unknown; storyboard?: unknown; approve?: unknown };
+  const fields = body as {
+    intent?: unknown;
+    style?: unknown;
+    lastImageAssetId?: unknown;
+    storyboard?: unknown;
+    approve?: unknown;
+    frames?: unknown;
+  };
   if (fields.lastImageAssetId !== undefined && (typeof fields.lastImageAssetId !== "string" || !isAssetId(fields.lastImageAssetId))) {
     return undefined;
   }
   const storyboard = readStoryboard(fields.storyboard);
   const approve = readApproval(fields.approve);
+  const frames = readFrames(fields.frames);
   // Approving needs the plan it approves.
-  if (storyboard === null || approve === null || (approve && !storyboard)) return undefined;
+  if (storyboard === null || approve === null || (approve && !storyboard) || frames === null) return undefined;
 
   return {
+    frames,
     messages: conversation,
     photoAssetId,
     lastImageAssetId: fields.lastImageAssetId as string | undefined,
@@ -153,7 +175,13 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
     const photo = await readAsset(conversation.photoAssetId);
     const previous = await readAsset(conversation.lastImageAssetId);
     const storyboardPhoto = await readAsset(conversation.storyboard?.photoAssetId);
-    if ((conversation.photoAssetId && !photo) || (conversation.storyboard && !storyboardPhoto)) {
+    const frameFiles = await Promise.all(conversation.frames.map((assetId) => readAsset(assetId)));
+    const frames = conversation.frames.flatMap((assetId, index) => (frameFiles[index] ? [{ assetId, file: frameFiles[index] }] : []));
+    if (
+      (conversation.photoAssetId && !photo) ||
+      (conversation.storyboard && !storyboardPhoto) ||
+      frames.length !== conversation.frames.length
+    ) {
       return eventResponse(async (send) => send({ type: "error", message: PHOTO_NOT_FOUND_MESSAGE, retryable: true }), {
         status: 400,
       });
@@ -167,6 +195,7 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         return verdicts.get(image)!;
       };
       const jobs = createImageJobs({ models, assets, ledger, send, isProduct });
+      const videos = createVideoJobs({ models, assets, ledger, send, isProduct });
 
       function reply(text: string) {
         send({ type: "assistant_text", text });
@@ -209,16 +238,25 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         // The cheap check comes first, so nothing costly ever runs for a photo that is not a product.
         if (photo && !(await isProduct(photo))) return reply(NOT_A_PRODUCT_MESSAGE);
 
-        if (conversation.intent === "video") return reply(VIDEO_UNAVAILABLE_MESSAGE);
-
         const lastText = conversation.messages.at(-1)!.text.trim();
         let intent: Intent | undefined = conversation.intent;
-        if (!intent && lastText && (photo || previous || storyboard)) {
+        if (!intent && lastText && (photo || previous || storyboard || frames.length > 0)) {
           intent = await models.classifyIntent(lastText, {
             hasPhoto: Boolean(photo),
             hasPreviousResult: Boolean(previous),
             hasStoryboard: Boolean(storyboard),
+            hasFrames: frames.length > 0,
           });
+        }
+
+        if (intent === "video") {
+          if (frames.length === 0) return reply(NEED_FRAMES_MESSAGE);
+          const { seconds } = lastText ? await models.readVideoRequest(lastText) : { seconds: undefined };
+          const plan = planClips(seconds ?? DEFAULT_VIDEO_SECONDS, frames.length);
+          if (!plan.ok) return reply(videoTooLongMessage(plan.maxSeconds));
+          await videos.generate({ frames, plan });
+          send({ type: "done" });
+          return;
         }
 
         // The photo to work from: the one just attached, or else the newest result.

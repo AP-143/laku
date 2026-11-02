@@ -69,13 +69,31 @@ export function parseReplacement(answer: string): { index: number; text: string 
   return { index: (scene as number) - 1, text: text.trim() };
 }
 
-export type Intent = "studio_photo" | "revise_photo" | "storyboard" | "edit_scene" | "chat";
+/** The video length the seller asked for, in seconds, or none when the message names no length. */
+export function parseVideoRequest(answer: string): { seconds?: number } {
+  const { seconds } = parseJsonObject(answer);
+  return typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0 ? { seconds } : {};
+}
+
+/** Reads how long a video the seller wants, from a message such as "bikinin video iklan 10 detik". */
+export function videoRequestPrompt(text: string): string {
+  return `
+[task: video-request]
+A seller of an online shop asks for an ad video. Answer with only a JSON object {"seconds": <number>} holding the
+video length in seconds they asked for (convert minutes to seconds), or {"seconds": null} if they name no length.
+Message: ${JSON.stringify(text)}
+`.trim();
+}
+
+export type Intent = "studio_photo" | "revise_photo" | "storyboard" | "edit_scene" | "video" | "chat";
 
 /** What the router can offer for this turn; it must not answer with something that is not available. */
 export interface IntentContext {
   hasPhoto: boolean;
   hasPreviousResult: boolean;
   hasStoryboard: boolean;
+  /** The storyboard already has generated frames, which a video is made from. */
+  hasFrames: boolean;
 }
 
 /** Routes a typed message to a feature. One cheap call, one word back. */
@@ -88,8 +106,9 @@ STUDIO: they want a studio photo made from a product photo.
 REVISE: they want a change to the studio photo that was just made (only if a previous result exists).
 STORYBOARD: they want a storyboard or ad scenes made from a product photo.
 EDIT_SCENE: they want to change or replace a scene of the storyboard in progress (only if one exists).
+VIDEO: they want a video ad made from the storyboard frames (only if frames exist).
 CHAT: anything else, including questions and greetings.
-Product photo attached: ${yesNo(context.hasPhoto)}. Previous result exists: ${yesNo(context.hasPreviousResult)}. Storyboard in progress: ${yesNo(context.hasStoryboard)}.
+Product photo attached: ${yesNo(context.hasPhoto)}. Previous result exists: ${yesNo(context.hasPreviousResult)}. Storyboard in progress: ${yesNo(context.hasStoryboard)}. Storyboard frames exist: ${yesNo(context.hasFrames)}.
 Message: ${JSON.stringify(text)}
 `.trim();
 }
@@ -99,6 +118,7 @@ const INTENT_WORDS: Record<string, Intent> = {
   REVISE: "revise_photo",
   STORYBOARD: "storyboard",
   EDIT_SCENE: "edit_scene",
+  VIDEO: "video",
 };
 
 /** Anything the router says that is not a known word is treated as plain chat. */

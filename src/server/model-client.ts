@@ -2,6 +2,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateImage, generateText, streamText, type ImageModel, type LanguageModel, type ModelMessage } from "ai";
 import { MODELS } from "../config/models";
 import type { AssetFile } from "./asset-store";
+import { createOmniVideoModel, type VideoModel } from "./video-model";
 import {
   CHAT_SYSTEM_PROMPT,
   PRODUCT_CHECK_PROMPT,
@@ -9,8 +10,10 @@ import {
   parseIntent,
   parseReplacement,
   parseScenes,
+  parseVideoRequest,
   planScenesPrompt,
   replaceScenePrompt,
+  videoRequestPrompt,
   type Intent,
   type IntentContext,
 } from "./chat-prompt";
@@ -51,6 +54,10 @@ export interface ModelClient {
   replaceScene(scenes: string[], instruction: string): Promise<{ index: number; text: string }>;
   /** Makes one image from a reference photo and an instruction. Throws if the model fails. Never retries. */
   generateImage(request: { prompt: string; reference: AssetFile; aspectRatio: ImageAspectRatio }): Promise<AssetFile>;
+  /** Reads the video length the seller asked for. Throws if the model fails or answers badly. */
+  readVideoRequest(text: string): Promise<{ seconds?: number }>;
+  /** Makes one clip of `seconds` from a frame. Throws if the model fails. Never retries. */
+  generateClip(request: { prompt: string; frame: AssetFile; seconds: number }): Promise<Uint8Array>;
 }
 
 /** Image generation is slow; this keeps one stuck call from hanging a request forever. */
@@ -69,7 +76,11 @@ function toModelMessage(message: ChatMessage): ModelMessage {
   };
 }
 
-export function createModelClient(models: { chatModel: LanguageModel; imageModel: ImageModel }): ModelClient {
+export function createModelClient(models: {
+  chatModel: LanguageModel;
+  imageModel: ImageModel;
+  videoModel: VideoModel;
+}): ModelClient {
   return {
     async *streamChatReply(messages) {
       const result = streamText({
@@ -154,11 +165,27 @@ export function createModelClient(models: { chatModel: LanguageModel; imageModel
       });
       return { bytes: result.image.uint8Array, mediaType: result.image.mediaType };
     },
+
+    async readVideoRequest(text) {
+      const { text: answer } = await generateText({
+        model: models.chatModel,
+        messages: [{ role: "user", content: videoRequestPrompt(text) }],
+        maxOutputTokens: MAX_CHECK_TOKENS * 2,
+        maxRetries: 0,
+      });
+      return parseVideoRequest(answer);
+    },
+
+    generateClip: (request) => models.videoModel.generate(request),
   };
 }
 
 /** The real model client: the chat model runs on the free Google AI Studio key. */
 export function createDefaultModelClient(): ModelClient {
   const google = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY });
-  return createModelClient({ chatModel: google(MODELS.chat), imageModel: google.image(MODELS.image) });
+  return createModelClient({
+    chatModel: google(MODELS.chat),
+    imageModel: google.image(MODELS.image),
+    videoModel: createOmniVideoModel(process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? ""),
+  });
 }

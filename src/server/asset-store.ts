@@ -12,10 +12,17 @@ export interface AssetFile {
 export interface AssetStore {
   /** Saves a photo's original and its resized copy, and returns the id that finds them again. */
   save(files: Record<AssetVariant, AssetFile>): Promise<string>;
+  /** Saves a finished video. It has only an original, which `read` finds like any other asset. */
+  saveVideo(bytes: Uint8Array): Promise<string>;
   read(assetId: string, variant: AssetVariant): Promise<AssetFile | undefined>;
 }
 
-const EXTENSIONS: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+const EXTENSIONS: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "video/mp4": "mp4",
+};
 const MEDIA_TYPES = Object.fromEntries(Object.entries(EXTENSIONS).map(([type, ext]) => [ext, type]));
 const ASSET_ID = /^[0-9a-f-]{36}$/;
 
@@ -35,6 +42,14 @@ export function createAssetStore(rootDir: string): AssetStore {
         const { bytes, mediaType } = files[variant];
         await writeFile(path.join(dir, `${variant}.${EXTENSIONS[mediaType]}`), bytes);
       }
+      return assetId;
+    },
+
+    async saveVideo(bytes) {
+      const assetId = randomUUID();
+      const dir = path.join(rootDir, assetId);
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, `original.${EXTENSIONS["video/mp4"]}`), bytes);
       return assetId;
     },
 

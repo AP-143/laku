@@ -24,6 +24,8 @@ interface FakeChatModelOptions {
   scenes?: string[];
   /** The scene the editor rewrites (scene is 1 to 4). */
   replacement?: { scene: number; text: string };
+  /** The video length the request reader finds in the message; leave out for "no length said". */
+  videoSeconds?: number;
 }
 
 /** Which one-shot task a generate call is, read from the tag every internal prompt starts with. */
@@ -47,7 +49,9 @@ export function fakeChatModel(options: FakeChatModelOptions) {
             ? JSON.stringify({ scenes: options.scenes })
             : task === "replace-scene"
               ? JSON.stringify(options.replacement)
-              : options.isProduct === false
+              : task === "video-request"
+                ? JSON.stringify({ seconds: options.videoSeconds ?? null })
+                : options.isProduct === false
                 ? "NO"
                 : "YES";
       return {

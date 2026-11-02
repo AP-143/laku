@@ -172,7 +172,7 @@ describe("studio photo details", () => {
     assert.deepEqual(events.at(-1), { type: "done" });
   });
 
-  it("says video is not available yet instead of generating anything", async () => {
+  it("asks for a storyboard first when a video is requested from a plain photo, instead of generating anything", async () => {
     const app = createTestApp(fakeChatModel({ chunks: ["unused"] }));
     const photoAssetId = await uploadPhoto(app);
 
@@ -180,8 +180,9 @@ describe("studio photo details", () => {
       await app.chat(chatRequest({ messages: [{ role: "user", text: "", photoAssetId }], intent: "video" })),
     );
 
-    assert.match(events.flatMap((e) => (e.type === "assistant_text" ? [e.text] : [])).join(""), /video/i);
+    assert.match(events.flatMap((e) => (e.type === "assistant_text" ? [e.text] : [])).join(""), /storyboard/i);
     assert.equal(events.some((e) => e.type === "asset_ready" || e.type === "job_started"), false);
     assert.equal(app.imageModel.calls.length, 0);
+    assert.equal(app.videoModel.calls.length, 0);
   });
 });
