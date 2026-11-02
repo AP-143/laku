@@ -59,9 +59,17 @@ export function createUploadHandler(store: AssetStore): UploadHandler {
 
 export function createAssetReadHandler(store: AssetStore): AssetReadHandler {
   return async (request, assetId) => {
-    const variant = new URL(request.url).searchParams.get("variant") === "resized" ? "resized" : "original";
+    const params = new URL(request.url).searchParams;
+    const variant = params.get("variant") === "resized" ? "resized" : "original";
     const file = await store.read(assetId, variant);
     if (!file) return new Response("Not found", { status: 404 });
-    return new Response(file.bytes as BodyInit, { headers: { "content-type": file.mediaType } });
+
+    const headers: Record<string, string> = { "content-type": file.mediaType };
+    if (params.get("download")) {
+      // The id is safe in a header (it passed the store's id check), and the extension follows the file type.
+      const extension = file.mediaType.split("/")[1].replace("jpeg", "jpg");
+      headers["content-disposition"] = `attachment; filename="laku-${assetId.slice(0, 8)}.${extension}"`;
+    }
+    return new Response(file.bytes as BodyInit, { headers });
   };
 }

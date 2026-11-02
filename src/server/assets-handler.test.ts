@@ -127,3 +127,25 @@ describe("photo upload", () => {
     assert.deepEqual([info.width, info.height], [1024, 683]);
   });
 });
+
+describe("asset download", () => {
+  it("asks the browser to save the file, with a sensible name, when download is requested", async () => {
+    const { upload, read } = await freshHandlers();
+    const [event] = await readEvents(await upload(uploadRequest(await makePhoto("png"))));
+    const assetId = event.type === "asset_ready" ? event.assetId : "";
+
+    const response = await read(new Request(`http://localhost/api/assets/${assetId}?download=1`), assetId);
+
+    assert.match(response.headers.get("content-disposition") ?? "", /^attachment; filename="laku-[0-9a-f]{8}\.png"$/);
+  });
+
+  it("shows the file inline when download is not requested", async () => {
+    const { upload, read } = await freshHandlers();
+    const [event] = await readEvents(await upload(uploadRequest(await makePhoto("png"))));
+    const assetId = event.type === "asset_ready" ? event.assetId : "";
+
+    const response = await read(readRequest(assetId), assetId);
+
+    assert.equal(response.headers.get("content-disposition"), null);
+  });
+});

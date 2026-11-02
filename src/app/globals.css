@@ -47,18 +47,3 @@ a {
     color-scheme: dark;
   }
 }
-
-.placeholder {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
-.placeholder h1 {
-  font-size: 56px;
-  font-weight: 800;
-  letter-spacing: -0.045em;
-}

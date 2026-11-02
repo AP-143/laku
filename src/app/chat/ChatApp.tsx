@@ -1,0 +1,407 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { ChatEvent, ChatIntent } from "../../shared/chat-events";
+import { assetUrl, fetchUsage, sendChat, uploadPhoto } from "./chat-client";
+import { Composer, type AttachedPhoto } from "./Composer";
+import { loadConversation, saveConversation } from "./saved-conversation";
+import { ThreadView, type Progress } from "./ThreadView";
+import { lastStudioAssetId, openStoryboard, styleOf, type Preset, type RetryRequest, type ThreadItem } from "./thread";
+import "./chat.css";
+
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const APPROVE_TEXT = "Setuju, buatkan gambarnya ya.";
+const HISTORY_LENGTH = 12;
+
+const newId = () => crypto.randomUUID();
+
+interface Usage {
+  monthUsd: number;
+  budgetUsd: number;
+}
+
+/** How the events of one request are folded into the thread. */
+interface RunContext {
+  /** Set when the request continues an open storyboard instead of starting a new one. */
+  scenesItemId?: string;
+  /** For a storyboard approval: which scenes get a frame, in order. */
+  frameIndexes: number[];
+}
+
+function formatUsd(value: number): string {
+  return `US$${value.toFixed(2).replace(".", ",")}`;
+}
+
+export default function ChatApp() {
+  const [items, setItems] = useState<ThreadItem[]>([]);
+  const [ready, setReady] = useState(false);
+  const [text, setText] = useState("");
+  const [photo, setPhoto] = useState<AttachedPhoto | undefined>();
+  const [intent, setIntent] = useState<ChatIntent | undefined>();
+  const [preset, setPreset] = useState<Preset | undefined>();
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<Progress | undefined>();
+  const [note, setNote] = useState<string | undefined>();
+  const [usage, setUsage] = useState<Usage | undefined>();
+  const [menu, setMenu] = useState(false);
+  // The entrance animation plays once on first paint, then its class is removed.
+  const [animating, setAnimating] = useState(true);
+
+  const itemsRef = useRef(items);
+  const cardRef = useRef<HTMLFormElement>(null);
+  const flipFrom = useRef<DOMRect | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  const inThread = items.length > 0;
+
+  // Load the saved conversation once, after the first render, so the server and browser markup match.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reading browser storage can only happen after mount
+    setItems(loadConversation());
+    setReady(true);
+    void fetchUsage().then(setUsage);
+  }, []);
+
+  // Callbacks read the newest thread through this ref, so they do not need to be rebuilt on every message.
+  useLayoutEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setAnimating(false), 2600);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (ready) saveConversation(items);
+  }, [items, ready]);
+
+  // Honour the system's reduced-motion setting for the background video too.
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const apply = () => (query.matches ? videoRef.current?.pause() : void videoRef.current?.play().catch(() => {}));
+    apply();
+    query.addEventListener("change", apply);
+    return () => query.removeEventListener("change", apply);
+  }, []);
+
+  // When the first message turns the hero into a thread, glide the composer to its new place.
+  useLayoutEffect(() => {
+    const from = flipFrom.current;
+    flipFrom.current = null;
+    const card = cardRef.current;
+    if (!from || !card || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const to = card.getBoundingClientRect();
+    card.animate(
+      [{ transform: `translateY(${from.top - to.top}px)` }, { transform: "translateY(0)" }],
+      { duration: 650, easing: "cubic-bezier(.16,1,.3,1)" },
+    );
+  }, [inThread]);
+
+  const patchItem = useCallback((id: string, change: (item: ThreadItem) => ThreadItem) => {
+    setItems((current) => current.map((item) => (item.id === id ? change(item) : item)));
+  }, []);
+
+  /** Sends one request and folds its events into the thread. Used by every button and by the composer. */
+  const run = useCallback(
+    async (body: Record<string, unknown>, context: RunContext = { frameIndexes: [] }) => {
+      setBusy(true);
+      setNote(undefined);
+      let botId: string | undefined;
+      let framesStarted = 0;
+      const retry: RetryRequest = body;
+
+      const handle = (event: ChatEvent) => {
+        switch (event.type) {
+          case "assistant_text": {
+            const id = (botId ??= newId());
+            setItems((current) =>
+              current.some((item) => item.id === id)
+                ? current.map((item) => (item.id === id && item.kind === "bot" ? { ...item, text: item.text + event.text } : item))
+                : [...current, { id, kind: "bot", text: event.text }],
+            );
+            break;
+          }
+          case "job_started": {
+            if (event.kind === "storyboard_frame" && context.scenesItemId) {
+              const sceneIndex = context.frameIndexes[framesStarted++];
+              patchItem(context.scenesItemId, (item) =>
+                item.kind === "scenes" ? { ...item, busy: [...(item.busy ?? []), sceneIndex] } : item,
+              );
+            }
+            setProgress((current) => current ?? { message: "Sedang membuat gambar…" });
+            break;
+          }
+          case "job_progress":
+            setProgress({ message: event.message, percent: event.percent });
+            break;
+          case "storyboard_scenes": {
+            if (context.scenesItemId) {
+              patchItem(context.scenesItemId, (item) => (item.kind === "scenes" ? { ...item, scenes: event.scenes } : item));
+            } else {
+              setItems((current) => [
+                ...current,
+                { id: newId(), kind: "scenes", sourceAssetId: event.sourceAssetId, scenes: event.scenes, frames: {}, approved: false },
+              ]);
+            }
+            break;
+          }
+          case "asset_ready": {
+            if (event.role === "studio_photo" && event.sourceAssetId) {
+              const sourceAssetId = event.sourceAssetId;
+              setItems((current) => [
+                ...current,
+                { id: newId(), kind: "studio", assetId: event.assetId, sourceAssetId, retry },
+              ]);
+            } else if (event.role === "storyboard_frame" && context.scenesItemId && event.sceneIndex !== undefined) {
+              const sceneIndex = event.sceneIndex;
+              patchItem(context.scenesItemId, (item) =>
+                item.kind === "scenes"
+                  ? {
+                      ...item,
+                      frames: { ...item.frames, [sceneIndex]: event.assetId },
+                      busy: (item.busy ?? []).filter((index) => index !== sceneIndex),
+                    }
+                  : item,
+              );
+            }
+            break;
+          }
+          case "usage_updated":
+            setUsage({ monthUsd: event.monthUsd, budgetUsd: event.budgetUsd });
+            break;
+          case "error":
+            setItems((current) => [
+              ...current,
+              { id: newId(), kind: "error", message: event.message, code: event.code, retryable: event.retryable, retry },
+            ]);
+            break;
+          case "done":
+            break;
+        }
+      };
+
+      await sendChat(body, handle);
+
+      // Whatever happened, nothing is left spinning.
+      if (context.scenesItemId) {
+        patchItem(context.scenesItemId, (item) => (item.kind === "scenes" ? { ...item, busy: undefined } : item));
+      }
+      setProgress(undefined);
+      setBusy(false);
+    },
+    [patchItem],
+  );
+
+  function conversationBody(extra: Record<string, unknown>, lastMessage: { text: string; photoAssetId?: string }) {
+    const history = itemsRef.current.flatMap((item): Array<{ role: "user" | "assistant"; text: string }> =>
+      item.kind === "user"
+        ? [{ role: "user" as const, text: item.text }]
+        : item.kind === "bot"
+          ? [{ role: "assistant" as const, text: item.text }]
+          : [],
+    );
+    const messages: Array<{ role: "user" | "assistant"; text: string; photoAssetId?: string }> = [
+      ...history.slice(-(HISTORY_LENGTH - 1)),
+      { role: "user", ...lastMessage },
+    ];
+    const open = openStoryboard(itemsRef.current);
+    return {
+      messages,
+      lastImageAssetId: lastStudioAssetId(itemsRef.current),
+      storyboard: open ? { photoAssetId: open.sourceAssetId, scenes: open.scenes } : undefined,
+      ...extra,
+    };
+  }
+
+  const submit = useCallback(() => {
+    const message = text.trim();
+    if (busy || (!message && !photo) || photo?.uploading) return;
+    if (!inThread) flipFrom.current = cardRef.current?.getBoundingClientRect() ?? null;
+
+    const body = conversationBody(
+      { intent, style: styleOf(preset) },
+      { text: message, photoAssetId: photo?.assetId },
+    );
+    setItems((current) => [...current, { id: newId(), kind: "user", text: message, photoAssetId: photo?.assetId }]);
+    setText("");
+    setPhoto(undefined);
+    setIntent(undefined);
+    void run(body, { scenesItemId: body.storyboard ? openStoryboard(itemsRef.current)?.id : undefined, frameIndexes: [] });
+  }, [text, photo, busy, inThread, intent, preset, run]);
+
+  const attach = useCallback(async (file: File) => {
+    setNote(undefined);
+    if (!ACCEPTED_TYPES.includes(file.type)) {
+      setNote("Format fotonya belum didukung. Pakai JPG, PNG, atau WebP ya.");
+      return;
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      setNote("Fotonya terlalu besar. Maksimal 10 MB ya.");
+      return;
+    }
+    setPhoto({ previewUrl: URL.createObjectURL(file), uploading: true });
+    const result = await uploadPhoto(file);
+    if ("error" in result) {
+      setPhoto(undefined);
+      setNote(result.error);
+    } else {
+      setPhoto((current) => (current ? { ...current, assetId: result.assetId, uploading: false } : current));
+    }
+  }, []);
+
+  const editScene = useCallback(
+    (itemId: string, index: number, value: string) => {
+      patchItem(itemId, (item) =>
+        item.kind === "scenes" ? { ...item, scenes: item.scenes.map((scene, i) => (i === index ? value : scene)) } : item,
+      );
+    },
+    [patchItem],
+  );
+
+  /** Generates frames for an approved storyboard: all four, or just the one asked for. */
+  const makeFrames = useCallback(
+    (itemId: string, sceneIndex?: number) => {
+      const item = itemsRef.current.find((candidate) => candidate.id === itemId);
+      if (busy || !item || item.kind !== "scenes" || item.scenes.some((scene) => !scene.trim())) return;
+      patchItem(itemId, (current) => (current.kind === "scenes" ? { ...current, approved: true } : current));
+      const body = {
+        messages: [{ role: "user", text: sceneIndex === undefined ? APPROVE_TEXT : `Buat ulang scene ${sceneIndex + 1}.` }],
+        storyboard: { photoAssetId: item.sourceAssetId, scenes: item.scenes.map((scene) => scene.trim()) },
+        approve: sceneIndex === undefined ? {} : { sceneIndex },
+      };
+      void run(body, { scenesItemId: itemId, frameIndexes: sceneIndex === undefined ? [0, 1, 2, 3] : [sceneIndex] });
+    },
+    [busy, patchItem, run],
+  );
+
+  /** Resends the request that failed or produced an image, without adding a message to the thread. */
+  const retryRequest = useCallback(
+    (request: RetryRequest) => {
+      if (busy) return;
+      const approve = request.approve as { sceneIndex?: number } | undefined;
+      if (!approve) {
+        void run(request);
+        return;
+      }
+      // A storyboard retry picks up where it stopped: only the first frame that is still missing.
+      const scenes = itemsRef.current.findLast((item) => item.kind === "scenes");
+      if (!scenes || scenes.kind !== "scenes") return;
+      const firstMissing = [0, 1, 2, 3].find((index) => !scenes.frames[index]);
+      const anyDone = Object.keys(scenes.frames).length > 0;
+      makeFrames(scenes.id, approve.sceneIndex ?? (anyDone ? firstMissing : undefined));
+    },
+    [busy, run, makeFrames],
+  );
+
+  function newChat() {
+    if (busy) return;
+    setItems([]);
+    setText("");
+    setPhoto(undefined);
+    setIntent(undefined);
+    setNote(undefined);
+  }
+
+  return (
+    <div className={`chat${inThread ? " is-thread" : ""}${animating ? " anim" : ""}`}>
+      <div className="stage">
+        <video
+          ref={videoRef}
+          className="stage-video"
+          src="/media/lake.mp4"
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="auto"
+          aria-hidden="true"
+        />
+        <div className="stage-dim" aria-hidden="true" />
+        <div className="frame">
+          <input type="checkbox" id="menu" className="menu-toggle" aria-hidden="true" tabIndex={-1} />
+          <header className="nav">
+            <Link className="brand" href="/" aria-label="LAKU beranda">
+              <svg className="mark" viewBox="0 0 34 34" aria-hidden="true">
+                <circle cx="17" cy="17" r="17" fill="#9C86CE" />
+                <circle cx="17" cy="17" r="8.6" fill="#fff" />
+                <circle cx="17" cy="17" r="3.7" fill="#151519" />
+              </svg>
+              <span className="wordmark">LAKU</span>
+            </Link>
+            <nav className="links" aria-label="Menu utama">
+              <Link href="/">Beranda</Link>
+              <a href="#">Fitur</a>
+              <a href="#">Cara Kerja</a>
+              <a href="#">Kontak</a>
+            </nav>
+            <button type="button" className="cta" onClick={newChat} disabled={busy || !inThread}>
+              <span>Chat Baru</span>
+            </button>
+            <label className="burger" htmlFor="menu" aria-label="Buka menu">
+              <svg viewBox="0 0 17 12" aria-hidden="true">
+                <path d="M0 1h17M0 11h17" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+            </label>
+          </header>
+          <div className="sheet">
+            <div className="sheet-panel">
+              <Link href="/">Beranda</Link>
+              <a href="#">Fitur</a>
+              <a href="#">Cara Kerja</a>
+              <a href="#">Kontak</a>
+              <button type="button" className="sheet-cta" onClick={newChat} disabled={busy || !inThread}>
+                Chat Baru
+              </button>
+            </div>
+          </div>
+
+          {usage && (
+            <p className="usage" title="Perkiraan pemakaian kredit gratis bulan ini">
+              Kuota gratis bulan ini: {formatUsd(usage.monthUsd)} / {formatUsd(usage.budgetUsd)}
+            </p>
+          )}
+
+          <main className="hero">
+            <h1 className="h1">Ubah foto produkmu jadi konten studio.</h1>
+            {inThread && (
+              <ThreadView
+                items={items}
+                progress={progress}
+                busy={busy}
+                onRetry={retryRequest}
+                onEditScene={editScene}
+                onMakeFrames={makeFrames}
+                photoUrl={(assetId) => assetUrl(assetId, "resized")}
+              />
+            )}
+            <Composer
+              ref={cardRef}
+              text={text}
+              onText={setText}
+              photo={photo}
+              onAttach={attach}
+              onRemovePhoto={() => setPhoto(undefined)}
+              intent={intent}
+              onIntent={(next) => setIntent((current) => (current === next ? undefined : next))}
+              preset={preset}
+              onPreset={setPreset}
+              menu={menu}
+              onMenu={setMenu}
+              note={note}
+              busy={busy}
+              onSubmit={submit}
+              inThread={inThread}
+            />
+          </main>
+
+          <footer className="proof">
+            <p>Dibuat untuk penjual online Indonesia</p>
+          </footer>
+        </div>
+      </div>
+    </div>
+  );
+}
