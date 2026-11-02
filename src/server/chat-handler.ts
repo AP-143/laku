@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { COSTS } from "../config/models";
 import type { ChatIntent, StudioStyle } from "../shared/chat-events";
 import { SCENE_COUNT, SCENE_INDEXES } from "../shared/storyboard";
 import { DEFAULT_VIDEO_SECONDS, planClips } from "../shared/video-plan";
@@ -10,7 +12,7 @@ import { framePrompt, revisionPrompt, studioPhotoPrompt } from "./image-prompts"
 import { describeFailure } from "./model-errors";
 import type { ChatMessage, ModelClient } from "./model-client";
 import type { UsageLedger } from "./usage-ledger";
-import { createVideoJobs } from "./video-jobs";
+import { createVideoJobs, videoCostUsd } from "./video-jobs";
 
 export type ChatHandler = (request: Request) => Promise<Response>;
 
@@ -20,6 +22,10 @@ const NOT_A_PRODUCT_MESSAGE =
   "Maaf, saat ini aku hanya bisa memproses foto produk. Coba kirim foto barang yang mau kamu jual ya.";
 const NEED_PHOTO_MESSAGE = "Kirim dulu foto produknya ya (klik ikon penjepit kertas), nanti aku bantu.";
 const NEED_FRAMES_MESSAGE = "Buat dulu storyboard dan gambar tiap scene-nya ya, baru aku buatkan videonya.";
+const confirmVideoMessage = (seconds: number, clipCount: number, usd: number) => {
+  const rupiah = (Math.round((usd * COSTS.idrPerUsd) / 100) * 100).toLocaleString("id-ID");
+  return `Video ${seconds} detik (${clipCount} klip), perkiraan US$${usd.toFixed(2)} (sekitar Rp${rupiah}). Lanjut?`;
+};
 const videoTooLongMessage = (maxSeconds: number) =>
   `Storyboard-mu bisa dijadikan video maksimal ${maxSeconds} detik. Coba minta video yang lebih pendek ya.`;
 const SCENES_PROPOSED_MESSAGE =
@@ -53,6 +59,8 @@ interface Conversation {
   approve?: { sceneIndex?: number };
   /** The generated storyboard frames in scene order, which a video is made from. */
   frames: string[];
+  /** The seller said yes to the price of an expensive video. */
+  confirmVideo: boolean;
 }
 
 const INTENTS: readonly string[] = ["studio_photo", "storyboard", "video"];
@@ -136,6 +144,7 @@ async function readConversation(request: Request): Promise<Conversation | undefi
     storyboard?: unknown;
     approve?: unknown;
     frames?: unknown;
+    confirmVideo?: unknown;
   };
   if (fields.lastImageAssetId !== undefined && (typeof fields.lastImageAssetId !== "string" || !isAssetId(fields.lastImageAssetId))) {
     return undefined;
@@ -148,6 +157,7 @@ async function readConversation(request: Request): Promise<Conversation | undefi
 
   return {
     frames,
+    confirmVideo: fields.confirmVideo === true,
     messages: conversation,
     photoAssetId,
     lastImageAssetId: fields.lastImageAssetId as string | undefined,
@@ -254,6 +264,19 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
           const { seconds } = lastText ? await models.readVideoRequest(lastText) : { seconds: undefined };
           const plan = planClips(seconds ?? DEFAULT_VIDEO_SECONDS, frames.length);
           if (!plan.ok) return reply(videoTooLongMessage(plan.maxSeconds));
+
+          // An expensive video waits for the seller's yes; nothing is booked or generated until then.
+          const estimatedUsd = videoCostUsd(plan.clips);
+          if (estimatedUsd > COSTS.videoConfirmAboveUsd && !conversation.confirmVideo) {
+            send({
+              type: "confirmation_requested",
+              confirmationId: randomUUID(),
+              message: confirmVideoMessage(plan.seconds, plan.clips.length, estimatedUsd),
+              estimatedUsd,
+            });
+            send({ type: "done" });
+            return;
+          }
           await videos.generate({ frames, plan });
           send({ type: "done" });
           return;

@@ -16,6 +16,7 @@ interface ThreadViewProps {
   onRetry: (request: RetryRequest) => void;
   onEditScene: (itemId: string, index: number, value: string) => void;
   onMakeFrames: (itemId: string, sceneIndex?: number) => void;
+  onAnswerConfirm: (itemId: string, yes: boolean) => void;
   photoUrl: (assetId: string) => string;
 }
 
@@ -23,7 +24,7 @@ function Spinner({ label }: { label: string }) {
   return <span className="spinner" role="status" aria-label={label} />;
 }
 
-export function ThreadView({ items, progress, busy, onRetry, onEditScene, onMakeFrames, photoUrl }: ThreadViewProps) {
+export function ThreadView({ items, progress, busy, onRetry, onEditScene, onMakeFrames, onAnswerConfirm, photoUrl }: ThreadViewProps) {
   const end = useRef<HTMLDivElement>(null);
 
   // Keep the newest message in view as the conversation grows.
@@ -77,6 +78,25 @@ export function ThreadView({ items, progress, busy, onRetry, onEditScene, onMake
                   </a>
                 </div>
               </figure>
+            );
+
+          case "confirm":
+            return (
+              <div key={item.id} className="msg msg-bot">
+                <p>{item.message}</p>
+                {item.answer ? (
+                  <span className="hint">{item.answer === "yes" ? "Kamu setuju, videonya dibuat." : "Dibatalkan, tidak ada biaya."}</span>
+                ) : (
+                  <div className="actions">
+                    <button type="button" className="btn btn-primary" disabled={busy} onClick={() => onAnswerConfirm(item.id, true)}>
+                      Lanjut
+                    </button>
+                    <button type="button" className="btn" disabled={busy} onClick={() => onAnswerConfirm(item.id, false)}>
+                      Batal
+                    </button>
+                  </div>
+                )}
+              </div>
             );
 
           case "video":

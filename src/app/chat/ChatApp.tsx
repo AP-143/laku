@@ -175,6 +175,9 @@ export default function ChatApp() {
             }
             break;
           }
+          case "confirmation_requested":
+            setItems((current) => [...current, { id: newId(), kind: "confirm", message: event.message, retry }]);
+            break;
           case "usage_updated":
             setUsage({ monthUsd: event.monthUsd, budgetUsd: event.budgetUsd });
             break;
@@ -309,6 +312,17 @@ export default function ChatApp() {
     [busy, run, makeFrames],
   );
 
+  /** The seller's answer to a price question: yes sends the same request again, now confirmed; no spends nothing. */
+  const answerConfirmation = useCallback(
+    (itemId: string, yes: boolean) => {
+      const item = itemsRef.current.find((candidate) => candidate.id === itemId);
+      if (busy || !item || item.kind !== "confirm" || item.answer) return;
+      patchItem(itemId, (current) => (current.kind === "confirm" ? { ...current, answer: yes ? "yes" : "no" } : current));
+      if (yes) void run({ ...item.retry, confirmVideo: true }, { frameIndexes: [] });
+    },
+    [busy, patchItem, run],
+  );
+
   function newChat() {
     if (busy) return;
     setItems([]);
@@ -345,6 +359,7 @@ export default function ChatApp() {
                 onRetry={retryRequest}
                 onEditScene={editScene}
                 onMakeFrames={makeFrames}
+                onAnswerConfirm={answerConfirmation}
                 photoUrl={(assetId) => assetUrl(assetId, "resized")}
               />
             )}

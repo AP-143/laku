@@ -127,6 +127,10 @@ export const COSTS = {
   monthlyBudgetUsd: 4,
   /** One second of video from `MODELS.video` at 720p (about US$0.10, see the bake-off notes). */
   videoUsdPerSecond: 0.1,
+  /** A video estimated above this is only made after the seller says yes; cheaper ones start at once. */
+  videoConfirmAboveUsd: 1,
+  /** Only to show rupiah next to dollars in a question to the seller; a rough rate, not a quote. */
+  idrPerUsd: 16_500,
   /** Stops a bug or a loop from burning the whole balance in one day; normal use stays well under it. */
   dailyBudgetUsd: 2,
 } as const;

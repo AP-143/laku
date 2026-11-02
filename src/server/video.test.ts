@@ -134,6 +134,50 @@ describe("video from the storyboard", () => {
   });
 });
 
+describe("confirming an expensive video", () => {
+  const confirmationOf = (events: ChatEvent[]) => events.find((event) => event.type === "confirmation_requested");
+
+  it("asks first when the video would cost more than US$1, and spends nothing until the seller agrees", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 20 }));
+    const frames = await uploadFrames(app);
+
+    const events = await readEvents(await app.chat(videoRequest("video 20 detik", frames)));
+
+    const ask = confirmationOf(events);
+    assert.ok(ask && ask.type === "confirmation_requested");
+    assert.equal(ask.estimatedUsd, 2);
+    assert.match(ask.message, /20 detik/);
+    assert.match(ask.message, /US\$2\.00/);
+    assert.match(ask.message, /Rp33\.000/);
+    assert.equal(app.videoModel.calls.length, 0);
+    assert.equal(finishedVideo(events), undefined);
+    assert.equal((await usageOf(app)).monthUsd, 0);
+    assert.deepEqual(events.at(-1), { type: "done" });
+  });
+
+  it("makes the video once the same request is sent again with the seller's yes", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 20 }));
+    const frames = await uploadFrames(app);
+
+    const events = await readEvents(await app.chat(videoRequest("video 20 detik", frames, { confirmVideo: true })));
+
+    assert.equal(confirmationOf(events), undefined);
+    assert.ok(finishedVideo(events));
+    assert.equal(app.videoModel.calls.length, 4);
+    assert.equal((await usageOf(app)).monthUsd, 2);
+  });
+
+  it("starts straight away at US$1 or less, with no question", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10 }));
+    const frames = await uploadFrames(app);
+
+    const events = await readEvents(await app.chat(videoRequest("video 10 detik", frames)));
+
+    assert.equal(confirmationOf(events), undefined);
+    assert.ok(finishedVideo(events));
+  });
+});
+
 describe("video spending", () => {
   it("refuses up front when the budget cannot cover the video and says how many seconds it can", async () => {
     // US$1.50 spent today: US$0.50 is left of the day, which is 5 seconds.

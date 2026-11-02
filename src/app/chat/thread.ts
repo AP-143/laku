@@ -21,6 +21,8 @@ export type ThreadItem =
       approved: boolean;
     }
   | { id: string; kind: "video"; assetId: string; sourceAssetId: string }
+  /** The bot asks before spending: the request to send again with a yes, and the seller's answer once given. */
+  | { id: string; kind: "confirm"; message: string; retry: RetryRequest; answer?: "yes" | "no" }
   | { id: string; kind: "error"; message: string; code?: ErrorCode; retryable: boolean; retry?: RetryRequest };
 
 export const PRESET_LABELS = {

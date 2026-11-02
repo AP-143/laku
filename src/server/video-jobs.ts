@@ -19,6 +19,9 @@ const roundUsd = (usd: number) => Math.round(usd * 10_000) / 10_000;
 const costOf = (seconds: number) => roundUsd(seconds * COSTS.videoUsdPerSecond);
 const sum = (numbers: number[]) => numbers.reduce((total, value) => total + value, 0);
 
+/** The estimated price of a video made of these clips, in US dollars. */
+export const videoCostUsd = (clips: number[]) => costOf(sum(clips));
+
 /**
  * Runs one video from start to finish: product check, budget reservation, clips, joining, saving, events.
  * It throws on failure and never retries, so the caller decides what the user sees.
