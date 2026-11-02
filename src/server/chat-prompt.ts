@@ -17,6 +17,8 @@ food or drinks, accessories. It is still YES if a hand holds it or the backgroun
 Answer NO if it mainly shows a person, a face, a selfie, a group, a screenshot, a document, a landscape, or an animal.
 `.trim();
 
+import { SCENE_COUNT } from "../shared/storyboard";
+
 /** Scenes are shown to the seller, so they are written in Bahasa Indonesia. */
 export function planScenesPrompt(request: string): string {
   return `
@@ -51,7 +53,7 @@ function parseJsonObject(answer: string): Record<string, unknown> {
 
 export function parseScenes(answer: string): string[] {
   const { scenes } = parseJsonObject(answer);
-  if (!Array.isArray(scenes) || scenes.length !== 4 || !scenes.every((s) => typeof s === "string" && s.trim())) {
+  if (!Array.isArray(scenes) || scenes.length !== SCENE_COUNT || !scenes.every((s) => typeof s === "string" && s.trim())) {
     throw new Error("The model did not return exactly 4 scenes.");
   }
   return scenes.map((scene) => (scene as string).trim());
@@ -60,7 +62,7 @@ export function parseScenes(answer: string): string[] {
 /** The index (0 to 3) and new text of the one scene to replace. */
 export function parseReplacement(answer: string): { index: number; text: string } {
   const { scene, text } = parseJsonObject(answer);
-  const valid = Number.isInteger(scene) && (scene as number) >= 1 && (scene as number) <= 4;
+  const valid = Number.isInteger(scene) && (scene as number) >= 1 && (scene as number) <= SCENE_COUNT;
   if (!valid || typeof text !== "string" || !text.trim()) {
     throw new Error("The model did not return a valid scene replacement.");
   }

@@ -52,7 +52,11 @@ export default function Landing() {
 
     // Reduced motion: show the finished page, with the video resting on its poster.
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      video.current?.pause();
+      // Dropping the source (instead of pausing mid-play) leaves nothing but the poster on screen.
+      if (video.current) {
+        video.current.removeAttribute("src");
+        video.current.load();
+      }
       element.classList.remove("pre");
       return;
     }

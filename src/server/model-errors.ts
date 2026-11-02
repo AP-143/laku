@@ -7,6 +7,7 @@ type ErrorEvent = Extract<ChatEvent, { type: "error" }>;
 const RATE_LIMITED_MESSAGE = "Terlalu banyak permintaan dalam waktu singkat. Tunggu sebentar lalu coba lagi ya.";
 const QUOTA_EXHAUSTED_MESSAGE = "Kuota gratis bulan ini sudah habis. Coba lagi nanti atau bulan depan ya.";
 const REFUSED_MESSAGE = "Fotonya ditolak oleh model gambar. Coba foto lain, atau ubah permintaanmu, lalu coba lagi ya.";
+const UNSUPPORTED_MESSAGE = "Model gambar tidak bisa memakai fotonya. Coba foto lain (JPG, PNG, atau WebP) lalu coba lagi ya.";
 const NETWORK_MESSAGE = "Koneksi ke layanan AI bermasalah. Cek internetmu lalu coba lagi ya.";
 const GENERIC_MESSAGE = "Maaf, ada gangguan saat memproses pesanmu. Coba lagi ya.";
 const LOCAL_QUOTA_MESSAGE =
@@ -37,7 +38,11 @@ export function describeFailure(error: unknown): ErrorEvent {
   if (status === 429 || /rate.?limit/i.test(message)) {
     return { type: "error", message: RATE_LIMITED_MESSAGE, retryable: true, code: "rate_limited" };
   }
-  if (status === 402 || /insufficient|credit|quota|balance/i.test(message)) {
+  // Checked before the credit words, so "does not support image input, credit is fine" is not read as no credit.
+  if (/unsupported|not support|invalid (image|file|input)/i.test(message)) {
+    return { type: "error", message: UNSUPPORTED_MESSAGE, retryable: true };
+  }
+  if (status === 402 || /insufficient (funds|credit)|quota|out of credit|credits? (exhausted|used up|left)/i.test(message)) {
     return { type: "error", message: QUOTA_EXHAUSTED_MESSAGE, retryable: true, code: "quota_exhausted" };
   }
   if (/sensitive|moderation|safety|blocked|policy/i.test(message)) {

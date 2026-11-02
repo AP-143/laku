@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { assetUrl } from "./chat-client";
+import { assetUrl, downloadUrl } from "./chat-client";
 import type { RetryRequest, ThreadItem } from "./thread";
 
 export interface Progress {
@@ -18,8 +18,6 @@ interface ThreadViewProps {
   onMakeFrames: (itemId: string, sceneIndex?: number) => void;
   photoUrl: (assetId: string) => string;
 }
-
-const downloadUrl = (assetId: string) => `${assetUrl(assetId)}${assetUrl(assetId).includes("?") ? "&" : "?"}download=1`;
 
 function Spinner({ label }: { label: string }) {
   return <span className="spinner" role="status" aria-label={label} />;

@@ -60,6 +60,16 @@ describe("error handling", () => {
     assert.equal(app.imageModel.calls.length, 1);
   });
 
+  it("explains an input the model cannot use, and does not call it exhausted credit", async () => {
+    const { app, error } = await failingTurn(new Error("This model does not support image input; your credit is fine"));
+
+    assert.equal(error.retryable, true);
+    assert.equal(error.code, undefined);
+    assert.match(error.message, /foto|gambar/i);
+    assert.notEqual(error.message, (await failingTurn(httpError(402, "no credit left"))).error.message);
+    assert.equal(app.imageModel.calls.length, 1);
+  });
+
   it("explains a network failure as a connection problem", async () => {
     const { app, error } = await failingTurn(new TypeError("fetch failed"));
 

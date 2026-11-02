@@ -39,8 +39,19 @@ export function lastStudioAssetId(items: ThreadItem[]): string | undefined {
   return items.findLast((item) => item.kind === "studio")?.assetId;
 }
 
-/** The storyboard still being edited, if the newest storyboard is not yet approved. */
+/** The photo the seller attached most recently, so a typed request can still use it on the next turn. */
+export function lastPhotoAssetId(items: ThreadItem[]): string | undefined {
+  for (const item of items.toReversed()) {
+    if (item.kind === "user" && item.photoAssetId) return item.photoAssetId;
+  }
+  return undefined;
+}
+
+/**
+ * The storyboard scenes can still be edited in chat: the newest one, until at least one frame exists.
+ * (A failed first approval leaves it open, so the seller can still change a scene.)
+ */
 export function openStoryboard(items: ThreadItem[]) {
   const latest = items.findLast((item) => item.kind === "scenes");
-  return latest && !latest.approved ? latest : undefined;
+  return latest && Object.keys(latest.frames).length === 0 ? latest : undefined;
 }

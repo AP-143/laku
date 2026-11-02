@@ -7,7 +7,8 @@ import { assetUrl, fetchUsage, sendChat, uploadPhoto } from "./chat-client";
 import { Composer, type AttachedPhoto } from "./Composer";
 import { loadConversation, saveConversation } from "./saved-conversation";
 import { ThreadView, type Progress } from "./ThreadView";
-import { lastStudioAssetId, openStoryboard, styleOf, type Preset, type RetryRequest, type ThreadItem } from "./thread";
+import { SCENE_INDEXES } from "../../shared/storyboard";
+import { lastPhotoAssetId, lastStudioAssetId, openStoryboard, styleOf, type Preset, type RetryRequest, type ThreadItem } from "./thread";
 import "./chat.css";
 
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
@@ -210,7 +211,8 @@ export default function ChatApp() {
     const open = openStoryboard(itemsRef.current);
     return {
       messages,
-      lastImageAssetId: lastStudioAssetId(itemsRef.current),
+      // The newest result, or else the photo sent earlier, so "bikin foto studio" works on a later turn.
+      lastImageAssetId: lastStudioAssetId(itemsRef.current) ?? lastPhotoAssetId(itemsRef.current),
       storyboard: open ? { photoAssetId: open.sourceAssetId, scenes: open.scenes } : undefined,
       ...extra,
     };
@@ -225,6 +227,8 @@ export default function ChatApp() {
       { intent, style: styleOf(preset) },
       { text: message, photoAssetId: photo?.assetId },
     );
+    // A new photo starts a new storyboard instead of editing the open one (frames follow the photo they were planned from).
+    if (photo) body.storyboard = undefined;
     setItems((current) => [...current, { id: newId(), kind: "user", text: message, photoAssetId: photo?.assetId }]);
     setText("");
     setPhoto(undefined);
@@ -272,7 +276,7 @@ export default function ChatApp() {
         storyboard: { photoAssetId: item.sourceAssetId, scenes: item.scenes.map((scene) => scene.trim()) },
         approve: sceneIndex === undefined ? {} : { sceneIndex },
       };
-      void run(body, { scenesItemId: itemId, frameIndexes: sceneIndex === undefined ? [0, 1, 2, 3] : [sceneIndex] });
+      void run(body, { scenesItemId: itemId, frameIndexes: sceneIndex === undefined ? [...SCENE_INDEXES] : [sceneIndex] });
     },
     [busy, patchItem, run],
   );
@@ -283,13 +287,14 @@ export default function ChatApp() {
       if (busy) return;
       const approve = request.approve as { sceneIndex?: number } | undefined;
       if (!approve) {
-        void run(request);
+        // A retried scene replacement must patch the open storyboard, not add a second one.
+        void run(request, { scenesItemId: request.storyboard ? openStoryboard(itemsRef.current)?.id : undefined, frameIndexes: [] });
         return;
       }
       // A storyboard retry picks up where it stopped: only the first frame that is still missing.
       const scenes = itemsRef.current.findLast((item) => item.kind === "scenes");
       if (!scenes || scenes.kind !== "scenes") return;
-      const firstMissing = [0, 1, 2, 3].find((index) => !scenes.frames[index]);
+      const firstMissing = SCENE_INDEXES.find((index) => !scenes.frames[index]);
       const anyDone = Object.keys(scenes.frames).length > 0;
       makeFrames(scenes.id, approve.sceneIndex ?? (anyDone ? firstMissing : undefined));
     },

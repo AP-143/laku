@@ -2,11 +2,8 @@ import type { ChatEvent } from "../../shared/chat-events";
 
 /** Browser-side calls to the chat API. Nothing here retries: the user decides when to try again. */
 
-const NETWORK_ERROR: ChatEvent = {
-  type: "error",
-  message: "Koneksi ke server bermasalah. Cek internetmu lalu coba lagi ya.",
-  retryable: true,
-};
+const NETWORK_MESSAGE = "Koneksi ke server bermasalah. Cek internetmu lalu coba lagi ya.";
+const NETWORK_ERROR: ChatEvent = { type: "error", message: NETWORK_MESSAGE, retryable: true };
 
 /** Reads an NDJSON response and hands each event over as it arrives. */
 async function readEventStream(response: Response, onEvent: (event: ChatEvent) => void): Promise<void> {
@@ -53,7 +50,7 @@ export function sendChat(body: unknown, onEvent: (event: ChatEvent) => void): Pr
 export async function uploadPhoto(file: File): Promise<{ assetId: string } | { error: string }> {
   const form = new FormData();
   form.set("photo", file);
-  let result: { assetId: string } | { error: string } = { error: NETWORK_ERROR.type === "error" ? NETWORK_ERROR.message : "" };
+  let result: { assetId: string } | { error: string } = { error: NETWORK_MESSAGE };
   await postForEvents("/api/assets", { body: form }, (event) => {
     if (event.type === "asset_ready") result = { assetId: event.assetId };
     else if (event.type === "error") result = { error: event.message };
@@ -72,3 +69,6 @@ export async function fetchUsage(): Promise<{ monthUsd: number; budgetUsd: numbe
 
 export const assetUrl = (assetId: string, variant: "original" | "resized" = "original") =>
   `/api/assets/${assetId}${variant === "resized" ? "?variant=resized" : ""}`;
+
+/** The same file, but with a header that makes the browser save it. */
+export const downloadUrl = (assetId: string) => `/api/assets/${assetId}?download=1`;
