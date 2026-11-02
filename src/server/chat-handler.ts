@@ -5,7 +5,7 @@ import { SCENE_COUNT, SCENE_INDEXES } from "../shared/storyboard";
 import { CLIP_SECONDS, DEFAULT_VIDEO_SECONDS, planClips } from "../shared/video-plan";
 import { isAssetId, type AssetFile, type AssetStore } from "./asset-store";
 import { readBoundedBytes } from "./bounded-body";
-import type { Intent } from "./chat-prompt";
+import { wordRange, type Intent } from "./chat-prompt";
 import { eventResponse } from "./event-response";
 import { NotAProductError, createImageJobs } from "./image-jobs";
 import { framePrompt, revisionPrompt, studioPhotoPrompt } from "./image-prompts";
@@ -13,6 +13,7 @@ import { describeFailure } from "./model-errors";
 import type { ChatMessage, ModelClient } from "./model-client";
 import type { UsageLedger } from "./usage-ledger";
 import { createVideoJobs, videoCostUsd } from "./video-jobs";
+import { probeSeconds } from "./video-join";
 
 export type ChatHandler = (request: Request) => Promise<Response>;
 
@@ -26,10 +27,14 @@ const NEED_NARRATED_VIDEO_MESSAGE = "Buat dulu video dengan voice over ya, baru 
 const WHAT_TO_CHANGE_MESSAGE =
   "Mau diubah apanya? Kamu bisa minta narasi dengan kata-kata lain, atau ganti suaranya jadi suara cewek atau cowok.";
 const CLIP_NOT_FOUND_MESSAGE = "Klip yang sudah jadi tidak ketemu lagi. Minta videonya dibuat dari awal ya.";
-const confirmVideoMessage = (seconds: number, clipCount: number, usd: number) => {
-  const rupiah = (Math.round((usd * COSTS.idrPerUsd) / 100) * 100).toLocaleString("id-ID");
-  return `Video ${seconds} detik (${clipCount} klip), perkiraan US$${usd.toFixed(2)} (sekitar Rp${rupiah}). Lanjut?`;
-};
+const priceText = (usd: number) =>
+  `US$${usd.toFixed(2)} (sekitar Rp${(Math.round((usd * COSTS.idrPerUsd) / 100) * 100).toLocaleString("id-ID")})`;
+const confirmVideoMessage = (seconds: number, clipCount: number, usd: number) =>
+  `Video ${seconds} detik (${clipCount} klip), perkiraan ${priceText(usd)}. Lanjut?`;
+const resumeVideoMessage = (clipCount: number, usd: number) =>
+  `Membuat ulang ${clipCount} klip yang belum jadi, perkiraan ${priceText(usd)}. Lanjut?`;
+const NARRATION_TOO_LONG_MESSAGE = (seconds: number, maxWords: number) =>
+  `Narasinya terlalu panjang untuk video ${Math.round(seconds)} detik (maksimal sekitar ${maxWords} kata). Coba yang lebih singkat ya.`;
 const videoTooLongMessage = (maxSeconds: number) =>
   `Storyboard-mu bisa dijadikan video maksimal ${maxSeconds} detik. Coba minta video yang lebih pendek ya.`;
 const SCENES_PROPOSED_MESSAGE =
@@ -73,12 +78,15 @@ interface Conversation {
   revise?: VoiceRevise;
 }
 
+/** The narration a seller can change. The length is not part of it: the server reads that from the video. */
 interface VoiceRevise {
   silentAssetId: string;
-  seconds: number;
   script: string;
   voice: string;
 }
+
+/** A narration may run a little over the words that fit the length, because the pace of speech varies. */
+const NARRATION_WORD_SLACK = 5;
 
 /** What `video_partial` told the browser, sent back as it was: the clip plan and the finished clips by position. */
 interface VideoResume {
@@ -159,21 +167,17 @@ function readResume(value: unknown): VideoResume | null | undefined {
 /** `null` means the field was sent but is not a narration this server could have made; no field means none. */
 function readRevise(value: unknown): VoiceRevise | null | undefined {
   if (value === undefined) return undefined;
-  const { silentAssetId, seconds, script, voice } = (value ?? {}) as Record<string, unknown>;
+  const { silentAssetId, script, voice } = (value ?? {}) as Record<string, unknown>;
   const voices: readonly string[] = Object.values(VOICES);
   const valid =
     typeof silentAssetId === "string" &&
     isAssetId(silentAssetId) &&
-    typeof seconds === "number" &&
-    Number.isFinite(seconds) &&
-    seconds > 0 &&
-    seconds <= SCENE_COUNT * CLIP_SECONDS.max &&
     typeof script === "string" &&
     script.trim() !== "" &&
     script.length <= MAX_MESSAGE_CHARS &&
     typeof voice === "string" &&
     voices.includes(voice);
-  return valid ? { silentAssetId, seconds, script, voice } : null;
+  return valid ? { silentAssetId, script, voice } : null;
 }
 
 /** `null` means the field was sent but is not up to four short texts; no field means no scenes. */
@@ -348,6 +352,21 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         if (conversation.resume) {
           const { seconds, clips, finished } = conversation.resume;
           if (frames.length < clips.length) return reply(NEED_FRAMES_MESSAGE);
+
+          // Remaking clips can cost as much as a whole video, so it is asked about the same way.
+          const remaining = clips.filter((_, position) => finished[position] === undefined);
+          const resumeUsd = videoCostUsd(remaining);
+          const agreedToResume = conversation.confirmedUsd !== undefined && resumeUsd <= conversation.confirmedUsd;
+          if (resumeUsd > COSTS.videoConfirmAboveUsd && !agreedToResume) {
+            send({
+              type: "confirmation_requested",
+              confirmationId: randomUUID(),
+              message: resumeVideoMessage(remaining.length, resumeUsd),
+              estimatedUsd: resumeUsd,
+            });
+            send({ type: "done" });
+            return;
+          }
           const kept: Record<number, { assetId: string; bytes: Uint8Array }> = {};
           for (const [position, assetId] of Object.entries(finished)) {
             const clip = await assets.read(assetId, "original");
@@ -381,11 +400,17 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
           if (silent?.mediaType !== "video/mp4") return reply(CLIP_NOT_FOUND_MESSAGE);
           const change = await models.readVoiceRevision(lastText, revise.script);
           if (!change.script && !change.voice) return reply(WHAT_TO_CHANGE_MESSAGE);
+
+          // The price and the length of the narration follow the video itself, never what the request says about it.
+          const seconds = await probeSeconds(silent.bytes);
+          const script = change.script ?? revise.script;
+          const maxWords = wordRange(seconds).max + NARRATION_WORD_SLACK;
+          if (script.trim().split(/\s+/).length > maxWords) return reply(NARRATION_TOO_LONG_MESSAGE(seconds, maxWords));
           await videos.reviseVoice({
             silentAssetId: revise.silentAssetId,
             silent: silent.bytes,
-            seconds: revise.seconds,
-            script: change.script ?? revise.script,
+            seconds,
+            script,
             voice: change.voice ? VOICES[change.voice] : revise.voice,
           });
           send({ type: "done" });

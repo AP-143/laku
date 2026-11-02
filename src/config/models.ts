@@ -18,8 +18,8 @@ export const MODELS = {
   /** The output size every image call asks for, so the price booked in `COSTS.imageUsd` is the price paid. */
   imageSize: "1K",
   /**
-   * Image-to-video clips, called directly on the Google key (Interactions API). Not wired into the app
-   * yet: Veo 3.1 was shut down in the Gemini API on 2026-10-22 and Gemini Omni Flash replaces it.
+   * Image-to-video clips, called directly on the Google key (Interactions API) by src/server/video-model.ts.
+   * Veo 3.1 was shut down in the Gemini API on 2026-10-22 and Gemini Omni Flash replaces it.
    * Measured 2026-11-02 (see BAKEOFF_NOTES): a 4 s clip came back at 720x1280 with an audio track, about US$0.10 per second.
    */
   video: "gemini-omni-1.1-flash",

@@ -6,6 +6,20 @@ import { promisify } from "node:util";
 
 const run = promisify(execFile);
 
+/** The real length of a video in seconds, read from the file itself and never from what a request says. */
+export async function probeSeconds(video: Uint8Array): Promise<number> {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "laku-probe-"));
+  try {
+    await writeFile(path.join(dir, "video.mp4"), video);
+    const { stdout } = await run("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", "video.mp4"], { cwd: dir });
+    const seconds = Number(stdout.trim());
+    if (!Number.isFinite(seconds) || seconds <= 0) throw new Error("The video has no readable length.");
+    return seconds;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 /**
  * Lays one narration over a silent video, cut to `seconds` so a narration that runs long does not extend the video.
  * The picture is copied as it is, only the sound is added. Needs ffmpeg on the machine.

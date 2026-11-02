@@ -90,7 +90,8 @@ export function createVideoJobs(deps: {
         throw new QuotaExhaustedError();
       }
 
-      send({ type: "job_started", jobId: randomUUID(), kind: "video" });
+      const jobId = randomUUID();
+      send({ type: "job_started", jobId, kind: "video" });
       const made: Uint8Array[] = [];
       for (const [index, seconds] of plan.clips.entries()) {
         if (finished[index]) {
@@ -99,17 +100,18 @@ export function createVideoJobs(deps: {
         }
         send({
           type: "job_progress",
-          jobId: "video",
+          jobId,
           message: `Membuat klip ${index + 1} dari ${plan.clips.length}`,
           percent: Math.round((index / plan.clips.length) * 100),
         });
         try {
           made.push(await models.generateClip({ prompt: clipPrompt(), frame: frames[index].file, seconds }));
         } catch (error) {
-          // Clips that were not made are given back. A clip that timed out may still be billed, so it stays booked.
+          // Clips that were not made are given back, and so is the voice, which was never started.
+          // A clip that timed out may still be billed, so it stays booked.
           const start = index + (mayStillBeBilled(error) ? 1 : 0);
           const notBilled = plan.clips.filter((_, position) => position >= start && !finished[position]);
-          await ledger.record(-costOf(sum(notBilled)));
+          await ledger.record(-roundUsd(costOf(sum(notBilled)) + voiceCost));
 
           // The clips that came out are kept, so the seller can remake just the rest instead of paying again.
           const kept: Record<number, string> = {};
@@ -124,6 +126,9 @@ export function createVideoJobs(deps: {
             failedIndex: index,
             sourceAssetId: frames[0].assetId,
           });
+          // What stays booked is real spend, so the meter shows it now.
+          const { monthUsd, budgetUsd } = await readUsage(ledger);
+          send({ type: "usage_updated", monthUsd, budgetUsd });
           throw new ClipFailedError(index, plan.clips.length, error);
         }
       }
@@ -135,14 +140,17 @@ export function createVideoJobs(deps: {
       let assetId = silentAssetId;
       let narration: { script: string } | undefined;
       if (voiceOver) {
+        let spoken = false;
         try {
           const script = await models.writeVoiceScript({ scenes: voiceOver.scenes, seconds: plan.seconds, text: voiceOver.text });
           const voice = await models.speak(script);
+          spoken = true;
           assetId = await assets.saveVideo(await addVoice(silent, voice.bytes, plan.seconds));
           narration = { script };
         } catch (error) {
-          // A voice that was rejected is not billed; one that timed out may still be.
-          if (!mayStillBeBilled(error)) await ledger.record(-voiceCost);
+          // A voice that was rejected is not billed, and one that was never made is not either; one that timed out
+          // may still be, and one that was made stays billed even if laying it over the video failed.
+          if (!spoken && !mayStillBeBilled(error)) await ledger.record(-voiceCost);
           send({
             type: "assistant_text",
             text: "Suaranya belum berhasil dibuat, jadi ini videonya tanpa suara. Coba minta voice over lagi nanti ya.",
@@ -182,12 +190,16 @@ export function createVideoJobs(deps: {
       }
 
       let assetId: string;
+      let spoken = false;
       try {
-        const spoken = await models.speak(script, voice);
-        assetId = await assets.saveVideo(await addVoice(silent, spoken.bytes, seconds));
+        const audio = await models.speak(script, voice);
+        spoken = true;
+        assetId = await assets.saveVideo(await addVoice(silent, audio.bytes, seconds));
       } catch (error) {
-        // A voice that was rejected is not billed; one that timed out may still be.
-        if (!mayStillBeBilled(error)) await ledger.record(-cost);
+        // A voice that was rejected is not billed; one that timed out may still be, and one that was made stays billed.
+        if (!spoken && !mayStillBeBilled(error)) await ledger.record(-cost);
+        const { monthUsd, budgetUsd } = await readUsage(ledger);
+        send({ type: "usage_updated", monthUsd, budgetUsd });
         throw error;
       }
 

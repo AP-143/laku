@@ -88,7 +88,10 @@ export function storyboardScenes(items: ThreadItem[]): string[] {
   return items.findLast((item) => item.kind === "scenes")?.scenes ?? [];
 }
 
-/** The finished frames of the newest storyboard in scene order, which a video is made from. */
+/**
+ * The finished frames of the newest storyboard in scene order, which a video is made from.
+ * A scene whose frame did not come out is skipped; the others keep their order, so the video still tells the story.
+ */
 export function storyboardFrames(items: ThreadItem[]): string[] {
   const latest = items.findLast((item) => item.kind === "scenes");
   if (!latest) return [];

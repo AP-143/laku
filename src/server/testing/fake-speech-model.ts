@@ -20,6 +20,8 @@ async function narration(): Promise<Uint8Array> {
 interface FakeSpeechModelOptions {
   /** Make every call fail with this error. */
   failWith?: unknown;
+  /** Answer with bytes that are not audio, so laying the voice over the video fails after the voice was made. */
+  garbage?: boolean;
 }
 
 /**
@@ -33,7 +35,7 @@ export function fakeSpeechModel(options: FakeSpeechModelOptions = {}) {
       calls.push({ text: callOptions.text, voice: callOptions.voice });
       if (options.failWith) throw options.failWith;
       return {
-        audio: await narration(),
+        audio: options.garbage ? new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]) : await narration(),
         warnings: [],
         response: { timestamp: new Date(), modelId: "fake-speech", headers: undefined },
       };

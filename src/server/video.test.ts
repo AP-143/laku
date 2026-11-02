@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { VOICES } from "../config/models";
 import type { ChatEvent } from "../shared/chat-events";
 import { fakeChatModel } from "./testing/fake-models";
 import { fakeSpeechModel } from "./testing/fake-speech-model";
@@ -65,8 +66,12 @@ describe("video from the storyboard", () => {
     assert.ok(Math.abs(probe.seconds - 10) < 0.6, `length was ${probe.seconds}`);
     assert.equal(probe.hasAudio, false);
 
-    assert.equal(events.some((event) => event.type === "job_started" && event.kind === "video"), true);
-    assert.equal(events.filter((event) => event.type === "job_progress").length, 2);
+    const started = events.find((event) => event.type === "job_started" && event.kind === "video");
+    assert.ok(started && started.type === "job_started");
+    const progress = events.filter((event) => event.type === "job_progress");
+    assert.equal(progress.length, 2);
+    // Progress belongs to the job that was started, so the browser can follow one job.
+    assert.ok(progress.every((event) => event.jobId === started.jobId));
     assert.deepEqual(events.findLast((event) => event.type === "usage_updated"), { type: "usage_updated", monthUsd: 1, budgetUsd: 4 });
     assert.deepEqual(events.at(-1), { type: "done" });
   });
@@ -254,6 +259,30 @@ describe("recovering from a failed clip", () => {
     assert.deepEqual(resumed.at(-1), { type: "done" });
   });
 
+  it("asks first when remaking the missing clips would cost more than US$1, like any expensive video", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
+    const frames = await uploadFrames(app);
+    const resume = { seconds: 12, clips: [4, 4, 4], finished: {} };
+
+    const events = await readEvents(await app.chat(videoRequest("Coba ulang bagian yang gagal.", frames, { resume })));
+
+    const ask = events.find((event) => event.type === "confirmation_requested");
+    assert.ok(ask && ask.type === "confirmation_requested");
+    assert.equal(ask.estimatedUsd, 1.2);
+    assert.equal(app.videoModel.calls.length, 0);
+    assert.equal((await usageOf(app)).monthUsd, 0);
+
+    const agreed = await readEvents(await app.chat(videoRequest("Coba ulang bagian yang gagal.", frames, { resume, confirmedUsd: 1.2 })));
+    assert.ok(finishedVideo(agreed));
+    assert.equal(app.videoModel.calls.length, 3);
+  });
+
+  it("updates the usage meter after a failure, since a clip stays booked", async () => {
+    const { events } = await failSecondClip();
+
+    assert.deepEqual(events.findLast((event) => event.type === "usage_updated"), { type: "usage_updated", monthUsd: 0.6, budgetUsd: 4 });
+  });
+
   it("books only the clips still missing when it resumes", async () => {
     const { app, frames, events } = await failSecondClip();
     const partial = partialOf(events);
@@ -318,6 +347,33 @@ describe("voice-over", () => {
     assert.equal(app.speechModel.calls.length, 0);
     assert.equal(voiceOverOf(events), undefined);
     assert.equal((await usageOf(app)).monthUsd, 1);
+  });
+
+  it("gives the voice back when a clip fails before any voice was made", async () => {
+    const failing = fakeVideoModel({ failOnClip: 1, failWith: Object.assign(new Error("bad request"), { statusCode: 400 }) });
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10, voiceOver: true }), undefined, {
+      videoModel: failing,
+    });
+    const frames = await uploadFrames(app);
+
+    await readEvents(await app.chat(videoRequest("video 10 detik pakai voice over", frames)));
+
+    // Only the 6 s clip that came out stays booked, with no voice cost on top.
+    assert.equal((await usageOf(app)).monthUsd, 0.6);
+    assert.equal(app.speechModel.calls.length, 0);
+  });
+
+  it("keeps the voice booked when it was made and billed but laying it over the video failed", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10, voiceOver: true }), undefined, {
+      speechModel: fakeSpeechModel({ garbage: true }),
+    });
+    const frames = await uploadFrames(app);
+
+    const events = await readEvents(await app.chat(videoRequest("video 10 detik pakai voice over", frames)));
+
+    assert.ok(finishedVideo(events));
+    assert.equal(app.speechModel.calls.length, 1);
+    assert.equal((await usageOf(app)).monthUsd, 1.003);
   });
 
   it("books the voice together with the video, so a budget that covers only the video is refused", async () => {
@@ -406,11 +462,33 @@ describe("revising the voice-over", () => {
 
     const call = app.speechModel.calls.at(-1);
     assert.equal(call?.text, SCRIPT);
-    assert.equal(call?.voice, "Charon");
+    assert.equal(call?.voice, VOICES.male);
     const voice = events.find((event) => event.type === "voice_over");
     assert.ok(voice && voice.type === "voice_over");
     assert.equal(voice.script, SCRIPT);
-    assert.equal(voice.voice, "Charon");
+    assert.equal(voice.voice, VOICES.male);
+  });
+
+  it("books the voice by the real length of the video, not by the length the request claims", async () => {
+    const { app, revise } = await narratedVideo({ chunks: ["x"], intent: "REVISE_VOICE", voiceRevision: { voice: "male" } });
+
+    await readEvents(await app.chat(reviseRequest("pakai suara cowok", { ...revise, seconds: 1 })));
+
+    // The video is 10 seconds long: US$0.003, not the US$0.0003 of the one second that was claimed.
+    assert.equal((await usageOf(app)).monthUsd, 0.003);
+  });
+
+  it("refuses a script that is too long for the video, and spends nothing", async () => {
+    const tooLong = Array.from({ length: 80 }, (_, index) => `kata${index}`).join(" ");
+    const { app, revise } = await narratedVideo({ chunks: ["x"], intent: "REVISE_VOICE", voiceRevision: { script: tooLong } });
+    const speechBefore = app.speechModel.calls.length;
+
+    const events = await readEvents(await app.chat(reviseRequest("ganti narasinya jadi yang panjang", revise)));
+
+    assert.equal(app.speechModel.calls.length, speechBefore);
+    assert.equal(finishedVideo(events), undefined);
+    assert.equal((await usageOf(app)).monthUsd, 0);
+    assert.match(events.flatMap((e) => (e.type === "assistant_text" ? [e.text] : [])).join(""), /terlalu panjang/i);
   });
 
   it("asks what to change when it cannot tell, and spends nothing", async () => {
