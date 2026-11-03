@@ -140,6 +140,8 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  /* The clip is 16:9 and the pill 2:1, so the bottom is what gets cropped: the character's head stays whole. */
+  object-position: 50% 0;
 }
 
 /* ---------- footer ---------- */
