@@ -154,7 +154,7 @@ describe("confirming an expensive video", () => {
     assert.equal(ask.estimatedUsd, 2);
     assert.match(ask.message, /20 detik/);
     assert.match(ask.message, /US\$2\.00/);
-    assert.match(ask.message, /Rp33\.000/);
+    assert.match(ask.message, /Rp36\.400/);
     assert.equal(app.videoModel.calls.length, 0);
     assert.equal(finishedVideo(events), undefined);
     assert.equal((await usageOf(app)).monthUsd, 0);
