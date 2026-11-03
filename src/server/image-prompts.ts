@@ -43,6 +43,7 @@ export function clipPrompt(): string {
 export function framePrompt(scene: string): string {
   return (
     `Create one scene of a vertical 9:16 advertisement storyboard, using this exact product. Scene: ${scene}. ` +
-    `Lifestyle styling, shallow depth of field. ${KEEP_PRODUCT}`
+    `Lifestyle styling, shallow depth of field. ` +
+    `Do not write scene numbers, labels or camera notes in the picture; only put text in it if the scene asks for it. ${KEEP_PRODUCT}`
   );
 }

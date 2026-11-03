@@ -109,6 +109,24 @@ describe("storyboard", () => {
     assert.deepEqual(events.at(-1), { type: "done" });
   });
 
+  it("tells the image model not to draw scene labels or captions the scene did not ask for", async () => {
+    const app = newApp();
+    const photoAssetId = await uploadPhoto(app);
+
+    await readEvents(
+      await app.chat(
+        chatRequest({
+          messages: [{ role: "user", text: "Setuju, buatkan gambarnya" }],
+          storyboard: { photoAssetId, scenes: SCENES },
+          approve: { sceneIndex: 1 },
+        }),
+      ),
+    );
+
+    // A real run once drew "SCENE 3 - CLOSE ON ..." inside a frame, which is not part of an ad picture.
+    assert.match(app.imageModel.calls[0].prompt ?? "", /do not write scene numbers|no scene numbers/i);
+  });
+
   it("uses the scene text the seller edited before approving", async () => {
     const app = newApp();
     const photoAssetId = await uploadPhoto(app);
