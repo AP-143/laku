@@ -124,6 +124,16 @@ Video: Veo 3.1 was shut down in the Gemini API on 2026-10-22. Gemini Omni Flash 
 
 Speech: gemini-3.8-flash-lite-tts made 11.9 s of Indonesian narration (24 kHz mono WAV) in about 4 s, estimated at
 US$0.002 (US$6 per 1M audio tokens until 2026-12-31, US$12 after; 25 tokens per second).
+
+Acceptance run of 2026-11-03 (ticket #14), through the app's own handlers on the real models, US$1.3084 by the meter:
+- Studio photos: the same product on 5 of 5 photos. Storyboard frames (9:16): consistent product; one frame drew a
+  caption of its own ("SCENE 3 - CLOSE ON ..."), so the frame prompt now forbids labels the scene did not ask for.
+- Video: a 10 s request became a 6 s and a 4 s clip, so the real model accepts a 6 s clip. Result: one 720x1280 MP4 of
+  exactly 10.000 s. Clips of 8 s are still untried.
+- Voice revision (new voice, same script and clips): no video-model call, about US$0.003.
+- Expected drop of the Google AI Studio balance for everything spent on 2026-11-02 and 2026-11-03: about US$2.95
+  (bake-off US$1.64 plus acceptance run US$1.31, plus a few thousandths for text calls). Compare with the real balance:
+  a much larger drop means the video price per second is understated and COSTS.videoUsdPerSecond must go up.
 `.trim();
 
 /** Estimated spend, used by the usage meter. Prices change, so re-check them against Google's pricing page. */
