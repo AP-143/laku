@@ -26,8 +26,14 @@ const roundUsd = (usd: number) => Math.round(usd * 10_000) / 10_000;
 const costOf = (seconds: number) => roundUsd(seconds * COSTS.videoUsdPerSecond);
 const sum = (numbers: number[]) => numbers.reduce((total, value) => total + value, 0);
 
-/** The estimated price of a video made of these clips, in US dollars. */
-export const videoCostUsd = (clips: number[]) => costOf(sum(clips));
+/** The price of one narration of this many seconds, in US dollars. */
+const speechCostOf = (seconds: number) => roundUsd(seconds * COSTS.speechUsdPerSecond);
+
+/**
+ * The estimated price of a video made of these clips, in US dollars. With a narration (`voiceSeconds`, the length of
+ * the video) it is the price that is booked, so the seller is asked about what they will really be charged.
+ */
+export const videoCostUsd = (clips: number[], voiceSeconds = 0) => roundUsd(costOf(sum(clips)) + speechCostOf(voiceSeconds));
 
 /**
  * Runs one video from start to finish: product check, budget reservation, clips, joining, saving, events.
@@ -76,7 +82,7 @@ export function createVideoJobs(deps: {
       // simultaneous requests cannot squeeze under a limit.
       const missing = plan.clips.filter((_, index) => !finished[index]);
       // The narration is booked with the video, so a budget that covers only the picture is refused up front.
-      const voiceCost = voiceOver ? roundUsd(plan.seconds * COSTS.speechUsdPerSecond) : 0;
+      const voiceCost = voiceOver ? speechCostOf(plan.seconds) : 0;
       const reservation = await ledger.reserve(roundUsd(costOf(sum(missing)) + voiceCost), {
         monthlyUsd: COSTS.monthlyBudgetUsd,
         dailyUsd: COSTS.dailyBudgetUsd,

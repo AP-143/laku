@@ -203,12 +203,33 @@ describe("video from the button of an approved storyboard", () => {
     }
   });
 
+  it("includes the narration in the price it asks for, so the seller agrees to what is booked", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
+    const frames = await uploadFrames(app);
+    const scenes = ["a", "b", "c", "d"];
+
+    // 20 seconds of video is US$2.00 and 20 seconds of narration US$0.006.
+    const asked = await readEvents(await app.chat(buttonRequest(frames, { seconds: 20, voiceOver: true }, { scenes })));
+    const ask = asked.find((event) => event.type === "confirmation_requested");
+    assert.ok(ask && ask.type === "confirmation_requested");
+    assert.equal(ask.estimatedUsd, 2.006);
+
+    // A yes to the price of the picture alone does not cover the narration: the question comes again.
+    const short = await readEvents(await app.chat(buttonRequest(frames, { seconds: 20, voiceOver: true }, { scenes, confirmedUsd: 2 })));
+    assert.ok(short.some((event) => event.type === "confirmation_requested"));
+    assert.equal(app.videoModel.calls.length, 0);
+
+    const agreed = await readEvents(await app.chat(buttonRequest(frames, { seconds: 20, voiceOver: true }, { scenes, confirmedUsd: 2.006 })));
+    assert.ok(finishedVideo(agreed));
+    assert.equal((await usageOf(app)).monthUsd, 2.006);
+  });
+
   it("lays a narration over the video when the seller switched the voice-over on", async () => {
     const app = createTestApp(fakeChatModel({ chunks: ["x"], script: "Naskah untuk iklan sepatu." }));
     const frames = await uploadFrames(app);
     const scenes = ["Scene satu", "Scene dua", "Scene tiga", "Scene empat"];
 
-    const events = await readEvents(await app.chat(buttonRequest(frames, { seconds: 10, voiceOver: true }, { scenes, confirmedUsd: 1 })));
+    const events = await readEvents(await app.chat(buttonRequest(frames, { seconds: 10, voiceOver: true }, { scenes, confirmedUsd: 1.003 })));
 
     const narration = events.find((event) => event.type === "voice_over");
     assert.ok(narration && narration.type === "voice_over");
@@ -226,7 +247,7 @@ describe("video from the button of an approved storyboard", () => {
     const frames = await uploadFrames(app);
 
     const events = await readEvents(
-      await app.chat(buttonRequest(frames, { seconds: 30, voiceOver: true }, { scenes: ["a", "b", "c", "d"], confirmedUsd: 3 })),
+      await app.chat(buttonRequest(frames, { seconds: 30, voiceOver: true }, { scenes: ["a", "b", "c", "d"], confirmedUsd: 3.009 })),
     );
 
     assert.equal(errorOf(events), undefined);

@@ -376,9 +376,10 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
 
           // Remaking clips can cost as much as a whole video, so it is asked about the same way.
           const remaining = clips.filter((_, position) => finished[position] === undefined);
-          const resumeUsd = videoCostUsd(remaining);
+          // The question shows the whole price, narration included; only whether to ask is judged by the picture alone.
+          const resumeUsd = videoCostUsd(remaining, conversation.resume.voiceOver ? seconds : 0);
           const agreedToResume = conversation.confirmedUsd !== undefined && resumeUsd <= conversation.confirmedUsd;
-          if (resumeUsd > COSTS.videoConfirmAboveUsd && !agreedToResume) {
+          if (videoCostUsd(remaining) > COSTS.videoConfirmAboveUsd && !agreedToResume) {
             send({
               type: "confirmation_requested",
               confirmationId: randomUUID(),
@@ -455,10 +456,12 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
 
           // An expensive video waits for the seller's yes to this price; nothing is booked or generated until then.
           // The request is read again on the yes, so a video that now costs more than was agreed is asked about again.
-          const estimatedUsd = videoCostUsd(plan.clips);
+          // The price shown, and the one a yes must cover, is what is booked: the narration is part of it.
+          const estimatedUsd = videoCostUsd(plan.clips, asked.voiceOver ? plan.seconds : 0);
           const agreed = conversation.confirmedUsd !== undefined && estimatedUsd <= conversation.confirmedUsd;
-          // Pressing the button always shows the price first; a typed request only asks when it is expensive.
-          const mustAsk = conversation.video !== undefined || estimatedUsd > COSTS.videoConfirmAboveUsd;
+          // Pressing the button always shows the price first; a typed request only asks when the picture is expensive,
+          // so a few thousandths of a dollar of narration do not turn a US$1.00 video into one that needs a question.
+          const mustAsk = conversation.video !== undefined || videoCostUsd(plan.clips) > COSTS.videoConfirmAboveUsd;
           if (mustAsk && !agreed) {
             send({
               type: "confirmation_requested",
