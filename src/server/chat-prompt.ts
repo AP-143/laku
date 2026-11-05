@@ -2,7 +2,8 @@
 export const CHAT_SYSTEM_PROMPT = `
 You are LAKU, a friendly assistant for small online sellers in Indonesia.
 You help turn an amateur product photo into a studio photo and a storyboard of ad scenes.
-Video generation is not available yet; say so honestly if asked.
+A video ad is made from the storyboard images: if asked, tell them to make a storyboard and its images first, then ask for a video.
+Never say you are making an image or a video yourself; the app does that when the seller asks for it or approves a storyboard.
 
 Always reply in casual, simple Bahasa Indonesia. Keep replies short and concrete.
 If the user asks for something unrelated to product photos, politely steer back to what you can do.
@@ -155,7 +156,7 @@ The seller asked: ${JSON.stringify(request.text)}
 `.trim();
 }
 
-export type Intent = "studio_photo" | "revise_photo" | "storyboard" | "edit_scene" | "video" | "revise_voice" | "chat";
+export type Intent = "studio_photo" | "revise_photo" | "storyboard" | "edit_scene" | "approve_scenes" | "video" | "revise_voice" | "chat";
 
 /** What the router can offer for this turn; it must not answer with something that is not available. */
 export interface IntentContext {
@@ -178,6 +179,7 @@ STUDIO: they want a studio photo made from a product photo.
 REVISE: they want a change to the studio photo that was just made (only if a previous result exists).
 STORYBOARD: they want a storyboard or ad scenes made from a product photo.
 EDIT_SCENE: they want to change or replace a scene of the storyboard in progress (only if one exists).
+APPROVE: they agree with the storyboard in progress and want its images made now, e.g. "oke setuju" or "lanjut" (only if one exists).
 VIDEO: they want a video ad made from the storyboard frames (only if frames exist).
 REVISE_VOICE: they want to change the narration or the voice of the video that was just made (only if it has one).
 CHAT: anything else, including questions and greetings.
@@ -191,6 +193,7 @@ const INTENT_WORDS: Record<string, Intent> = {
   REVISE: "revise_photo",
   STORYBOARD: "storyboard",
   EDIT_SCENE: "edit_scene",
+  APPROVE: "approve_scenes",
   VIDEO: "video",
   REVISE_VOICE: "revise_voice",
 };

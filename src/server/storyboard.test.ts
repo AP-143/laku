@@ -41,6 +41,20 @@ describe("storyboard", () => {
     assert.deepEqual(events.at(-1), { type: "done" });
   });
 
+  it("says its words before the scene card, so the card with the approve button is the last thing in the chat", async () => {
+    const app = newApp();
+    const photoAssetId = await uploadPhoto(app);
+
+    const events = await readEvents(
+      await app.chat(chatRequest({ messages: [{ role: "user", text: "", photoAssetId }], intent: "storyboard" })),
+    );
+
+    assert.deepEqual(
+      events.map((e) => e.type),
+      ["assistant_text", "storyboard_scenes", "done"],
+    );
+  });
+
   it("starts from a typed request and an already finished studio photo", async () => {
     const app = newApp({ intent: "STORYBOARD" });
     const studioPhotoId = await uploadPhoto(app);
@@ -125,6 +139,39 @@ describe("storyboard", () => {
 
     // A real run once drew "SCENE 3 - CLOSE ON ..." inside a frame, which is not part of an ad picture.
     assert.match(app.imageModel.calls[0].prompt ?? "", /do not write scene numbers|no scene numbers/i);
+  });
+
+  it("generates the four frames when the seller types their approval while the storyboard is open", async () => {
+    const app = newApp({ intent: "APPROVE" });
+    const photoAssetId = await uploadPhoto(app);
+
+    const events = await readEvents(
+      await app.chat(
+        chatRequest({
+          messages: [{ role: "user", text: "oke setuju" }],
+          storyboard: { photoAssetId, scenes: SCENES },
+        }),
+      ),
+    );
+
+    assert.deepEqual(frames(events).map((f) => f.sceneIndex), [0, 1, 2, 3]);
+    assert.equal(app.imageModel.calls.length, 4);
+    SCENES.forEach((scene, index) => assert.match(app.imageModel.calls[index].prompt ?? "", new RegExp(scene)));
+    assert.equal(events.some((e) => e.type === "assistant_text"), false);
+    assert.deepEqual(events.at(-1), { type: "done" });
+  });
+
+  it("does not generate anything for an approval when there is no storyboard to approve", async () => {
+    const app = newApp({ intent: "APPROVE" });
+    const photoAssetId = await uploadPhoto(app);
+
+    const events = await readEvents(
+      await app.chat(chatRequest({ messages: [{ role: "user", text: "oke setuju" }], lastImageAssetId: photoAssetId })),
+    );
+
+    assert.equal(app.imageModel.calls.length, 0);
+    assert.equal(frames(events).length, 0);
+    assert.deepEqual(events.at(-1), { type: "done" });
   });
 
   it("uses the scene text the seller edited before approving", async () => {
