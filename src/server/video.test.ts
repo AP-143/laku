@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { VOICES } from "../config/models";
+import { COSTS, VOICES } from "../config/models";
 import type { ChatEvent } from "../shared/chat-events";
 import { fakeChatModel } from "./testing/fake-models";
 import { fakeSpeechModel } from "./testing/fake-speech-model";
@@ -218,6 +218,20 @@ describe("video from the button of an approved storyboard", () => {
     assert.ok(ready && ready.type === "asset_ready");
     const probe = await probeVideo((await app.store.read(ready.assetId, "original"))!.bytes);
     assert.equal(probe.hasAudio, true);
+  });
+
+  it("fits the longest video with a voice-over, after the storyboard frames of the same day, within the daily limit", async () => {
+    // The frames of a storyboard cost US$0.1344 (four images), the 30 second video US$3.00, its narration US$0.009.
+    const app = createTestApp(fakeChatModel({ chunks: ["x"] }), undefined, { startingTodayUsd: 0.1344 });
+    const frames = await uploadFrames(app);
+
+    const events = await readEvents(
+      await app.chat(buttonRequest(frames, { seconds: 30, voiceOver: true }, { scenes: ["a", "b", "c", "d"], confirmedUsd: 3 })),
+    );
+
+    assert.equal(errorOf(events), undefined);
+    assert.ok(finishedVideo(events));
+    assert.equal(app.videoModel.calls.length, 4);
   });
 
   it("makes a silent video when the voice-over is not asked for", async () => {
@@ -440,7 +454,7 @@ describe("recovering from a failed clip", () => {
     const partial = partialOf(events);
     assert.ok(partial && partial.type === "video_partial");
     // US$0.60 stays from the first try; room is left for exactly the 4 s clip (US$0.40) and nothing more today.
-    const tight = createTestApp(fakeChatModel({ chunks: ["x"] }), undefined, { startingTodayUsd: 1.6 });
+    const tight = createTestApp(fakeChatModel({ chunks: ["x"] }), undefined, { startingTodayUsd: COSTS.dailyBudgetUsd - 0.4 });
     const tightFrames = await uploadFrames(tight);
     const tightClip = await tight.store.saveVideo(new Uint8Array((await app.store.read(partial.finished[0], "original"))!.bytes));
 
@@ -449,7 +463,8 @@ describe("recovering from a failed clip", () => {
     );
 
     assert.ok(finishedVideo(resumed));
-    assert.equal((await usageOf(tight)).monthUsd, 2);
+    // The day was left with room for exactly this clip, so it is full now.
+    assert.equal((await usageOf(tight)).monthUsd, COSTS.dailyBudgetUsd);
     void frames;
   });
 });
@@ -541,9 +556,9 @@ describe("voice-over", () => {
   });
 
   it("books the voice together with the video, so a budget that covers only the video is refused", async () => {
-    // US$1.00 spent today: the 10 s video (US$1.00) alone would fit the US$2.00 day, with the voice it does not.
+    // Only US$1.00 is left of the day: the 10 s video (US$1.00) alone would fit it, with the voice it does not.
     const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10, voiceOver: true }), undefined, {
-      startingTodayUsd: 1,
+      startingTodayUsd: COSTS.dailyBudgetUsd - 1,
     });
     const frames = await uploadFrames(app);
 
@@ -551,7 +566,7 @@ describe("voice-over", () => {
 
     assert.equal(app.videoModel.calls.length, 0);
     assert.equal(finishedVideo(events), undefined);
-    assert.equal((await usageOf(app)).monthUsd, 1);
+    assert.equal((await usageOf(app)).monthUsd, COSTS.dailyBudgetUsd - 1);
   });
 
   it("still gives the silent video when the voice fails, says so, and gives the voice back", async () => {
@@ -683,8 +698,9 @@ describe("revising the voice-over", () => {
 
 describe("video spending", () => {
   it("refuses up front when the budget cannot cover the video and says how many seconds it can", async () => {
-    // US$1.50 spent today: US$0.50 is left of the day, which is 5 seconds.
-    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10 }), undefined, { startingTodayUsd: 1.5 });
+    // US$0.50 is left of the day, which is 5 seconds.
+    const spent = COSTS.dailyBudgetUsd - 0.5;
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10 }), undefined, { startingTodayUsd: spent });
     const frames = await uploadFrames(app);
 
     const events = await readEvents(await app.chat(videoRequest("video 10 detik", frames)));
@@ -692,11 +708,12 @@ describe("video spending", () => {
     const error = errorOf(events);
     assert.match(error?.message ?? "", /5 detik/);
     assert.equal(app.videoModel.calls.length, 0);
-    assert.equal((await usageOf(app)).monthUsd, 1.5);
+    assert.equal((await usageOf(app)).monthUsd, spent);
   });
 
-  it("uses the daily cap message when not even the shortest clip is affordable", async () => {
-    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10 }), undefined, { startingTodayUsd: 1.9 });
+  it("uses the daily cap message when not even the shortest clip is affordable, although the month's limit is passed too", async () => {
+    // US$0.10 is left of the day and US$0.60 of the month; the video (US$1.00) passes both, the day stops it first.
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10 }), undefined, { startingTodayUsd: COSTS.dailyBudgetUsd - 0.1 });
     const frames = await uploadFrames(app);
 
     const events = await readEvents(await app.chat(videoRequest("video 10 detik", frames)));

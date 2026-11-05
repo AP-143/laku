@@ -162,6 +162,9 @@ export const COSTS = {
    * bills at (2026-11-03): the account's tier cap of IDR 4,545,874.87 is the US$250 Tier 1 cap.
    */
   idrPerUsd: 18_200,
-  /** Stops a bug or a loop from burning the whole balance in one day; normal use stays well under it. */
-  dailyBudgetUsd: 2,
+  /**
+   * Stops a bug or a loop from burning the whole balance in one day. It must fit one whole storyboard (four images,
+   * US$0.1344) and the longest video the panel offers (30 seconds with a narration, US$3.009): about US$3.14.
+   */
+  dailyBudgetUsd: 3.5,
 } as const;

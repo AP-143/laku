@@ -23,7 +23,7 @@ All model IDs live in `src/config/models.ts`. Every model runs directly on the G
 ## Google account facts (verified 2026-11-02)
 
 - Image and video models have no free tier: billing must be enabled on the project that owns the key. The account uses a prepaid balance (about US$4) with auto-reload off, so the balance is the hard stop. Google has no balance API: check AI Studio before and after a bake-off run.
-- The app also limits its own spend: US$4 per month and US$2 per day (`COSTS` in `src/config/models.ts`), both estimates.
+- The app also limits its own spend: US$4 per month and US$3.50 per day (`COSTS` in `src/config/models.ts`), both estimates. The day's limit must fit one whole storyboard (US$0.13) plus the longest video the panel offers (30 seconds with a voice-over, US$3.01).
 - Veo 3.1 was shut down in the Gemini API on 2026-10-22. Video uses Gemini Omni Flash (`gemini-omni-1.1-flash`) through the Interactions API, about US$0.10 per second; its clips come with an audio track.
 - The old gateway experiments are kept only as history in `BAKEOFF_NOTES`.
 

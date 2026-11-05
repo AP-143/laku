@@ -52,9 +52,15 @@ export function createUsageLedger(filePath: string, now: () => Date = () => new 
 
     reserve(usd, limits) {
       const turn = queue.then(async (): Promise<Reservation> => {
-        if (roundUsd((await ledger.monthTotal()) + usd) > limits.monthlyUsd) return { ok: false, limit: "monthly" };
-        if (roundUsd((await ledger.dayTotal()) + usd) > limits.dailyUsd) {
-          return { ok: false, limit: "daily", resetsAt: nextDayStart(now()) };
+        const month = await ledger.monthTotal();
+        const day = await ledger.dayTotal();
+        const overMonth = roundUsd(month + usd) > limits.monthlyUsd;
+        const overDay = roundUsd(day + usd) > limits.dailyUsd;
+        if (overMonth || overDay) {
+          // Today's spend is part of the month's, so both limits can be passed at once. The one with less room left is
+          // what stops the request, and the seller is told about that one.
+          const daily = overDay && (!overMonth || limits.dailyUsd - day <= limits.monthlyUsd - month);
+          return daily ? { ok: false, limit: "daily", resetsAt: nextDayStart(now()) } : { ok: false, limit: "monthly" };
         }
         await record(usd);
         return { ok: true };
