@@ -1,5 +1,7 @@
 # Fit the scenes to the length, not the length to the scenes
 
+> **Superseded by [ADR 0004](0004-storyboard-is-one-picture-paced-to-the-length.md):** the Storyboard is now one picture and all six Scenes are always in the video, paced to the Length.
+
 The Seller picks a Length of 10, 20 or 30 seconds, and LAKU fits the Storyboard to it. One Clip is made per Frame and a Clip runs 4 to 8 seconds, so 20 and 30 seconds use all four Frames (with longer Clips), while 10 seconds only has room for two: it keeps the **opening and the closing Scene** (the hook and the call to action) and leaves the middle out. Which Frames are used depends only on how many Clips there are, so a video remade after a failed Clip picks the same ones again.
 
 ## Considered options

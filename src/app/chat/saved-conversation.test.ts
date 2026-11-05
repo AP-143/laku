@@ -154,9 +154,9 @@ describe("chat sessions", () => {
   it("labels a session with the feature of its first result, where storyboard and video are one feature", () => {
     const user: ThreadItem = { id: "u", kind: "user", text: "tolong" };
     const studio: ThreadItem = { id: "s", kind: "studio", assetId: "x", sourceAssetId: "p", retry: {} };
-    const scenes: ThreadItem = { id: "c", kind: "scenes", sourceAssetId: "p", scenes: ["a", "b", "c", "d"], frames: {}, approved: false };
+    const scenes: ThreadItem = { id: "c", kind: "scenes", sourceAssetId: "p", scenes: ["a", "b", "c", "d", "e", "f"], approved: false };
     const video: ThreadItem = { id: "v", kind: "video", assetId: "x", sourceAssetId: "p" };
-    const partial: ThreadItem = { id: "t", kind: "partial", seconds: 16, clips: [4, 4, 4, 4], finished: {}, failedIndex: 0, voiceOver: false, frames: [] };
+    const partial: ThreadItem = { id: "t", kind: "partial", seconds: 16, clips: [4, 4, 4, 4], finished: {}, failedIndex: 0, voiceOver: false, sheet: "s", directions: [] };
     const featureOf = (items: ThreadItem[]) => describeSession({ id: "s", items }).feature;
 
     assert.equal(featureOf([user]), undefined);
@@ -249,12 +249,13 @@ describe("chat sessions", () => {
   });
 
   describe("storyboard shared between sessions", () => {
-    const board = (id: string, frames: Record<number, string>, scenes = ["a", "b", "c", "d"]): ThreadItem => ({
+    const board = (id: string, sheet?: string, scenes = ["a", "b", "c", "d", "e", "f"], artDirection?: string): ThreadItem => ({
       id,
       kind: "scenes",
       sourceAssetId: "p",
       scenes,
-      frames,
+      artDirection,
+      sheet,
       approved: true,
     });
     const sessionWith = (id: string, ...items: ThreadItem[]): ChatSession => ({ id, items });
@@ -263,42 +264,47 @@ describe("chat sessions", () => {
       const workspace: Workspace = {
         sessions: [
           sessionWith("video", { id: "u", kind: "user", text: "video 10 detik" }),
-          sessionWith("new", board("b2", { 0: "n0", 1: "n1" }, ["n-a", "n-b", "n-c", "n-d"])),
-          sessionWith("old", board("b1", { 0: "o0" })),
+          sessionWith("new", board("b2", "new-sheet", ["n-a", "n-b", "n-c", "n-d", "n-e", "n-f"], "neon look")),
+          sessionWith("old", board("b1", "old-sheet")),
         ],
         activeId: "video",
       };
 
-      assert.deepEqual(storyboardFor(workspace), { frames: ["n0", "n1"], scenes: ["n-a", "n-b", "n-c", "n-d"] });
+      // The look travels with the storyboard, so a video made in another chat is edited in the same style.
+      assert.deepEqual(storyboardFor(workspace), {
+        sheet: "new-sheet",
+        scenes: ["n-a", "n-b", "n-c", "n-d", "n-e", "n-f"],
+        artDirection: "neon look",
+      });
     });
 
     it("prefers the storyboard of the session on screen", () => {
       const workspace: Workspace = {
-        sessions: [sessionWith("here", board("b1", { 0: "mine" })), sessionWith("other", board("b2", { 0: "theirs" }))],
+        sessions: [sessionWith("here", board("b1", "mine")), sessionWith("other", board("b2", "theirs"))],
         activeId: "here",
       };
 
-      assert.deepEqual(storyboardFor(workspace).frames, ["mine"]);
+      assert.equal(storyboardFor(workspace).sheet, "mine");
     });
 
-    it("ignores storyboards of other sessions that have no frame yet", () => {
+    it("ignores storyboards of other sessions that have no picture yet", () => {
       const workspace: Workspace = {
-        sessions: [sessionWith("video"), sessionWith("draft", board("b1", {}))],
+        sessions: [sessionWith("video"), sessionWith("draft", board("b1"))],
         activeId: "video",
       };
 
-      assert.deepEqual(storyboardFor(workspace), { frames: [], scenes: [] });
+      assert.deepEqual(storyboardFor(workspace), { sheet: undefined, scenes: [], artDirection: undefined });
     });
   });
 
-  it("does not save which frames were still being drawn", () => {
+  it("does not save that the picture was still being drawn", () => {
     const storage = memoryStorage();
-    const scenes: ThreadItem = { id: "c", kind: "scenes", sourceAssetId: "p", scenes: ["a", "b", "c", "d"], frames: { 0: "f" }, busy: [1], approved: true };
+    const scenes: ThreadItem = { id: "c", kind: "scenes", sourceAssetId: "p", scenes: ["a", "b", "c", "d", "e", "f"], sheet: "f", busy: true, approved: true };
 
     saveWorkspace(storage, setActiveItems(loadWorkspace(storage), [scenes]));
 
     const [saved] = loadWorkspace(storage).sessions[0].items;
     assert.equal(saved.kind === "scenes" && saved.busy, undefined);
-    assert.deepEqual(saved.kind === "scenes" && saved.frames, { 0: "f" });
+    assert.equal(saved.kind === "scenes" && saved.sheet, "f");
   });
 });

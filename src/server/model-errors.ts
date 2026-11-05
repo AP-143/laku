@@ -6,24 +6,18 @@ import type { ChatEvent } from "../shared/chat-events";
 type ErrorEvent = Extract<ChatEvent, { type: "error" }>;
 
 const RATE_LIMITED_MESSAGE = "Terlalu banyak permintaan dalam waktu singkat. Tunggu sebentar lalu coba lagi ya.";
-const QUOTA_EXHAUSTED_MESSAGE = "Kuota bulan ini sudah habis. Coba lagi nanti atau bulan depan ya.";
+const QUOTA_EXHAUSTED_MESSAGE =
+  "Saldo atau kuota layanan AI sudah habis. Isi saldo di Google AI Studio atau coba lagi nanti ya.";
 const REFUSED_MESSAGE = "Fotonya ditolak oleh model gambar. Coba foto lain, atau ubah permintaanmu, lalu coba lagi ya.";
 const UNSUPPORTED_MESSAGE = "Model gambar tidak bisa memakai fotonya. Coba foto lain (JPG, PNG, atau WebP) lalu coba lagi ya.";
 const NETWORK_MESSAGE = "Koneksi ke layanan AI bermasalah. Cek internetmu lalu coba lagi ya.";
 const GENERIC_MESSAGE = "Maaf, ada gangguan saat memproses pesanmu. Coba lagi ya.";
-const LOCAL_QUOTA_MESSAGE =
-  "Kuota bulan ini sudah habis, jadi aku berhenti dulu supaya tidak ada biaya. Coba lagi bulan depan ya.";
 
-/** The local usage meter says the free credit is gone, so no model was called at all. */
-export class QuotaExhaustedError extends Error {}
-
-/** Today's spend cap is reached, so no model was called. The balance of the month is not gone yet. */
+/** Today's spend cap is reached, so no model was called. */
 export class DailyCapReachedError extends Error {
   constructor(
     /** When the day ends and today's total starts again from zero (00:00 UTC). */
     readonly resetsAt: Date,
-    /** What is left of this month's budget, in US dollars. */
-    readonly remainingMonthUsd: number,
   ) {
     super("Daily spend cap reached");
   }
@@ -40,10 +34,10 @@ export class ClipFailedError extends Error {
   }
 }
 
-/** The video asked for costs more than the budget has left, but a shorter one fits. No model was called. */
+/** The video asked for costs more than the day has room for, but a shorter one fits. No model was called. */
 export class VideoNotAffordableError extends Error {
-  constructor(/** The most seconds of video the remaining budget covers. */ readonly affordableSeconds: number) {
-    super("The video does not fit the remaining budget");
+  constructor(/** The most seconds of video the rest of today covers. */ readonly affordableSeconds: number) {
+    super("The video does not fit what is left of today's limit");
   }
 }
 
@@ -56,7 +50,7 @@ function wibClock(date: Date): string {
 function dailyCapMessage(error: DailyCapReachedError): string {
   return (
     `Batas pemakaian hari ini (US$${COSTS.dailyBudgetUsd.toFixed(2)}) sudah tercapai, jadi aku berhenti dulu supaya tidak ada biaya berlebih. ` +
-    `Sisa anggaran bulan ini US$${error.remainingMonthUsd.toFixed(2)}. Bisa dipakai lagi sekitar pukul ${wibClock(error.resetsAt)} WIB.`
+    `Bisa dipakai lagi sekitar pukul ${wibClock(error.resetsAt)} WIB.`
   );
 }
 
@@ -93,13 +87,10 @@ export function describeFailure(error: unknown): ErrorEvent {
   if (error instanceof VideoNotAffordableError) {
     return {
       type: "error",
-      message: `Sisa anggaranmu baru cukup untuk sekitar ${error.affordableSeconds} detik video. Minta video yang lebih pendek ya.`,
+      message: `Sisa batas hari ini baru cukup untuk sekitar ${error.affordableSeconds} detik video. Minta video yang lebih pendek ya.`,
       retryable: true,
-      code: "quota_exhausted",
+      code: "daily_cap_reached",
     };
-  }
-  if (error instanceof QuotaExhaustedError) {
-    return { type: "error", message: LOCAL_QUOTA_MESSAGE, retryable: true, code: "quota_exhausted" };
   }
 
   const status = statusOf(error);

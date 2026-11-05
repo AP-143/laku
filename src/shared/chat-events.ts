@@ -22,8 +22,6 @@ export type ChatEvent =
       role?: AssetRole;
       /** The asset this one was made from, so the UI can show before and after side by side. */
       sourceAssetId?: string;
-      /** For a storyboard frame: which scene (0 to 3) it shows. */
-      sceneIndex?: number;
     }
   /**
    * The video has a narration: the script that was read aloud, the voice, and the silent video it was laid over
@@ -43,22 +41,25 @@ export type ChatEvent =
       sourceAssetId: string;
       /** The seller asked for a voice-over, so it is added when the missing clips are remade. */
       voiceOver: boolean;
+      /** What each clip was told to play, sent back on a resume so the remade clips still fit the kept ones. */
+      directions: string[];
     }
-  /** The four proposed scenes of a storyboard. Nothing is generated until the user approves them. */
-  | { type: "storyboard_scenes"; sourceAssetId: string; scenes: string[] }
+  /** The proposed scenes of a storyboard (one per panel). Nothing is generated until the user approves them. */
+  | { type: "storyboard_scenes"; sourceAssetId: string; scenes: string[]; artDirection?: string }
   /** Something went wrong. `message` is shown to the user as is, so it is Indonesian. */
   | { type: "error"; message: string; retryable: boolean; code?: ErrorCode }
   /** This month's estimated spend changed (sent after every paid generation). */
-  | { type: "usage_updated"; monthUsd: number; budgetUsd: number }
+  | { type: "usage_updated"; monthUsd: number }
   /** Always the last event of a successful stream. */
   | { type: "done" };
 
 /** Lets the UI tell the common failures apart; `message` is still what the user reads. */
 export type ErrorCode = "rate_limited" | "quota_exhausted" | "daily_cap_reached";
 
-export type JobKind = "studio_photo" | "storyboard_frame" | "video";
+export type JobKind = "studio_photo" | "storyboard_sheet" | "video";
 export type AssetKind = "image" | "video";
-export type AssetRole = "studio_photo" | "storyboard_frame" | "video";
+/** A `storyboard_sheet` is the whole storyboard as one picture: all its panels, with titles and captions. */
+export type AssetRole = "studio_photo" | "storyboard_sheet" | "video";
 
 /** The shortcut chips in the composer. */
 /** The shortcut chips under the composer. A video is made from a storyboard, so it is not a chip of its own. */

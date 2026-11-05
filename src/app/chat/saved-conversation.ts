@@ -1,6 +1,6 @@
 import type { ChatIntent } from "../../shared/chat-events";
 import { OUTDATED_REPLIES } from "../../shared/chat-messages";
-import { storyboardFrames, storyboardScenes, type ThreadItem } from "./thread";
+import { storyboardArtDirection, storyboardScenes, storyboardSheet, type ThreadItem } from "./thread";
 
 /** The chats live in this browser only. Every access is guarded: storage can be blocked or full. */
 
@@ -50,16 +50,28 @@ function withCurrentWording(item: ThreadItem): ThreadItem {
   return current ? { ...item, text: current } : item;
 }
 
+/**
+ * A storyboard saved before it became one picture has four scenes and one frame each, which the server no longer
+ * accepts (a storyboard has six scenes and one picture), and a stopped video made from such frames cannot be remade.
+ * Those cards are left out; everything else in the chat stays.
+ */
+function isLegacyCard(item: ThreadItem): boolean {
+  return (item.kind === "scenes" || item.kind === "partial") && "frames" in item;
+}
+
 export function loadWorkspace(storage: KeyValueStorage | undefined): Workspace {
   const saved = readJson(storage, SESSIONS_KEY) as Partial<Workspace> | null | undefined;
   if (saved && Array.isArray(saved.sessions) && saved.sessions.length > 0 && saved.sessions.every(isSession)) {
     const activeId = saved.sessions.some((session) => session.id === saved.activeId) ? saved.activeId! : saved.sessions[0].id;
-    const sessions = saved.sessions.map((session) => ({ ...session, items: session.items.map(withCurrentWording) }));
+    const sessions = saved.sessions.map((session) => ({
+      ...session,
+      items: session.items.filter((item) => !isLegacyCard(item)).map(withCurrentWording),
+    }));
     return { sessions, activeId };
   }
   // Before sessions existed the whole app kept one conversation under another key; it becomes the first session.
   const legacy = readJson(storage, KEY);
-  const session = { ...emptySession(), items: Array.isArray(legacy) ? (legacy as ThreadItem[]).map(withCurrentWording) : [] };
+  const session = { ...emptySession(), items: Array.isArray(legacy) ? (legacy as ThreadItem[]).filter((item) => !isLegacyCard(item)).map(withCurrentWording) : [] };
   return { sessions: [session], activeId: session.id };
 }
 
@@ -100,16 +112,19 @@ function featureOf(items: ThreadItem[]): ChatIntent | undefined {
 }
 
 /**
- * The storyboard a video is made from. The session on screen comes first; without frames of its own it borrows
+ * The storyboard a video is made from. The session on screen comes first; without a picture of its own it borrows
  * the newest storyboard of another session, so a video chat can use a storyboard made in a storyboard chat.
  */
-export function storyboardFor(workspace: Workspace): { frames: string[]; scenes: string[] } {
+export function storyboardFor(workspace: Workspace): { sheet?: string; scenes: string[]; artDirection?: string } {
   const here = activeSession(workspace);
-  const source =
-    storyboardFrames(here.items).length > 0
-      ? here
-      : (workspace.sessions.find((session) => storyboardFrames(session.items).length > 0) ?? here);
-  return { frames: storyboardFrames(source.items), scenes: storyboardScenes(source.items) };
+  const source = storyboardSheet(here.items)
+    ? here
+    : (workspace.sessions.find((session) => storyboardSheet(session.items)) ?? here);
+  return {
+    sheet: storyboardSheet(source.items),
+    scenes: storyboardScenes(source.items),
+    artDirection: storyboardArtDirection(source.items),
+  };
 }
 
 /** The session on screen. */

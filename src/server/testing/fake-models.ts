@@ -18,10 +18,19 @@ interface FakeChatModelOptions {
   isProduct?: boolean;
   /** Make the product check itself fail. */
   failProductCheck?: boolean;
+  /**
+   * The pictures show a person using the product, like a real storyboard frame: the strict photo check says NO
+   * ("mainly a person") while the frame check, which only asks that the product is clearly there, says YES.
+   */
+  peopleInPictures?: boolean;
   /** What the intent router answers for any message (STUDIO, REVISE, STORYBOARD, EDIT_SCENE or CHAT). */
   intent?: string;
-  /** The four scenes the planner proposes. */
+  /** The scenes the planner proposes (one per storyboard panel). */
   scenes?: string[];
+  /** The art direction the planner picks for the product (look, colour, effects). Left out when not given. */
+  artDirection?: string;
+  /** Make the planner that shares the scenes over the video clips fail. */
+  failVideoPlan?: boolean;
   /** The scene the editor rewrites (scene is 1 to 4). */
   replacement?: { scene: number; text: string };
   /** The video length the request reader finds in the message; leave out for "no length said". */
@@ -47,23 +56,36 @@ export function fakeChatModel(options: FakeChatModelOptions) {
   return new MockLanguageModelV4({
     doGenerate: async (callOptions) => {
       const task = taskOf(callOptions);
-      if (task === "product-check" && options.failProductCheck) throw new Error("fake product check failure");
+      if ((task === "product-check" || task === "frame-check") && options.failProductCheck) {
+        throw new Error("fake product check failure");
+      }
+      if (task === "video-plan" && options.failVideoPlan) throw new Error("fake video plan failure");
+      const yesNo = (yes: boolean) => (yes ? "YES" : "NO");
+      // The directions are "Direction for clip 1", "Direction for clip 2" and so on, one per clip the prompt names.
+      const clipCount = Number(JSON.stringify(callOptions.prompt).match(/Number of clips: (\d+)/)?.[1] ?? 0);
       const answer =
-        task === "intent"
-          ? (options.intent ?? "CHAT")
-          : task === "plan-scenes"
-            ? JSON.stringify({ scenes: options.scenes })
-            : task === "replace-scene"
-              ? JSON.stringify(options.replacement)
-              : task === "video-request"
-                ? JSON.stringify({ seconds: options.videoSeconds ?? null, voiceOver: options.voiceOver ?? false })
-                : task === "voice-script"
-                  ? (options.script ?? "Ini naskah contoh untuk iklan produk.")
-                  : task === "voice-revision"
-                    ? JSON.stringify({ script: options.voiceRevision?.script ?? null, voice: options.voiceRevision?.voice ?? null })
-                    : options.isProduct === false
-                ? "NO"
-                : "YES";
+        task === "frame-check"
+          ? yesNo(options.isProduct !== false)
+          : task === "product-check" && options.peopleInPictures
+            ? "NO"
+            : task === "video-plan"
+              ? JSON.stringify({ clips: Array.from({ length: clipCount }, (_, index) => `Direction for clip ${index + 1}`) })
+            : task === "intent"
+              ? (options.intent ?? "CHAT")
+              : task === "plan-scenes"
+                ? JSON.stringify({ scenes: options.scenes, artDirection: options.artDirection })
+                : task === "replace-scene"
+                  ? JSON.stringify(options.replacement)
+                  : task === "video-request"
+                    ? JSON.stringify({ seconds: options.videoSeconds ?? null, voiceOver: options.voiceOver ?? false })
+                    : task === "voice-script"
+                      ? (options.script ?? "Ini naskah contoh untuk iklan produk.")
+                      : task === "voice-revision"
+                        ? JSON.stringify({
+                            script: options.voiceRevision?.script ?? null,
+                            voice: options.voiceRevision?.voice ?? null,
+                          })
+                        : yesNo(options.isProduct !== false);
       return {
         content: [{ type: "text" as const, text: answer }],
         finishReason: { unified: "stop" as const, raw: undefined },

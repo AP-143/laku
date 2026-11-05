@@ -1,14 +1,26 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ChatEvent } from "../shared/chat-events";
+import { PANEL_SHOTS, PANEL_TITLES } from "../shared/storyboard";
 import { fakeChatModel } from "./testing/fake-models";
+import { fakeImageModel } from "./testing/fake-image-model";
 import { readEvents } from "./testing/events";
 import { chatRequest, createTestApp } from "./testing/harness";
 import { makePhoto, uploadRequest } from "./testing/photos";
 
-/** Feature 2 through the chat API: four scenes as text first, frames only after the seller approves. */
+/** Feature 2 through the chat API: six scenes as text first, the storyboard picture only after the seller approves. */
 
-const SCENES = ["Scene satu di dapur", "Scene dua di meja", "Scene tiga di taman", "Scene empat di rak toko"];
+/** The art direction a planner might pick for a gadget: nothing like the warm, appetizing look of food. */
+const ART = "Night-time neon palette of electric blue and magenta, glossy highlights, glitchy speed-ramp transitions and HUD-style graphic accents.";
+
+const SCENES = [
+  "Scene satu di dapur",
+  "Scene dua di meja",
+  "Scene tiga di taman",
+  "Scene empat di rak toko",
+  "Scene lima di teras",
+  "Scene enam di kasir",
+];
 
 async function uploadPhoto(app: ReturnType<typeof createTestApp>): Promise<string> {
   const [event] = await readEvents(await app.upload(uploadRequest(await makePhoto("jpeg"))));
@@ -16,15 +28,15 @@ async function uploadPhoto(app: ReturnType<typeof createTestApp>): Promise<strin
 }
 
 const proposed = (events: ChatEvent[]) => events.find((e) => e.type === "storyboard_scenes");
-const frames = (events: ChatEvent[]) =>
-  events.flatMap((e) => (e.type === "asset_ready" && e.role === "storyboard_frame" ? [e] : []));
+const sheets = (events: ChatEvent[]) =>
+  events.flatMap((e) => (e.type === "asset_ready" && e.role === "storyboard_sheet" ? [e] : []));
 
 function newApp(extra: Partial<Parameters<typeof fakeChatModel>[0]> = {}) {
   return createTestApp(fakeChatModel({ chunks: ["unused"], scenes: SCENES, ...extra }));
 }
 
 describe("storyboard", () => {
-  it("proposes exactly four scenes and generates no image before approval", async () => {
+  it("proposes exactly six scenes and generates no image before approval", async () => {
     const app = newApp();
     const photoAssetId = await uploadPhoto(app);
 
@@ -39,6 +51,25 @@ describe("storyboard", () => {
     assert.equal(app.imageModel.calls.length, 0);
     assert.equal(events.some((e) => e.type === "job_started" || e.type === "asset_ready"), false);
     assert.deepEqual(events.at(-1), { type: "done" });
+  });
+
+  it("proposes an art direction picked for the product, and tells the planner to work like a professional editor", async () => {
+    const chat = fakeChatModel({ chunks: ["unused"], scenes: SCENES, artDirection: ART });
+    const app = createTestApp(chat);
+    const photoAssetId = await uploadPhoto(app);
+
+    const events = await readEvents(
+      await app.chat(chatRequest({ messages: [{ role: "user", text: "", photoAssetId }], intent: "storyboard" })),
+    );
+
+    const plan = proposed(events);
+    assert.ok(plan?.type === "storyboard_scenes");
+    assert.equal(plan.artDirection, ART);
+    // The look is not a fixed recipe: the planner is asked to choose it for this product, its buyers and its story.
+    const planned = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: plan-scenes]"));
+    const prompt = JSON.stringify(planned?.prompt);
+    assert.match(prompt, /professional (video )?editor/i);
+    assert.match(prompt, /suits? this product/i);
   });
 
   it("says its words before the scene card, so the card with the approve button is the last thing in the chat", async () => {
@@ -89,7 +120,7 @@ describe("storyboard", () => {
 
     const plan = proposed(events);
     assert.ok(plan?.type === "storyboard_scenes");
-    assert.equal(plan.scenes.length, 4);
+    assert.equal(plan.scenes.length, 6);
     assert.equal(app.imageModel.calls.length, 0);
   });
 
@@ -101,18 +132,20 @@ describe("storyboard", () => {
       await app.chat(
         chatRequest({
           messages: [{ role: "user", text: "ganti scene 3 jadi di pantai" }],
-          storyboard: { photoAssetId, scenes: SCENES },
+          storyboard: { photoAssetId, scenes: SCENES, artDirection: ART },
         }),
       ),
     );
 
     const plan = proposed(events);
     assert.ok(plan?.type === "storyboard_scenes");
-    assert.deepEqual(plan.scenes, [SCENES[0], SCENES[1], "Scene tiga baru di pantai", SCENES[3]]);
+    assert.deepEqual(plan.scenes, [SCENES[0], SCENES[1], "Scene tiga baru di pantai", ...SCENES.slice(3)]);
+    // Changing one scene does not change the look of the whole storyboard.
+    assert.equal(plan.artDirection, ART);
     assert.equal(app.imageModel.calls.length, 0);
   });
 
-  it("generates four frames of the same product after approval, in order, and records each", async () => {
+  it("makes one storyboard picture of all six scenes after approval, from the product photo, and records it", async () => {
     const app = newApp();
     const photoAssetId = await uploadPhoto(app);
 
@@ -126,26 +159,28 @@ describe("storyboard", () => {
       ),
     );
 
-    const made = frames(events);
-    assert.deepEqual(made.map((f) => f.sceneIndex), [0, 1, 2, 3]);
-    assert.ok(made.every((f) => f.sourceAssetId === photoAssetId));
-    assert.equal(app.imageModel.calls.length, 4);
-    // Every frame starts from the same product photo, which keeps the product consistent.
+    const made = sheets(events);
+    assert.equal(made.length, 1);
+    assert.equal(made[0].sourceAssetId, photoAssetId);
+    assert.equal(app.imageModel.calls.length, 1);
+    // The picture starts from the product photo, which keeps the product the same in every panel.
     const reference = Buffer.from((await app.store.read(photoAssetId, "resized"))!.bytes);
-    for (const call of app.imageModel.calls) {
-      const file = call.files?.[0];
-      assert.deepEqual(Buffer.from(file && file.type === "file" ? (file.data as Uint8Array) : []), reference);
-    }
-    SCENES.forEach((scene, index) => assert.match(app.imageModel.calls[index].prompt ?? "", new RegExp(scene)));
-    assert.ok(events.some((e) => e.type === "job_progress"));
+    const file = app.imageModel.calls[0].files?.[0];
+    assert.deepEqual(Buffer.from(file && file.type === "file" ? (file.data as Uint8Array) : []), reference);
+    // Every scene and every panel title is in the one prompt, in order.
+    const prompt = app.imageModel.calls[0].prompt ?? "";
+    SCENES.forEach((scene) => assert.match(prompt, new RegExp(scene)));
+    PANEL_TITLES.forEach((title, index) => assert.match(prompt, new RegExp(`${index + 1}\\. ${title}`)));
+    assert.ok(prompt.indexOf(SCENES[0]) < prompt.indexOf(SCENES[5]));
+    // One picture costs one image, not six.
     const lastUsage = events.findLast((e) => e.type === "usage_updated");
-    assert.equal(lastUsage?.type === "usage_updated" && lastUsage.monthUsd, 0.1344);
-    // Frames are vertical (9:16) so they can feed a vertical video later.
-    assert.ok(app.imageModel.calls.every((call) => call.aspectRatio === "9:16"));
+    assert.equal(lastUsage?.type === "usage_updated" && lastUsage.monthUsd, 0.0336);
+    // Vertical (9:16), so the video made from it is vertical too.
+    assert.equal(app.imageModel.calls[0].aspectRatio, "9:16");
     assert.deepEqual(events.at(-1), { type: "done" });
   });
 
-  it("tells the image model not to draw scene labels or captions the scene did not ask for", async () => {
+  it("asks for the panel titles and the captions of the scenes to be written on the picture, and nothing else", async () => {
     const app = newApp();
     const photoAssetId = await uploadPhoto(app);
 
@@ -154,16 +189,105 @@ describe("storyboard", () => {
         chatRequest({
           messages: [{ role: "user", text: "Setuju, buatkan gambarnya" }],
           storyboard: { photoAssetId, scenes: SCENES },
-          approve: { sceneIndex: 1 },
+          approve: {},
         }),
       ),
     );
 
-    // A real run once drew "SCENE 3 - CLOSE ON ..." inside a frame, which is not part of an ad picture.
-    assert.match(app.imageModel.calls[0].prompt ?? "", /do not write scene numbers|no scene numbers/i);
+    // A real run once drew "SCENE 3 - CLOSE ON ..." inside a frame: camera notes are not part of an ad picture.
+    const prompt = app.imageModel.calls[0].prompt ?? "";
+    assert.match(prompt, /grid/i);
+    assert.match(prompt, /Caption:/);
+    assert.match(prompt, /no camera notes/i);
   });
 
-  it("generates the four frames when the seller types their approval while the storyboard is open", async () => {
+  it("asks for a professionally designed ad sheet, with a different kind of shot in each panel", async () => {
+    // A plain grid with white captions looked flat next to a hand-finished ad storyboard.
+    const app = newApp();
+    const photoAssetId = await uploadPhoto(app);
+
+    await readEvents(
+      await app.chat(
+        chatRequest({
+          messages: [{ role: "user", text: "Setuju, buatkan gambarnya" }],
+          storyboard: { photoAssetId, scenes: SCENES, artDirection: ART },
+          approve: {},
+        }),
+      ),
+    );
+
+    const prompt = app.imageModel.calls[0].prompt ?? "";
+    // The layout is the same for every product: slanted gutters, a pill label and a caption bubble per panel, a call to action.
+    for (const layout of [/angled/i, /rounded pill/i, /speech bubble/i, /call-to-action/i]) {
+      assert.match(prompt, layout);
+    }
+    // The look is the planner's choice for this product, and the sheet is made as a professional editor would.
+    assert.ok(prompt.includes(ART));
+    assert.match(prompt, /professional (video )?editor/i);
+    // A real run drew the benefits twice in the checklist panel: as ticks and again in a bubble, with a raw "|" in it.
+    assert.match(prompt, /only as the tick checklist/i);
+    assert.match(prompt, /never write the "\|" sign/i);
+    // Each panel is told its own kind of shot, in order, so the sheet is not six copies of the same medium shot.
+    let from = 0;
+    for (const shot of PANEL_SHOTS) {
+      const at = prompt.indexOf(shot, from);
+      assert.ok(at >= from, `missing, or out of order: ${shot}`);
+      from = at;
+    }
+  });
+
+  it("makes the sheet with a neutral professional look when no art direction was given, and says nothing odd about it", async () => {
+    const app = newApp();
+    const photoAssetId = await uploadPhoto(app);
+
+    await readEvents(
+      await app.chat(
+        chatRequest({
+          messages: [{ role: "user", text: "Setuju" }],
+          storyboard: { photoAssetId, scenes: SCENES },
+          approve: {},
+        }),
+      ),
+    );
+
+    const prompt = app.imageModel.calls[0].prompt ?? "";
+    assert.doesNotMatch(prompt, /undefined/);
+    assert.match(prompt, /professional/i);
+  });
+
+  it("rejects an art direction that is not text", async () => {
+    const app = newApp();
+    const photoAssetId = await uploadPhoto(app);
+
+    const response = await app.chat(
+      chatRequest({
+        messages: [{ role: "user", text: "Setuju" }],
+        storyboard: { photoAssetId, scenes: SCENES, artDirection: 42 },
+        approve: {},
+      }),
+    );
+
+    assert.equal(response.status, 400);
+    assert.equal(app.imageModel.calls.length, 0);
+  });
+
+  it("asks the planner for a different shot in each panel, and for the closing caption to end with the call to buy", async () => {
+    const chat = fakeChatModel({ chunks: ["unused"], scenes: SCENES });
+    const app = createTestApp(chat);
+    const photoAssetId = await uploadPhoto(app);
+
+    await readEvents(
+      await app.chat(chatRequest({ messages: [{ role: "user", text: "", photoAssetId }], intent: "storyboard" })),
+    );
+
+    const planned = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: plan-scenes]"));
+    const prompt = JSON.stringify(planned?.prompt);
+    for (const shot of PANEL_SHOTS) assert.ok(prompt.includes(shot), shot);
+    assert.match(prompt, /call to buy/i);
+    assert.match(prompt, /three short benefits/i);
+  });
+
+  it("makes the one picture when the seller types their approval while the storyboard is open", async () => {
     const app = newApp({ intent: "APPROVE" });
     const photoAssetId = await uploadPhoto(app);
 
@@ -176,9 +300,9 @@ describe("storyboard", () => {
       ),
     );
 
-    assert.deepEqual(frames(events).map((f) => f.sceneIndex), [0, 1, 2, 3]);
-    assert.equal(app.imageModel.calls.length, 4);
-    SCENES.forEach((scene, index) => assert.match(app.imageModel.calls[index].prompt ?? "", new RegExp(scene)));
+    assert.equal(sheets(events).length, 1);
+    assert.equal(app.imageModel.calls.length, 1);
+    SCENES.forEach((scene) => assert.match(app.imageModel.calls[0].prompt ?? "", new RegExp(scene)));
     assert.equal(events.some((e) => e.type === "assistant_text"), false);
     assert.deepEqual(events.at(-1), { type: "done" });
   });
@@ -192,14 +316,14 @@ describe("storyboard", () => {
     );
 
     assert.equal(app.imageModel.calls.length, 0);
-    assert.equal(frames(events).length, 0);
+    assert.equal(sheets(events).length, 0);
     assert.deepEqual(events.at(-1), { type: "done" });
   });
 
   it("uses the scene text the seller edited before approving", async () => {
     const app = newApp();
     const photoAssetId = await uploadPhoto(app);
-    const edited = [...SCENES.slice(0, 3), "Scene empat yang kuedit sendiri"];
+    const edited = [...SCENES.slice(0, 5), "Scene enam yang kuedit sendiri"];
 
     await readEvents(
       await app.chat(
@@ -211,42 +335,13 @@ describe("storyboard", () => {
       ),
     );
 
-    assert.match(app.imageModel.calls[3].prompt ?? "", /kuedit sendiri/);
+    assert.match(app.imageModel.calls[0].prompt ?? "", /kuedit sendiri/);
   });
 
-  it("retries a single frame without touching the other three", async () => {
-    const app = newApp();
+  it("reports a failed picture once, books nothing and does not retry by itself", async () => {
+    const failing = fakeImageModel({ failWith: Object.assign(new Error("Rate limit exceeded"), { statusCode: 429 }) });
+    const app = createTestApp(fakeChatModel({ chunks: ["unused"], scenes: SCENES }), failing);
     const photoAssetId = await uploadPhoto(app);
-
-    const events = await readEvents(
-      await app.chat(
-        chatRequest({
-          messages: [{ role: "user", text: "Ulangi scene 2" }],
-          storyboard: { photoAssetId, scenes: SCENES },
-          approve: { sceneIndex: 1 },
-        }),
-      ),
-    );
-
-    const made = frames(events);
-    assert.equal(made.length, 1);
-    assert.equal(made[0].sceneIndex, 1);
-    assert.equal(app.imageModel.calls.length, 1);
-    assert.match(app.imageModel.calls[0].prompt ?? "", /Scene dua/);
-  });
-
-  it("stops at the first failed frame, keeps the finished ones and does not retry", async () => {
-    const app = newApp();
-    const photoAssetId = await uploadPhoto(app);
-    const original = app.imageModel.doGenerate;
-    let count = 0;
-    app.imageModel.doGenerate = async (options) => {
-      if (++count === 3) {
-        app.imageModel.calls.push(options);
-        throw Object.assign(new Error("Rate limit exceeded"), { statusCode: 429 });
-      }
-      return original(options);
-    };
 
     const events = await readEvents(
       await app.chat(
@@ -258,20 +353,21 @@ describe("storyboard", () => {
       ),
     );
 
-    assert.equal(frames(events).length, 2);
-    assert.equal(app.imageModel.calls.length, 3);
+    assert.equal(sheets(events).length, 0);
+    assert.equal(app.imageModel.calls.length, 1);
     const last = events.at(-1);
     assert.equal(last?.type === "error" && last.code, "rate_limited");
+    assert.equal((await (await app.usage(new Request("http://localhost/api/usage"))).json()).monthUsd, 0);
   });
 
-  it("rejects an approval whose scenes are not exactly four", async () => {
+  it("rejects an approval whose scenes are not exactly six", async () => {
     const app = newApp();
     const photoAssetId = await uploadPhoto(app);
 
     const response = await app.chat(
       chatRequest({
         messages: [{ role: "user", text: "Setuju" }],
-        storyboard: { photoAssetId, scenes: SCENES.slice(0, 3) },
+        storyboard: { photoAssetId, scenes: SCENES.slice(0, 4) },
         approve: {},
       }),
     );

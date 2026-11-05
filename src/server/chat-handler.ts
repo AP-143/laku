@@ -1,15 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { COSTS, VOICES } from "../config/models";
 import type { ChatIntent, StudioStyle } from "../shared/chat-events";
-import { SCENE_COUNT, SCENE_INDEXES } from "../shared/storyboard";
+import { MAX_ART_DIRECTION_CHARS, SCENE_COUNT } from "../shared/storyboard";
 import { SCENE_REPLACED_MESSAGE, SCENES_PROPOSED_MESSAGE } from "../shared/chat-messages";
-import { CLIP_SECONDS, DEFAULT_VIDEO_SECONDS, planClips, VIDEO_LENGTH_CHOICES } from "../shared/video-plan";
+import { CLIP_SECONDS, DEFAULT_VIDEO_SECONDS, MAX_CLIPS, planClips, VIDEO_LENGTH_CHOICES } from "../shared/video-plan";
 import { isAssetId, type AssetFile, type AssetStore } from "./asset-store";
 import { readBoundedBytes } from "./bounded-body";
 import { narrationFits, NARRATION_WORD_SLACK, wordRange, type Intent } from "./chat-prompt";
 import { eventResponse } from "./event-response";
 import { NotAProductError, createImageJobs } from "./image-jobs";
-import { framePrompt, revisionPrompt, studioPhotoPrompt } from "./image-prompts";
+import { revisionPrompt, sheetPrompt, studioPhotoPrompt } from "./image-prompts";
 import { describeFailure } from "./model-errors";
 import type { ChatMessage, ModelClient } from "./model-client";
 import type { UsageLedger } from "./usage-ledger";
@@ -23,7 +23,7 @@ const PHOTO_NOT_FOUND_MESSAGE = "Fotonya tidak ketemu. Coba unggah lagi ya.";
 const NOT_A_PRODUCT_MESSAGE =
   "Maaf, saat ini aku hanya bisa memproses foto produk. Coba kirim foto barang yang mau kamu jual ya.";
 const NEED_PHOTO_MESSAGE = "Kirim dulu foto produknya ya (klik ikon penjepit kertas), nanti aku bantu.";
-const NEED_FRAMES_MESSAGE = "Buat dulu storyboard dan gambar tiap scene-nya ya, baru aku buatkan videonya.";
+const NEED_SHEET_MESSAGE = "Buat dulu storyboard dan gambarnya ya, baru aku buatkan videonya.";
 const NEED_NARRATED_VIDEO_MESSAGE = "Buat dulu video dengan voice over ya, baru narasi atau suaranya bisa kuubah.";
 const WHAT_TO_CHANGE_MESSAGE =
   "Mau diubah apanya? Kamu bisa minta narasi dengan kata-kata lain, atau ganti suaranya jadi suara cewek atau cowok.";
@@ -44,11 +44,14 @@ const MAX_MESSAGES = 50;
 const MAX_MESSAGE_CHARS = 4000;
 const MAX_TOTAL_CHARS = 20_000;
 const MAX_SCENE_CHARS = 600;
+const MAX_DIRECTION_CHARS = 1500;
 
 /** A storyboard in progress: the photo it is made from and the four scene texts so far. */
 interface Storyboard {
   photoAssetId: string;
   scenes: string[];
+  /** The look the planner picked for this product, kept with the scenes so the picture and the video share it. */
+  artDirection?: string;
 }
 
 interface Conversation {
@@ -61,12 +64,14 @@ interface Conversation {
   intent?: ChatIntent;
   style?: StudioStyle;
   storyboard?: Storyboard;
-  /** The user approved the storyboard: generate frames for all scenes, or only for `sceneIndex`. */
-  approve?: { sceneIndex?: number };
-  /** The generated storyboard frames in scene order, which a video is made from. */
-  frames: string[];
+  /** The user approved the storyboard: make its one picture (again, when it is pressed for a retry). */
+  approve?: boolean;
+  /** The finished storyboard picture, which a video is made from. */
+  sheet?: string;
   /** The text of the storyboard scenes, which a voice-over script is written from (can be empty). */
   scenes: string[];
+  /** The art direction of the storyboard, which the video is edited in. */
+  artDirection?: string;
   /** The price in US dollars the seller said yes to for an expensive video, quoted back to the server. */
   confirmedUsd?: number;
   /** The seller pressed "Generate" in the video panel: the length and the voice-over are chosen, so nothing is read from the words. */
@@ -91,6 +96,8 @@ interface VideoResume {
   finished: Record<number, string>;
   /** The seller asked for a voice-over in the first try. */
   voiceOver: boolean;
+  /** What each clip was told to play in the first try, one per clip. */
+  directions: string[];
 }
 
 const INTENTS: readonly string[] = ["studio_photo", "storyboard"];
@@ -110,20 +117,25 @@ function readStyle(value: unknown): StudioStyle | undefined {
 /** `null` means the field was sent but is not a valid storyboard; `undefined` means it was not sent. */
 function readStoryboard(value: unknown): Storyboard | null | undefined {
   if (value === undefined) return undefined;
-  const { photoAssetId, scenes } = (value ?? {}) as { photoAssetId?: unknown; scenes?: unknown };
+  const { photoAssetId, scenes, artDirection } = (value ?? {}) as { photoAssetId?: unknown; scenes?: unknown; artDirection?: unknown };
   if (typeof photoAssetId !== "string" || !isAssetId(photoAssetId)) return null;
+  const direction = readArtDirection(artDirection);
+  if (direction === null) return null;
   if (!Array.isArray(scenes) || scenes.length !== SCENE_COUNT) return null;
   if (!scenes.every((scene) => typeof scene === "string" && scene.trim() !== "" && scene.length <= MAX_SCENE_CHARS)) return null;
-  return { photoAssetId, scenes: scenes.map((scene: string) => scene.trim()) };
+  return { photoAssetId, scenes: scenes.map((scene: string) => scene.trim()), artDirection: direction };
 }
 
+/** `null` means the field was sent but is not a short text; no field means no art direction. */
+function readArtDirection(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  return typeof value === "string" && value.length <= MAX_ART_DIRECTION_CHARS ? value.trim() || undefined : null;
+}
+
+/** `null` means the field was sent but is not an object; `undefined` means it was not sent. */
 function readApproval(value: unknown): Conversation["approve"] | null | undefined {
   if (value === undefined) return undefined;
-  const { sceneIndex } = (value ?? {}) as { sceneIndex?: unknown };
-  if (sceneIndex === undefined) return {};
-  return Number.isInteger(sceneIndex) && (sceneIndex as number) >= 0 && (sceneIndex as number) < SCENE_COUNT
-    ? { sceneIndex: sceneIndex as number }
-    : null;
+  return typeof value === "object" && value !== null ? true : null;
 }
 
 /** `null` means the field was sent but is not one of the lengths the button offers; no field means a typed request. */
@@ -138,16 +150,17 @@ function readVideo(value: unknown): Conversation["video"] | null | undefined {
 /** `null` means the field was sent but is not a clip plan this server could have made; no field means no resume. */
 function readResume(value: unknown): VideoResume | null | undefined {
   if (value === undefined) return undefined;
-  const { seconds, clips, finished, voiceOver } = (value ?? {}) as {
+  const { seconds, clips, finished, voiceOver, directions } = (value ?? {}) as {
     seconds?: unknown;
     clips?: unknown;
     finished?: unknown;
     voiceOver?: unknown;
+    directions?: unknown;
   };
   const validClips =
     Array.isArray(clips) &&
     clips.length >= 1 &&
-    clips.length <= SCENE_COUNT &&
+    clips.length <= MAX_CLIPS &&
     clips.every(
       (length) =>
         Number.isInteger(length) &&
@@ -169,11 +182,19 @@ function readResume(value: unknown): VideoResume | null | undefined {
       isAssetId(assetId),
   );
   if (!ok) return null;
+
+  // One direction per clip, as the first try gave them, so the clips that are remade still fit the ones that were kept.
+  const validDirections =
+    Array.isArray(directions) &&
+    directions.length === (clips as number[]).length &&
+    directions.every((direction) => typeof direction === "string" && direction.trim() !== "" && direction.length <= MAX_DIRECTION_CHARS);
+  if (!validDirections) return null;
   return {
     seconds,
     clips: clips as number[],
     finished: Object.fromEntries(entries.map(([position, assetId]) => [Number(position), assetId as string])),
     voiceOver: voiceOver === true,
+    directions: directions as string[],
   };
 }
 
@@ -201,11 +222,10 @@ function readScenes(value: unknown): string[] | null {
   return (value as string[]).map((scene) => scene.trim()).filter(Boolean);
 }
 
-/** `null` means the field was sent but is not a list of up to four asset ids; no field means no frames. */
-function readFrames(value: unknown): string[] | null {
-  if (value === undefined) return [];
-  if (!Array.isArray(value) || value.length > SCENE_COUNT) return null;
-  return value.every((id) => typeof id === "string" && isAssetId(id)) ? (value as string[]) : null;
+/** `null` means the field was sent but is not an asset id; no field means no storyboard picture. */
+function readSheet(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  return typeof value === "string" && isAssetId(value) ? value : null;
 }
 
 /** Returns the conversation, or undefined when the request is not a valid, reasonably sized turn. */
@@ -249,11 +269,12 @@ async function readConversation(request: Request): Promise<Conversation | undefi
     storyboard?: unknown;
     approve?: unknown;
     video?: unknown;
-    frames?: unknown;
+    sheet?: unknown;
     confirmedUsd?: unknown;
     resume?: unknown;
     scenes?: unknown;
     revise?: unknown;
+    artDirection?: unknown;
   };
   if (fields.lastImageAssetId !== undefined && (typeof fields.lastImageAssetId !== "string" || !isAssetId(fields.lastImageAssetId))) {
     return undefined;
@@ -261,19 +282,21 @@ async function readConversation(request: Request): Promise<Conversation | undefi
   const storyboard = readStoryboard(fields.storyboard);
   const approve = readApproval(fields.approve);
   const video = readVideo(fields.video);
-  const frames = readFrames(fields.frames);
+  const sheet = readSheet(fields.sheet);
   const resume = readResume(fields.resume);
   const scenes = readScenes(fields.scenes);
   const revise = readRevise(fields.revise);
+  const artDirection = readArtDirection(fields.artDirection);
   // Approving needs the plan it approves.
   const invalid =
-    storyboard === null || approve === null || (approve && !storyboard) || video === null || frames === null || resume === null || scenes === null || revise === null;
+    storyboard === null || approve === null || (approve && !storyboard) || video === null || sheet === null || resume === null || scenes === null || revise === null || artDirection === null;
   if (invalid) return undefined;
 
   return {
     video,
-    frames,
+    sheet,
     scenes,
+    artDirection: artDirection ?? undefined,
     resume,
     revise,
     confirmedUsd: typeof fields.confirmedUsd === "number" && Number.isFinite(fields.confirmedUsd) ? fields.confirmedUsd : undefined,
@@ -304,13 +327,9 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
     const photo = await readAsset(conversation.photoAssetId);
     const previous = await readAsset(conversation.lastImageAssetId);
     const storyboardPhoto = await readAsset(conversation.storyboard?.photoAssetId);
-    const frameFiles = await Promise.all(conversation.frames.map((assetId) => readAsset(assetId)));
-    const frames = conversation.frames.flatMap((assetId, index) => (frameFiles[index] ? [{ assetId, file: frameFiles[index] }] : []));
-    if (
-      (conversation.photoAssetId && !photo) ||
-      (conversation.storyboard && !storyboardPhoto) ||
-      frames.length !== conversation.frames.length
-    ) {
+    const sheetFile = await readAsset(conversation.sheet);
+    const sheet = conversation.sheet && sheetFile ? { assetId: conversation.sheet, file: sheetFile } : undefined;
+    if ((conversation.photoAssetId && !photo) || (conversation.storyboard && !storyboardPhoto) || (conversation.sheet && !sheet)) {
       return eventResponse(async (send) => send({ type: "error", message: PHOTO_NOT_FOUND_MESSAGE, retryable: true }), {
         status: 400,
       });
@@ -323,8 +342,14 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         if (!verdicts.has(image)) verdicts.set(image, models.isProductPhoto(image));
         return verdicts.get(image)!;
       };
+      // The storyboard picture is asked a looser question: a person using the product is a normal ad picture, not a non-product photo.
+      const frameVerdicts = new Map<AssetFile, Promise<boolean>>();
+      const isProductFrame = (frame: AssetFile) => {
+        if (!frameVerdicts.has(frame)) frameVerdicts.set(frame, models.isProductFrame(frame));
+        return frameVerdicts.get(frame)!;
+      };
       const jobs = createImageJobs({ models, assets, ledger, send, isProduct });
-      const videos = createVideoJobs({ models, assets, ledger, send, isProduct });
+      const videos = createVideoJobs({ models, assets, ledger, send, isProduct: isProductFrame });
 
       function reply(text: string) {
         send({ type: "assistant_text", text });
@@ -332,47 +357,34 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
       }
 
       // The words come first: the chat scrolls to its last item, and the card holds the approve button the words point to.
-      function proposeScenes(sourceAssetId: string, scenes: string[], text: string) {
+      function proposeScenes(sourceAssetId: string, scenes: string[], text: string, artDirection?: string) {
         send({ type: "assistant_text", text });
-        send({ type: "storyboard_scenes", sourceAssetId, scenes });
+        send({ type: "storyboard_scenes", sourceAssetId, scenes, artDirection });
         send({ type: "done" });
       }
 
-      /** Generates the frames of an approved storyboard, one after the other, in scene order. */
-      async function makeFrames(storyboard: Storyboard, source: AssetFile, indexes: readonly number[]) {
-        for (const [position, sceneIndex] of indexes.entries()) {
-          if (indexes.length > 1) {
-            send({
-              type: "job_progress",
-              jobId: "storyboard",
-              message: `Membuat scene ${sceneIndex + 1} dari ${SCENE_COUNT}`,
-              percent: Math.round((position / indexes.length) * 100),
-            });
-          }
-          await jobs.generate({
-            prompt: framePrompt(storyboard.scenes[sceneIndex]),
-            source,
-            sourceAssetId: storyboard.photoAssetId,
-            kind: "storyboard_frame",
-            role: "storyboard_frame",
-            sceneIndex,
-          });
-        }
+      /** Makes the one picture of an approved storyboard: all its panels in a single image. */
+      async function makeSheet(storyboard: Storyboard, source: AssetFile) {
+        await jobs.generate({
+          prompt: sheetPrompt(storyboard.scenes, storyboard.artDirection),
+          source,
+          sourceAssetId: storyboard.photoAssetId,
+          kind: "storyboard_sheet",
+          role: "storyboard_sheet",
+        });
         send({ type: "done" });
       }
 
       try {
         const { storyboard, approve } = conversation;
 
-        // The approve button is an explicit action, so frames are never generated by guesswork.
-        if (approve && storyboard && storyboardPhoto) {
-          return await makeFrames(storyboard, storyboardPhoto, approve.sceneIndex === undefined ? SCENE_INDEXES : [approve.sceneIndex]);
-        }
+        // The approve button is an explicit action, so the picture is never generated by guesswork.
+        if (approve && storyboard && storyboardPhoto) return await makeSheet(storyboard, storyboardPhoto);
 
         // Remaking the missing clips of a video that stopped part way is an explicit action of the seller.
         if (conversation.resume) {
-          const { seconds, clips, finished } = conversation.resume;
-          if (frames.length < clips.length) return reply(NEED_FRAMES_MESSAGE);
+          const { seconds, clips, finished, directions } = conversation.resume;
+          if (!sheet) return reply(NEED_SHEET_MESSAGE);
 
           // Remaking clips can cost as much as a whole video, so it is asked about the same way.
           const remaining = clips.filter((_, position) => finished[position] === undefined);
@@ -396,7 +408,9 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
             kept[Number(position)] = { assetId, bytes: clip.bytes };
           }
           await videos.generate({
-            frames,
+            sheet,
+            directions,
+            artDirection: conversation.artDirection,
             plan: { ok: true, seconds, clips },
             finished: kept,
             voiceOver: conversation.resume.voiceOver
@@ -413,12 +427,12 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         const lastText = conversation.messages.at(-1)!.text.trim();
         // The video button is an explicit request, so the router is not asked what it means.
         let intent: Intent | undefined = conversation.video ? "video" : conversation.intent;
-        if (!intent && lastText && (photo || previous || storyboard || frames.length > 0 || conversation.revise)) {
+        if (!intent && lastText && (photo || previous || storyboard || sheet || conversation.revise)) {
           intent = await models.classifyIntent(lastText, {
             hasPhoto: Boolean(photo),
             hasPreviousResult: Boolean(previous),
             hasStoryboard: Boolean(storyboard),
-            hasFrames: frames.length > 0,
+            hasSheet: Boolean(sheet),
             hasNarration: Boolean(conversation.revise),
           });
         }
@@ -449,9 +463,9 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         }
 
         if (intent === "video") {
-          if (frames.length === 0) return reply(NEED_FRAMES_MESSAGE);
+          if (!sheet) return reply(NEED_SHEET_MESSAGE);
           const asked = conversation.video ?? (lastText ? await models.readVideoRequest(lastText) : { seconds: undefined, voiceOver: false });
-          const plan = planClips(asked.seconds ?? DEFAULT_VIDEO_SECONDS, frames.length);
+          const plan = planClips(asked.seconds ?? DEFAULT_VIDEO_SECONDS);
           if (!plan.ok) return reply(videoTooLongMessage(plan.maxSeconds));
 
           // An expensive video waits for the seller's yes to this price; nothing is booked or generated until then.
@@ -472,8 +486,12 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
             send({ type: "done" });
             return;
           }
+          // The text model shares the story over the clips only once the seller has said yes, so a no costs nothing at all.
+          const directions = await models.planVideo({ scenes: conversation.scenes, clips: plan.clips, artDirection: conversation.artDirection });
           await videos.generate({
-            frames,
+            sheet,
+            directions,
+            artDirection: conversation.artDirection,
             plan,
             voiceOver: asked.voiceOver ? { scenes: conversation.scenes, text: lastText } : undefined,
           });
@@ -515,20 +533,18 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
 
         if (intent === "storyboard") {
           if (!source || !sourceAssetId) return reply(NEED_PHOTO_MESSAGE);
-          // Only the text is planned here (no image, no cost); frames wait for approval.
-          const scenes = await models.planScenes(source, lastText);
-          return proposeScenes(sourceAssetId, scenes, SCENES_PROPOSED_MESSAGE);
+          // Only the text is planned here (no image, no cost); the picture waits for approval.
+          const { scenes, artDirection } = await models.planScenes(source, lastText);
+          return proposeScenes(sourceAssetId, scenes, SCENES_PROPOSED_MESSAGE, artDirection);
         }
 
         // Typing "oke setuju" approves the open storyboard like the button does.
-        if (intent === "approve_scenes" && storyboard && storyboardPhoto) {
-          return await makeFrames(storyboard, storyboardPhoto, SCENE_INDEXES);
-        }
+        if (intent === "approve_scenes" && storyboard && storyboardPhoto) return await makeSheet(storyboard, storyboardPhoto);
 
         if (intent === "edit_scene" && storyboard) {
           const { index, text } = await models.replaceScene(storyboard.scenes, lastText);
           const scenes = storyboard.scenes.map((scene, position) => (position === index ? text : scene));
-          return proposeScenes(storyboard.photoAssetId, scenes, SCENE_REPLACED_MESSAGE);
+          return proposeScenes(storyboard.photoAssetId, scenes, SCENE_REPLACED_MESSAGE, storyboard.artDirection);
         }
 
         const messages = conversation.messages.map((message, index) =>

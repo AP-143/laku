@@ -22,7 +22,7 @@ const FEATURES: Array<{ intent: ChatIntent; label: string; hint: string; icon: R
   {
     intent: "storyboard",
     label: "Storyboard & Video",
-    hint: "4 scene, lalu jadi video",
+    hint: "6 panel, lalu jadi video",
     icon: (
       <svg viewBox="0 0 14 14" width="14" aria-hidden="true">
         <path
@@ -51,7 +51,7 @@ interface Props {
   open: boolean;
   /** Starting, switching and deleting chats wait while a request is running. */
   disabled: boolean;
-  usage?: { monthUsd: number; budgetUsd: number };
+  usage?: { monthUsd: number };
   /** Info links (features, how it works, contact) shown at the bottom. */
   links: ReactNode;
   onSelect: (id: string) => void;
@@ -81,7 +81,6 @@ export function Sidebar({ workspace, ready, open, disabled, usage, links, onSele
 
   // A request that starts while a question is open makes the delete unavailable, so the question goes away.
   const asking = disabled ? undefined : confirming;
-  const share = usage && usage.budgetUsd > 0 ? Math.min(100, (usage.monthUsd / usage.budgetUsd) * 100) : 0;
 
   return (
     <>
@@ -196,19 +195,7 @@ export function Sidebar({ workspace, ready, open, disabled, usage, links, onSele
             <div className="side-usage" title="Perkiraan pemakaian saldo bulan ini">
               <div className="side-usage-row">
                 <span>Pemakaian bulan ini</span>
-                <strong>
-                  {formatUsd(usage.monthUsd)} / {formatUsd(usage.budgetUsd)}
-                </strong>
-              </div>
-              <div
-                className="side-meter"
-                role="progressbar"
-                aria-label="Pemakaian bulan ini"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={Math.round(share)}
-              >
-                <span className={share >= 85 ? "is-high" : undefined} style={{ width: `${share}%` }} />
+                <strong>{formatUsd(usage.monthUsd)}</strong>
               </div>
             </div>
           )}

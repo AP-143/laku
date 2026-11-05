@@ -962,33 +962,32 @@
   background: rgba(232, 160, 60, 0.14);
 }
 
-.chat .frame-box {
+/* The storyboard picture: all the panels in one vertical image, shown whole so the titles and captions can be read. */
+.chat .sheet-box {
   display: grid;
   place-items: center;
   aspect-ratio: 9 / 16;
-  max-height: 340px;
-  margin: 0 auto;
+  margin: 4px auto 0;
   width: 100%;
-  max-width: 190px;
+  max-width: 340px;
   border-radius: 12px;
   background: #ecebe8;
   overflow: hidden;
 }
 
-.chat .frame-box img {
+.chat .sheet-box img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+}
+
+.chat .board > .actions {
+  justify-content: center;
 }
 
 .chat .frame-empty {
   font-size: 12.5px;
   color: #8b8b88;
-}
-
-.chat .scene .actions {
-  margin-top: 0;
-  justify-content: center;
 }
 
 @keyframes chat-spin {
@@ -1379,8 +1378,8 @@
     grid-template-columns: 1fr;
   }
 
-  .chat .frame-box {
-    max-width: 160px;
+  .chat .sheet-box {
+    max-width: 100%;
   }
 
   .chat .suggest {
@@ -1752,24 +1751,6 @@
 .chat .side-usage-row strong {
   font-weight: 600;
   color: #1d1d1d;
-}
-
-.chat .side-meter {
-  height: 5px;
-  border-radius: 999px;
-  background: rgba(29, 29, 29, 0.1);
-  overflow: hidden;
-}
-
-.chat .side-meter span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--accent);
-}
-
-.chat .side-meter span.is-high {
-  background: #b3261e;
 }
 
 .chat .side-links {

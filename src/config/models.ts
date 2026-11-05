@@ -106,10 +106,12 @@ Image (5 photos, studio photo, 4 candidates):
 - gemini-3.1-flash-image at 0.5K (US$0.045) and 1K (US$0.067): about as faithful, but more expensive.
 - gemini-3.1-flash-lite-image at 1K (US$0.0336): weakest. Showed the studio backdrop in one photo, changed the
   stickers on the tumbler and kept the hand in the tea photo.
-- Storyboard frames (9:16) with the chosen model: faithful on 5 of 5, product kept in a lifestyle scene.
+- Storyboard frames (9:16, one per scene, the old design) with the chosen model: faithful on 5 of 5, product kept in a lifestyle scene.
 - Contact sheet (4 panels in one 1:1 image, same price as one frame): usable as a cheap preview, but each panel is
-  only about 512 px, is not 9:16, and the skincare set dropped to a single tube. Not good as a video source, so the
-  app should make one frame per scene.
+  only about 512 px, is not 9:16, and the skincare set dropped to a single tube. At the time this was judged not good
+  as a video source and the app made one frame per scene. On 2026-11-05 the seller asked for the storyboard as one
+  picture (see docs/adr/0004), so the app now makes one 9:16 sheet of six panels and every clip starts from it; the
+  weaknesses above are the things to look at first in a real run.
 - gemini-2.5-flash-image (the original Nano Banana) is deprecated and shuts down on 2027-03-15.
 
 Video: Veo 3.1 was shut down in the Gemini API on 2026-10-22. Gemini Omni Flash (gemini-omni-1.1-flash) replaces it.
@@ -146,8 +148,6 @@ Acceptance run of 2026-11-03 (ticket #14), through the app's own handlers on the
 export const COSTS = {
   /** One image from `MODELS.image` at 1K (US$0.0336 on Google's pricing page, see the bake-off notes). */
   imageUsd: 0.0336,
-  /** The prepaid Google balance (about Rp70,000). The app never plans to spend past it. */
-  monthlyBudgetUsd: 4,
   /** One second of video from `MODELS.video` at 720p (about US$0.10, see the bake-off notes). */
   videoUsdPerSecond: 0.1,
   /**
@@ -163,8 +163,9 @@ export const COSTS = {
    */
   idrPerUsd: 18_200,
   /**
-   * Stops a bug or a loop from burning the whole balance in one day. It must fit one whole storyboard (four images,
-   * US$0.1344) and the longest video the panel offers (30 seconds with a narration, US$3.009): about US$3.14.
+   * Stops a bug or a loop from burning the whole balance in one day. It is the app's only spend limit: there is no
+   * monthly one, since the prepaid Google balance (auto-reload off) is the real stop. It must fit one whole storyboard
+   * (one picture, US$0.0336) and the longest video the panel offers (30 seconds with a narration, US$3.009): about US$3.14.
    */
   dailyBudgetUsd: 3.5,
 } as const;

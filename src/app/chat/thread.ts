@@ -14,12 +14,14 @@ export type ThreadItem =
       kind: "scenes";
       sourceAssetId: string;
       scenes: string[];
-      /** Finished frames by scene index (0 to 3). */
-      frames: Record<number, string>;
-      /** The scene text each frame was made from, so a text changed afterwards can be pointed out. */
-      madeFrom?: Record<number, string>;
-      /** Scenes whose frame is being generated right now (not saved). */
-      busy?: number[];
+      /** The look the planner picked for this product, kept so the picture and the video share it. Not shown. */
+      artDirection?: string;
+      /** The finished storyboard picture: all the panels in one image. */
+      sheet?: string;
+      /** The scene texts the picture was made from, so a text changed afterwards can be pointed out. */
+      madeFrom?: string[];
+      /** The picture is being generated right now (not saved). */
+      busy?: boolean;
       approved: boolean;
     }
   | {
@@ -45,8 +47,10 @@ export type ThreadItem =
       failedIndex: number;
       /** The seller asked for a voice-over, so the resume asks for it again. */
       voiceOver: boolean;
-      /** The storyboard frames the video is made from, sent again with the resume. */
-      frames: string[];
+      /** The storyboard picture the video is made from, sent again with the resume. */
+      sheet: string;
+      /** What each clip was told to play, sent again so the remade clips still fit the kept ones. */
+      directions: string[];
       /** The seller already asked to remake the rest. */
       resumed?: boolean;
     }
@@ -92,27 +96,21 @@ export function storyboardScenes(items: ThreadItem[]): string[] {
   return items.findLast((item) => item.kind === "scenes")?.scenes ?? [];
 }
 
-/**
- * The finished frames of the newest storyboard in scene order, which a video is made from.
- * A scene whose frame did not come out is skipped; the others keep their order, so the video still tells the story.
- */
-export function storyboardFrames(items: ThreadItem[]): string[] {
-  const latest = items.findLast((item) => item.kind === "scenes");
-  return latest ? sceneFrames(latest) : [];
+/** The art direction of the newest storyboard, which a video is edited in. */
+export function storyboardArtDirection(items: ThreadItem[]): string | undefined {
+  return items.findLast((item) => item.kind === "scenes")?.artDirection;
 }
 
-/** The finished frames of one storyboard card in scene order. */
-export function sceneFrames(card: Extract<ThreadItem, { kind: "scenes" }>): string[] {
-  return Object.entries(card.frames)
-    .sort(([a], [b]) => Number(a) - Number(b))
-    .map(([, assetId]) => assetId);
+/** The finished picture of the newest storyboard, which a video is made from. */
+export function storyboardSheet(items: ThreadItem[]): string | undefined {
+  return items.findLast((item) => item.kind === "scenes")?.sheet;
 }
 
 /**
- * The storyboard scenes can still be edited in chat: the newest one, until at least one frame exists.
- * (A failed first approval leaves it open, so the seller can still change a scene.)
+ * The storyboard scenes can still be edited in chat: the newest one, until its picture exists.
+ * (A failed approval leaves it open, so the seller can still change a scene.)
  */
 export function openStoryboard(items: ThreadItem[]) {
   const latest = items.findLast((item) => item.kind === "scenes");
-  return latest && Object.keys(latest.frames).length === 0 ? latest : undefined;
+  return latest && !latest.sheet ? latest : undefined;
 }

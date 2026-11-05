@@ -7,7 +7,7 @@ import { readEvents } from "./testing/events";
 import { chatRequest, createTestApp } from "./testing/harness";
 import { makePhoto, uploadRequest } from "./testing/photos";
 
-/** The usage meter: a local estimate of this month's spend against the prepaid US$4 balance. */
+/** The usage meter: a local estimate of this month's spend. Only the daily limit stops a request; the real balance is Google's. */
 
 async function uploadPhoto(app: ReturnType<typeof createTestApp>): Promise<string> {
   const [event] = await readEvents(await app.upload(uploadRequest(await makePhoto("jpeg"))));
@@ -20,16 +20,14 @@ const studioRequest = (photoAssetId: string) =>
 async function readUsage(app: ReturnType<typeof createTestApp>) {
   return (await app.usage(new Request("http://localhost/api/usage"))).json() as Promise<{
     monthUsd: number;
-    budgetUsd: number;
-    remainingUsd: number;
   }>;
 }
 
 describe("usage meter", () => {
-  it("starts empty with the whole free credit left", async () => {
+  it("starts empty", async () => {
     const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
 
-    assert.deepEqual(await readUsage(app), { monthUsd: 0, budgetUsd: 4, remainingUsd: 4 });
+    assert.deepEqual(await readUsage(app), { monthUsd: 0 });
   });
 
   it("adds an estimated cost for every generated image and reports it in the stream", async () => {
@@ -39,9 +37,9 @@ describe("usage meter", () => {
     const first = await readEvents(await app.chat(studioRequest(photoAssetId)));
     const second = await readEvents(await app.chat(studioRequest(photoAssetId)));
 
-    assert.deepEqual(first.find((e) => e.type === "usage_updated"), { type: "usage_updated", monthUsd: 0.0336, budgetUsd: 4 });
-    assert.deepEqual(second.find((e) => e.type === "usage_updated"), { type: "usage_updated", monthUsd: 0.0672, budgetUsd: 4 });
-    assert.deepEqual(await readUsage(app), { monthUsd: 0.0672, budgetUsd: 4, remainingUsd: 3.9328 });
+    assert.deepEqual(first.find((e) => e.type === "usage_updated"), { type: "usage_updated", monthUsd: 0.0336 });
+    assert.deepEqual(second.find((e) => e.type === "usage_updated"), { type: "usage_updated", monthUsd: 0.0672 });
+    assert.deepEqual(await readUsage(app), { monthUsd: 0.0672 });
   });
 
   it("does not charge for a turn that makes no image", async () => {
@@ -64,17 +62,15 @@ describe("usage meter", () => {
     assert.equal((await readUsage(app)).monthUsd, 0);
   });
 
-  it("refuses to generate once the free credit is used up and calls no model", async () => {
+  it("has no monthly limit: a month that already passed US$4 still generates, and the meter keeps counting", async () => {
     const app = createTestApp(fakeChatModel({ chunks: ["x"] }), undefined, { startingMonthUsd: 3.99 });
     const photoAssetId = await uploadPhoto(app);
 
     const events = await readEvents(await app.chat(studioRequest(photoAssetId)));
 
-    const error = events.at(-1);
-    assert.equal(error?.type, "error");
-    assert.match(error?.type === "error" ? error.message : "", /kuota/i);
-    assert.equal(app.imageModel.calls.length, 0);
-    assert.equal(events.some((e) => e.type === "done"), false);
+    assert.equal(events.some((e) => e.type === "asset_ready" && e.role === "studio_photo"), true);
+    assert.equal(app.imageModel.calls.length, 1);
+    assert.equal((await readUsage(app)).monthUsd, 4.0236);
   });
 });
 
@@ -92,8 +88,7 @@ describe("daily spend cap", () => {
     assert.equal(error?.type === "error" && error.code, "daily_cap_reached");
     const message = error?.type === "error" ? error.message : "";
     assert.match(message, /hari ini/i);
-    // What is left of the month's budget: today's spend counts towards the month too.
-    assert.ok(message.includes(`US$${(COSTS.monthlyBudgetUsd - todayLeaving(0.01)).toFixed(2)}`), message);
+    assert.doesNotMatch(message, /bulan/i);
     assert.match(message, /07\.00 WIB/); // the day follows UTC, so it resets at 00:00 UTC
     assert.equal(app.imageModel.calls.length, 0);
     assert.equal(events.some((e) => e.type === "done"), false);
@@ -152,19 +147,6 @@ describe("daily spend cap", () => {
 });
 
 describe("usage meter under concurrent requests", () => {
-  it("never lets simultaneous requests pass the free credit together", async () => {
-    // Room for exactly one more image (US$0.0336 of the US$4 budget).
-    const app = createTestApp(fakeChatModel({ chunks: ["x"] }), undefined, { startingMonthUsd: 3.95 });
-    const photoAssetId = await uploadPhoto(app);
-
-    const turns = await Promise.all(
-      [1, 2, 3].map(async () => readEvents(await app.chat(studioRequest(photoAssetId)))),
-    );
-
-    assert.equal(app.imageModel.calls.length, 1);
-    assert.equal(turns.filter((events) => events.some((e) => e.type === "asset_ready")).length, 1);
-  });
-
   it("gives the reservation back when the model call fails", async () => {
     const failing = fakeImageModel({ failWith: new Error("boom") });
     const app = createTestApp(fakeChatModel({ chunks: ["x"] }), failing);

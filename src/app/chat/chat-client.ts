@@ -58,7 +58,7 @@ export async function uploadPhoto(file: File): Promise<{ assetId: string } | { e
   return result;
 }
 
-export async function fetchUsage(): Promise<{ monthUsd: number; budgetUsd: number } | undefined> {
+export async function fetchUsage(): Promise<{ monthUsd: number } | undefined> {
   try {
     const response = await fetch("/api/usage", { cache: "no-store" });
     return response.ok ? await response.json() : undefined;

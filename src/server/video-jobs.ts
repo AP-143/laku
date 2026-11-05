@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { COSTS, MODELS } from "../config/models";
 import type { ChatEvent } from "../shared/chat-events";
-import { CLIP_SECONDS, framesForClips, type ClipPlan } from "../shared/video-plan";
+import { CLIP_SECONDS, type ClipPlan } from "../shared/video-plan";
 import type { AssetFile, AssetStore } from "./asset-store";
 import { narrationFits } from "./chat-prompt";
 import { clipPrompt } from "./image-prompts";
@@ -11,13 +11,13 @@ import {
   ClipFailedError,
   DailyCapReachedError,
   mayStillBeBilled,
-  QuotaExhaustedError,
   VideoNotAffordableError,
 } from "./model-errors";
 import { readUsage, type UsageLedger } from "./usage-ledger";
 import { addVoice, joinClips } from "./video-join";
 
-export interface StoryboardFrame {
+/** The storyboard picture a video is made from. */
+export interface StoryboardSheet {
   assetId: string;
   file: AssetFile;
 }
@@ -44,57 +44,48 @@ export function createVideoJobs(deps: {
   assets: AssetStore;
   ledger: UsageLedger;
   send: (event: ChatEvent) => void;
-  /** Asked about every frame a clip is made from, so no paid path skips the product check. */
+  /** Asked about the picture every clip is made from, so no paid path skips the product check (the frame check, not the photo one). */
   isProduct: (image: AssetFile) => Promise<boolean>;
 }) {
   const { models, assets, ledger, send, isProduct } = deps;
 
-  /** How many seconds of video (with its narration, when asked for) the month and the day still have room for. */
+  /** How many seconds of video (with its narration, when asked for) the day still has room for. */
   async function affordableSeconds(withVoice: boolean): Promise<number> {
-    const left = Math.min(
-      COSTS.monthlyBudgetUsd - (await ledger.monthTotal()),
-      COSTS.dailyBudgetUsd - (await ledger.dayTotal()),
-    );
+    const left = COSTS.dailyBudgetUsd - (await ledger.dayTotal());
     const perSecond = COSTS.videoUsdPerSecond + (withVoice ? COSTS.speechUsdPerSecond : 0);
     return Math.floor(Math.max(0, left) / perSecond + 1e-9);
   }
 
   return {
     /**
-     * `frames` are the storyboard frames in scene order; the clips are made from the ones `framesForClips` picks.
+     * Every clip starts from the same storyboard `sheet` and plays its own `directions` (one per clip, in order).
      * `finished` holds clips made by an earlier try (by position), which are used as they are and not paid for again.
      */
     async generate(request: {
-      frames: StoryboardFrame[];
+      sheet: StoryboardSheet;
+      directions: string[];
+      /** The look of the ad, so every clip, remade ones included, is edited in the same style. */
+      artDirection?: string;
       plan: Extract<ClipPlan, { ok: true }>;
       finished?: Record<number, { assetId: string; bytes: Uint8Array }>;
       /** Asked for a narration: the scenes the script is written from, and what the seller said. */
       voiceOver?: { scenes: string[]; text: string };
     }) {
-      const { plan, voiceOver } = request;
+      const { plan, voiceOver, sheet, directions, artDirection } = request;
       const finished = request.finished ?? {};
-      const frames = framesForClips(plan.clips.length, request.frames.length).map((index) => request.frames[index]);
-      for (const frame of frames) {
-        if (!(await isProduct(frame.file))) throw new NotAProductError();
-      }
+      if (!(await isProduct(sheet.file))) throw new NotAProductError();
 
       // Only the clips still to be made are paid for, and they are booked before the first one, so
       // simultaneous requests cannot squeeze under a limit.
       const missing = plan.clips.filter((_, index) => !finished[index]);
       // The narration is booked with the video, so a budget that covers only the picture is refused up front.
       const voiceCost = voiceOver ? speechCostOf(plan.seconds) : 0;
-      const reservation = await ledger.reserve(roundUsd(costOf(sum(missing)) + voiceCost), {
-        monthlyUsd: COSTS.monthlyBudgetUsd,
-        dailyUsd: COSTS.dailyBudgetUsd,
-      });
+      const reservation = await ledger.reserve(roundUsd(costOf(sum(missing)) + voiceCost), { dailyUsd: COSTS.dailyBudgetUsd });
       if (!reservation.ok) {
         // A shorter video may still fit; only when not even the shortest clip does, the plain limit message is clearer.
         const affordable = await affordableSeconds(Boolean(voiceOver));
         if (affordable >= CLIP_SECONDS.min) throw new VideoNotAffordableError(affordable);
-        if (reservation.limit === "daily") {
-          throw new DailyCapReachedError(reservation.resetsAt, (await readUsage(ledger)).remainingUsd);
-        }
-        throw new QuotaExhaustedError();
+        throw new DailyCapReachedError(reservation.resetsAt);
       }
 
       const jobId = randomUUID();
@@ -112,7 +103,7 @@ export function createVideoJobs(deps: {
           percent: Math.round((index / plan.clips.length) * 100),
         });
         try {
-          made.push(await models.generateClip({ prompt: clipPrompt(), frame: frames[index].file, seconds }));
+          made.push(await models.generateClip({ prompt: clipPrompt(directions[index], artDirection), frame: sheet.file, seconds }));
         } catch (error) {
           // Clips that were not made are given back, and so is the voice, which was never started.
           // A clip that timed out may still be billed, so it stays booked.
@@ -131,12 +122,13 @@ export function createVideoJobs(deps: {
             clips: plan.clips,
             finished: kept,
             failedIndex: index,
-            sourceAssetId: frames[0].assetId,
+            sourceAssetId: sheet.assetId,
             voiceOver: Boolean(voiceOver),
+            directions,
           });
           // What stays booked is real spend, so the meter shows it now.
-          const { monthUsd, budgetUsd } = await readUsage(ledger);
-          send({ type: "usage_updated", monthUsd, budgetUsd });
+          const { monthUsd } = await readUsage(ledger);
+          send({ type: "usage_updated", monthUsd });
           throw new ClipFailedError(index, plan.clips.length, error);
         }
       }
@@ -174,14 +166,14 @@ export function createVideoJobs(deps: {
         kind: "video",
         url: `/api/assets/${assetId}`,
         role: "video",
-        sourceAssetId: frames[0].assetId,
+        sourceAssetId: sheet.assetId,
       });
       if (narration) {
         send({ type: "voice_over", script: narration.script, voice: MODELS.voice, silentAssetId, seconds: plan.seconds });
       }
 
-      const { monthUsd, budgetUsd } = await readUsage(ledger);
-      send({ type: "usage_updated", monthUsd, budgetUsd });
+      const { monthUsd } = await readUsage(ledger);
+      send({ type: "usage_updated", monthUsd });
     },
 
     /**
@@ -191,13 +183,8 @@ export function createVideoJobs(deps: {
     async reviseVoice(request: { silentAssetId: string; silent: Uint8Array; seconds: number; script: string; voice: string }) {
       const { silentAssetId, silent, seconds, script, voice } = request;
       const cost = roundUsd(seconds * COSTS.speechUsdPerSecond);
-      const reservation = await ledger.reserve(cost, { monthlyUsd: COSTS.monthlyBudgetUsd, dailyUsd: COSTS.dailyBudgetUsd });
-      if (!reservation.ok) {
-        if (reservation.limit === "daily") {
-          throw new DailyCapReachedError(reservation.resetsAt, (await readUsage(ledger)).remainingUsd);
-        }
-        throw new QuotaExhaustedError();
-      }
+      const reservation = await ledger.reserve(cost, { dailyUsd: COSTS.dailyBudgetUsd });
+      if (!reservation.ok) throw new DailyCapReachedError(reservation.resetsAt);
 
       let assetId: string;
       let spoken = false;
@@ -208,8 +195,8 @@ export function createVideoJobs(deps: {
       } catch (error) {
         // A voice that was rejected is not billed; one that timed out may still be, and one that was made stays billed.
         if (!spoken && !mayStillBeBilled(error)) await ledger.record(-cost);
-        const { monthUsd, budgetUsd } = await readUsage(ledger);
-        send({ type: "usage_updated", monthUsd, budgetUsd });
+        const { monthUsd } = await readUsage(ledger);
+        send({ type: "usage_updated", monthUsd });
         throw error;
       }
 
@@ -223,8 +210,8 @@ export function createVideoJobs(deps: {
       });
       send({ type: "voice_over", script, voice, silentAssetId, seconds });
 
-      const { monthUsd, budgetUsd } = await readUsage(ledger);
-      send({ type: "usage_updated", monthUsd, budgetUsd });
+      const { monthUsd } = await readUsage(ledger);
+      send({ type: "usage_updated", monthUsd });
     },
   };
 }

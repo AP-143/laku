@@ -40,7 +40,8 @@ describe("error handling", () => {
 
     assert.equal(error.code, "quota_exhausted");
     assert.equal(error.retryable, true);
-    assert.match(error.message, /kuota/i);
+    // The real balance is Google's: when it is gone the seller is told to top it up there.
+    assert.match(error.message, /saldo/i);
     assert.equal(app.imageModel.calls.length, 1);
   });
 

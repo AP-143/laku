@@ -14,18 +14,22 @@ import type { AssetFile } from "./asset-store";
 import { createOmniVideoModel, type VideoModel } from "./video-model";
 import {
   CHAT_SYSTEM_PROMPT,
+  FRAME_CHECK_PROMPT,
   PRODUCT_CHECK_PROMPT,
   intentPrompt,
   parseIntent,
   parseReplacement,
   parseScenes,
+  parseVideoPlan,
   parseVideoRequest,
   planScenesPrompt,
   replaceScenePrompt,
+  videoPlanPrompt,
   videoRequestPrompt,
   parseVoiceRevision,
   voiceRevisionPrompt,
   voiceScriptPrompt,
+  type PlannedStoryboard,
   type VideoRequest,
   type VoiceRevision,
   type Intent,
@@ -42,10 +46,12 @@ import {
 const MAX_REPLY_TOKENS = 1024;
 /** The product check and the intent router only need one word back. */
 const MAX_CHECK_TOKENS = 16;
-/** Four short scenes, or one rewritten scene, as JSON. */
-const MAX_SCENE_TOKENS = 600;
+/** Six short scenes with their captions and the art direction, or one rewritten scene, as JSON. */
+const MAX_SCENE_TOKENS = 1600;
+/** One direction of a few sentences for each of up to four clips, as JSON. */
+const MAX_PLAN_TOKENS = 900;
 
-/** Studio photos are square; storyboard frames are vertical so they can feed a vertical video. */
+/** Studio photos are square; the storyboard picture is vertical so the video made from it is vertical too. */
 export type ImageAspectRatio = "1:1" | "9:16";
 
 export interface ChatMessage {
@@ -60,14 +66,18 @@ export interface ModelClient {
   streamChatReply(messages: ChatMessage[]): AsyncIterable<string>;
   /** True when the photo mainly shows something that could be sold. Throws if the model fails. */
   isProductPhoto(photo: AssetFile): Promise<boolean>;
+  /** True when a storyboard frame clearly shows a product, even with a person using it. Throws if the model fails. */
+  isProductFrame(frame: AssetFile): Promise<boolean>;
   /** Decides which feature a typed message asks for. Throws if the model fails. */
   classifyIntent(text: string, context: IntentContext): Promise<Intent>;
-  /** Proposes exactly 4 scene descriptions for a storyboard. Throws if the model fails or answers badly. */
-  planScenes(photo: AssetFile, request: string): Promise<string[]>;
+  /** Proposes one scene per storyboard panel (six) and the art direction for this product. Throws if the model fails or answers badly. */
+  planScenes(photo: AssetFile, request: string): Promise<PlannedStoryboard>;
   /** Rewrites the one scene the instruction is about. Throws if the model fails or answers badly. */
   replaceScene(scenes: string[], instruction: string): Promise<{ index: number; text: string }>;
   /** Makes one image from a reference photo and an instruction. Throws if the model fails. Never retries. */
   generateImage(request: { prompt: string; reference: AssetFile; aspectRatio: ImageAspectRatio }): Promise<AssetFile>;
+  /** Shares the scenes over the clips of a video: one direction per clip, in order. Throws if the model fails or answers badly. */
+  planVideo(request: { scenes: string[]; clips: number[]; artDirection?: string }): Promise<string[]>;
   /** Reads the video length and the voice-over the seller asked for. Throws if the model fails or answers badly. */
   readVideoRequest(text: string): Promise<VideoRequest>;
   /** Writes the narration for a video of `seconds`, from its scenes. Throws if the model fails. */
@@ -106,6 +116,25 @@ export function createModelClient(models: {
   videoModel: VideoModel;
   speechModel: SpeechModel;
 }): ModelClient {
+  /** Shows one image to the chat model with a question that is answered YES or NO. */
+  async function askYesNo(question: string, image: AssetFile): Promise<boolean> {
+    const { text } = await generateText({
+      model: models.chatModel,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: question },
+            { type: "file", mediaType: image.mediaType, data: image.bytes },
+          ],
+        },
+      ],
+      maxOutputTokens: MAX_CHECK_TOKENS,
+      maxRetries: 0,
+    });
+    return text.trim().toUpperCase().startsWith("YES");
+  }
+
   return {
     async *streamChatReply(messages) {
       const result = streamText({
@@ -124,21 +153,11 @@ export function createModelClient(models: {
     },
 
     async isProductPhoto(photo) {
-      const { text } = await generateText({
-        model: models.chatModel,
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: PRODUCT_CHECK_PROMPT },
-              { type: "file", mediaType: photo.mediaType, data: photo.bytes },
-            ],
-          },
-        ],
-        maxOutputTokens: MAX_CHECK_TOKENS,
-        maxRetries: 0,
-      });
-      return text.trim().toUpperCase().startsWith("YES");
+      return askYesNo(PRODUCT_CHECK_PROMPT, photo);
+    },
+
+    async isProductFrame(frame) {
+      return askYesNo(FRAME_CHECK_PROMPT, frame);
     },
 
     async classifyIntent(text, context) {
@@ -189,6 +208,16 @@ export function createModelClient(models: {
         abortSignal: AbortSignal.timeout(IMAGE_TIMEOUT_MS),
       });
       return { bytes: result.image.uint8Array, mediaType: result.image.mediaType };
+    },
+
+    async planVideo(request) {
+      const { text } = await generateText({
+        model: models.chatModel,
+        messages: [{ role: "user", content: videoPlanPrompt(request) }],
+        maxOutputTokens: MAX_PLAN_TOKENS,
+        maxRetries: 0,
+      });
+      return parseVideoPlan(text, request.clips.length);
     },
 
     async readVideoRequest(text) {

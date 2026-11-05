@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { PANEL_TITLES } from "../../shared/storyboard";
 import { VIDEO_LENGTH_CHOICES } from "../../shared/video-plan";
 import { assetUrl, downloadUrl } from "./chat-client";
 import type { RetryRequest, ThreadItem } from "./thread";
@@ -16,7 +17,8 @@ interface ThreadViewProps {
   busy: boolean;
   onRetry: (request: RetryRequest) => void;
   onEditScene: (itemId: string, index: number, value: string) => void;
-  onMakeFrames: (itemId: string, sceneIndex?: number) => void;
+  /** The approve button, and the retry button of the storyboard picture. */
+  onMakeSheet: (itemId: string) => void;
   /** The "Generate" button of the video panel under an approved storyboard. */
   onMakeVideo: (itemId: string, options: { seconds: number; voiceOver: boolean }) => void;
   onAnswerConfirm: (itemId: string, yes: boolean) => void;
@@ -138,7 +140,7 @@ export function ThreadView({
   busy,
   onRetry,
   onEditScene,
-  onMakeFrames,
+  onMakeSheet,
   onMakeVideo,
   onAnswerConfirm,
   onResumeVideo,
@@ -251,78 +253,70 @@ export function ThreadView({
             );
 
           case "scenes": {
-            const framesStarted = item.approved;
+            const approved = item.approved;
+            const changed = Boolean(item.sheet) && item.madeFrom !== undefined && item.scenes.some((scene, index) => item.madeFrom![index]?.trim() !== scene.trim());
             return (
               <div key={item.id} className="board">
                 <h2>
-                  Storyboard 4 scene
-                  {framesStarted && <span className="board-badge">Disetujui</span>}
+                  Storyboard {item.scenes.length} panel
+                  {approved && <span className="board-badge">Disetujui</span>}
                 </h2>
                 <ol>
-                  {item.scenes.map((scene, index) => {
-                    const frame = item.frames[index];
-                    const working = item.busy?.includes(index);
-                    return (
-                      <li key={index} className="scene">
-                        <label>
-                          <span className="scene-num">Scene {index + 1}</span>
-                          <SceneText
-                            value={scene}
-                            readOnly={framesStarted && busy}
-                            onChange={(value) => onEditScene(item.id, index, value)}
-                          />
-                        </label>
-                        {frame && item.madeFrom?.[index] !== undefined && item.madeFrom[index].trim() !== scene.trim() && (
-                          <p className="scene-note">Teks diubah. Tekan “Coba lagi” untuk memperbarui gambar.</p>
-                        )}
-                        {framesStarted && (
-                          <div className="frame-box">
-                            {frame ? (
-                              // eslint-disable-next-line @next/next/no-img-element -- served by our own asset endpoint
-                              <img src={assetUrl(frame)} alt={`Frame scene ${index + 1}`} />
-                            ) : working ? (
-                              <Spinner label={`Membuat scene ${index + 1}`} />
-                            ) : (
-                              <span className="frame-empty">Belum dibuat</span>
-                            )}
-                          </div>
-                        )}
-                        {framesStarted && !working && (
-                          <div className="actions">
-                            <button type="button" className="btn" disabled={busy} onClick={() => onMakeFrames(item.id, index)}>
-                              {frame ? "Coba lagi" : "Buat gambar"}
-                            </button>
-                            {frame && (
-                              <a className="btn btn-primary" href={downloadUrl(frame)} download>
-                                Unduh
-                              </a>
-                            )}
-                          </div>
-                        )}
-                      </li>
-                    );
-                  })}
+                  {item.scenes.map((scene, index) => (
+                    <li key={index} className="scene">
+                      <label>
+                        <span className="scene-num">
+                          {index + 1}. {PANEL_TITLES[index]}
+                        </span>
+                        <SceneText
+                          value={scene}
+                          readOnly={approved && busy}
+                          onChange={(value) => onEditScene(item.id, index, value)}
+                        />
+                      </label>
+                    </li>
+                  ))}
                 </ol>
-                {!framesStarted && (
+                {approved && (
+                  <div className="sheet-box">
+                    {item.sheet ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- served by our own asset endpoint
+                      <img src={assetUrl(item.sheet)} alt="Gambar storyboard dengan semua panel" />
+                    ) : item.busy ? (
+                      <Spinner label="Membuat gambar storyboard" />
+                    ) : (
+                      <span className="frame-empty">Belum dibuat</span>
+                    )}
+                  </div>
+                )}
+                {changed && <p className="scene-note">Teks diubah. Tekan “Coba lagi” untuk memperbarui gambar.</p>}
+                {approved && !item.busy && (
                   <div className="actions">
-                    <button type="button" className="btn btn-primary" disabled={busy} onClick={() => onMakeFrames(item.id)}>
+                    <button type="button" className="btn" disabled={busy} onClick={() => onMakeSheet(item.id)}>
+                      {item.sheet ? "Coba lagi" : "Buat gambar"}
+                    </button>
+                    {item.sheet && (
+                      <a className="btn btn-primary" href={downloadUrl(item.sheet)} download>
+                        Unduh
+                      </a>
+                    )}
+                  </div>
+                )}
+                {!approved && (
+                  <div className="actions">
+                    <button type="button" className="btn btn-primary" disabled={busy} onClick={() => onMakeSheet(item.id)}>
                       Setujui &amp; buat gambar
                     </button>
                   </div>
                 )}
-                {/* The approve button is gone once the frames are made: the next step is the video, or the missing frames. */}
-                {framesStarted && !busy &&
-                  (item.scenes.every((_, index) => item.frames[index]) ? (
-                    <VideoPanel
-                      busy={busy}
-                      hasVideo={items.slice(position + 1).some((later) => later.kind === "video")}
-                      onMake={(options) => onMakeVideo(item.id, options)}
-                    />
-                  ) : (
-                    <p className="board-status" data-done="false">
-                      Storyboard telah disetujui, namun masih ada gambar yang belum selesai. Gunakan “Buat gambar” pada scene yang masih kosong. Panel “Buat video iklan” akan muncul setelah keempat gambar selesai.
-                    </p>
-                  ))}
+                {/* The approve button is gone once the picture is made: the next step is the video. */}
+                {approved && !busy && item.sheet && (
+                  <VideoPanel
+                    busy={busy}
+                    hasVideo={items.slice(position + 1).some((later) => later.kind === "video")}
+                    onMake={(options) => onMakeVideo(item.id, options)}
+                  />
+                )}
               </div>
             );
           }

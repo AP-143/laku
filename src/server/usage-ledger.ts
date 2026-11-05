@@ -1,18 +1,16 @@
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { COSTS } from "../config/models";
 
 /**
  * The usage meter's ledger: a local estimate of spend, one line per paid call.
  * It is only an estimate (the Google AI Studio balance is the real one), but it is what the UI shows
- * and what stops the app from planning past the monthly and daily limits.
+ * and what stops the app from planning past the daily limit. There is no monthly limit: the prepaid balance is the stop.
  */
 export interface UsageLedger {
   record(usd: number): Promise<void>;
   /**
-   * Books `usd` only if both the month's and today's total would stay within their limits; says which
-   * limit refused it otherwise (the monthly one first, since it is the harder stop).
-   * Check and booking happen as one step, so simultaneous requests cannot pass a limit together.
+   * Books `usd` only if today's total would stay within the daily limit; says when the day resets otherwise.
+   * Check and booking happen as one step, so simultaneous requests cannot pass the limit together.
    * Give the money back with `record(-usd)` if the paid call then fails.
    */
   reserve(usd: number, limits: SpendLimits): Promise<Reservation>;
@@ -23,15 +21,13 @@ export interface UsageLedger {
 }
 
 export interface SpendLimits {
-  monthlyUsd: number;
   dailyUsd: number;
 }
 
 export type Reservation =
   | { ok: true }
-  | { ok: false; limit: "monthly" }
   /** The day ends at 00:00 UTC; `resetsAt` is when today's total starts again from zero. */
-  | { ok: false; limit: "daily"; resetsAt: Date };
+  | { ok: false; resetsAt: Date };
 
 const roundUsd = (usd: number) => Math.round(usd * 10_000) / 10_000;
 const monthOf = (date: Date) => date.toISOString().slice(0, 7);
@@ -52,16 +48,8 @@ export function createUsageLedger(filePath: string, now: () => Date = () => new 
 
     reserve(usd, limits) {
       const turn = queue.then(async (): Promise<Reservation> => {
-        const month = await ledger.monthTotal();
         const day = await ledger.dayTotal();
-        const overMonth = roundUsd(month + usd) > limits.monthlyUsd;
-        const overDay = roundUsd(day + usd) > limits.dailyUsd;
-        if (overMonth || overDay) {
-          // Today's spend is part of the month's, so both limits can be passed at once. The one with less room left is
-          // what stops the request, and the seller is told about that one.
-          const daily = overDay && (!overMonth || limits.dailyUsd - day <= limits.monthlyUsd - month);
-          return daily ? { ok: false, limit: "daily", resetsAt: nextDayStart(now()) } : { ok: false, limit: "monthly" };
-        }
+        if (roundUsd(day + usd) > limits.dailyUsd) return { ok: false, resetsAt: nextDayStart(now()) };
         await record(usd);
         return { ok: true };
       });
@@ -100,9 +88,7 @@ export function createDefaultUsageLedger(): UsageLedger {
   return createUsageLedger(path.resolve("storage", "usage-ledger.jsonl"));
 }
 
-/** What the UI shows: this month's estimate against the free credit. */
+/** What the UI shows: this month's estimated spend. */
 export async function readUsage(ledger: UsageLedger) {
-  const monthUsd = await ledger.monthTotal();
-  const budgetUsd = COSTS.monthlyBudgetUsd;
-  return { monthUsd, budgetUsd, remainingUsd: roundUsd(Math.max(0, budgetUsd - monthUsd)) };
+  return { monthUsd: await ledger.monthTotal() };
 }

@@ -15,7 +15,7 @@ export interface AttachedPhoto {
 const SUGGESTIONS: Array<{ label: string; text: string; intent: ChatIntent; preset?: Preset }> = [
   { label: "Foto studio latar putih", text: "Bikinin foto studio dengan latar putih bersih", intent: "studio_photo", preset: "clean_white" },
   { label: "Foto lifestyle meja kayu", text: "Bikinin foto lifestyle di atas meja kayu dengan cahaya pagi", intent: "studio_photo", preset: "lifestyle" },
-  { label: "Storyboard 4 scene untuk Reels", text: "Bikinin storyboard 4 scene untuk Reels", intent: "storyboard" },
+  { label: "Storyboard untuk Reels", text: "Bikinin storyboard untuk Reels", intent: "storyboard" },
 ];
 
 interface ComposerProps {

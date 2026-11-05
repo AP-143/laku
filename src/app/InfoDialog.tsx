@@ -19,7 +19,7 @@ const TOPICS: Record<Topic, { title: string; body: ReactNode }> = {
         <li>
           <strong>Storyboard &amp; Video</strong>
           <span>
-            4 scene iklan dari satu foto produk. Kamu setujui teksnya dulu, baru gambarnya dibuat. Setelah itu, pilih durasi
+            Storyboard 6 panel dari satu foto produk, jadi satu gambar lengkap dengan judul dan caption. Kamu setujui teksnya dulu, baru gambarnya dibuat. Setelah itu, pilih durasi
             pada panel “Buat video iklan” (dan voice over kalau mau), lalu tekan Generate.
           </span>
         </li>
@@ -32,7 +32,7 @@ const TOPICS: Record<Topic, { title: string; body: ReactNode }> = {
       <>
         <ol>
           <li>Unggah satu foto produk (JPG, PNG, atau WebP, maksimal 10 MB).</li>
-          <li>Pilih gaya foto atau tulis permintaanmu, misalnya “bikinin storyboard 4 scene dong”.</li>
+          <li>Pilih gaya foto atau tulis permintaanmu, misalnya “bikinin storyboard dong”.</li>
           <li>Bandingkan hasilnya dengan foto asli, coba lagi kalau perlu, lalu unduh.</li>
         </ol>
         <p>Produknya harus tetap sama: bentuk, warna, logo, dan tulisannya tidak boleh berubah.</p>

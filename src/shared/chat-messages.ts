@@ -4,13 +4,17 @@
  */
 
 export const SCENES_PROPOSED_MESSAGE =
-  "Berikut usulan 4 scene storyboard untuk iklan produk ini. Teks tiap scene dapat diubah langsung, atau minta penggantian scene tertentu lewat chat. Jika sudah sesuai, tekan “Setujui & buat gambar”. Setelah semua gambar selesai, panel “Buat video iklan” akan muncul: pilih durasinya, lalu tekan Generate.";
+  "Berikut usulan 6 panel storyboard untuk iklan produk ini. Teks tiap scene dapat diubah langsung, atau minta penggantian scene tertentu lewat chat. Jika sudah sesuai, tekan “Setujui & buat gambar”. Setelah gambar storyboard selesai, panel “Buat video iklan” akan muncul: pilih durasinya, lalu tekan Generate.";
 
 export const SCENE_REPLACED_MESSAGE =
-  "Scene sudah diganti. Jika storyboard sudah sesuai, tekan “Setujui & buat gambar”. Setelah semua gambar selesai, panel “Buat video iklan” akan muncul: pilih durasinya, lalu tekan Generate.";
+  "Scene sudah diganti. Jika storyboard sudah sesuai, tekan “Setujui & buat gambar”. Setelah gambar storyboard selesai, panel “Buat video iklan” akan muncul: pilih durasinya, lalu tekan Generate.";
 
 /** Every earlier wording of the two replies above, and the current one that replaces it. */
 export const OUTDATED_REPLIES: Record<string, string> = {
+  "Berikut usulan 4 scene storyboard untuk iklan produk ini. Teks tiap scene dapat diubah langsung, atau minta penggantian scene tertentu lewat chat. Jika sudah sesuai, tekan “Setujui & buat gambar”. Setelah semua gambar selesai, panel “Buat video iklan” akan muncul: pilih durasinya, lalu tekan Generate.":
+    SCENES_PROPOSED_MESSAGE,
+  "Scene sudah diganti. Jika storyboard sudah sesuai, tekan “Setujui & buat gambar”. Setelah semua gambar selesai, panel “Buat video iklan” akan muncul: pilih durasinya, lalu tekan Generate.":
+    SCENE_REPLACED_MESSAGE,
   "Ini usulan 4 scene storyboard-nya. Kamu bisa ubah teksnya atau minta aku ganti scene tertentu. Kalau sudah cocok, setujui dulu ya, baru aku buatkan gambarnya.":
     SCENES_PROPOSED_MESSAGE,
   "Berikut usulan 4 scene storyboard untuk iklan produk ini. Teks tiap scene dapat diubah langsung, atau minta penggantian scene tertentu lewat chat. Jika sudah sesuai, tekan “Setujui & buat gambar”. Setelah semua gambar selesai, tombol “Buat video” akan muncul untuk menjadikannya video iklan.":

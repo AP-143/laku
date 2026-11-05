@@ -21,13 +21,11 @@ import {
 } from "./saved-conversation";
 import { Sidebar } from "./Sidebar";
 import { ThreadView, type Progress } from "./ThreadView";
-import { SCENE_INDEXES } from "../../shared/storyboard";
 import {
   lastPhotoAssetId,
   lastStudioAssetId,
   narratedVideo,
   openStoryboard,
-  sceneFrames,
   styleOf,
   type Preset,
   type RetryRequest,
@@ -51,15 +49,12 @@ const BEFORE_LOAD: Workspace = { sessions: [{ id: "before-load", items: [] }], a
 
 interface Usage {
   monthUsd: number;
-  budgetUsd: number;
 }
 
 /** How the events of one request are folded into the thread. */
 interface RunContext {
   /** Set when the request continues an open storyboard instead of starting a new one. */
   scenesItemId?: string;
-  /** For a storyboard approval: which scenes get a frame, in order. */
-  frameIndexes: number[];
 }
 
 export default function ChatApp() {
@@ -167,11 +162,10 @@ export default function ChatApp() {
 
   /** Sends one request and folds its events into the thread. Used by every button and by the composer. */
   const run = useCallback(
-    async (body: Record<string, unknown>, context: RunContext = { frameIndexes: [] }) => {
+    async (body: Record<string, unknown>, context: RunContext = {}) => {
       setBusy(true);
       setNote(undefined);
       let botId: string | undefined;
-      let framesStarted = 0;
       // After a video stopped part way, only the "remake this part" button may continue it, never a full retry.
       let videoStopped = false;
       const retry: RetryRequest = body;
@@ -188,12 +182,9 @@ export default function ChatApp() {
             break;
           }
           case "job_started": {
-            if (event.kind === "storyboard_frame" && context.scenesItemId) {
-              const sceneIndex = context.frameIndexes[framesStarted++];
-              // `approved` shows the frame area, which also covers a storyboard approved by typing.
-              patchItem(context.scenesItemId, (item) =>
-                item.kind === "scenes" ? { ...item, approved: true, busy: [...(item.busy ?? []), sceneIndex] } : item,
-              );
+            if (event.kind === "storyboard_sheet" && context.scenesItemId) {
+              // `approved` shows the picture area, which also covers a storyboard approved by typing.
+              patchItem(context.scenesItemId, (item) => (item.kind === "scenes" ? { ...item, approved: true, busy: true } : item));
             }
             setProgress((current) => current ?? { message: event.kind === "video" ? "Sedang membuat video…" : "Sedang membuat gambar…" });
             break;
@@ -203,11 +194,13 @@ export default function ChatApp() {
             break;
           case "storyboard_scenes": {
             if (context.scenesItemId) {
-              patchItem(context.scenesItemId, (item) => (item.kind === "scenes" ? { ...item, scenes: event.scenes } : item));
+              patchItem(context.scenesItemId, (item) =>
+                item.kind === "scenes" ? { ...item, scenes: event.scenes, artDirection: event.artDirection ?? item.artDirection } : item,
+              );
             } else {
               setItems((current) => [
                 ...current,
-                { id: newId(), kind: "scenes", sourceAssetId: event.sourceAssetId, scenes: event.scenes, frames: {}, approved: false },
+                { id: newId(), kind: "scenes", sourceAssetId: event.sourceAssetId, scenes: event.scenes, artDirection: event.artDirection, approved: false },
               ]);
             }
             break;
@@ -222,17 +215,9 @@ export default function ChatApp() {
             } else if (event.role === "video" && event.sourceAssetId) {
               const sourceAssetId = event.sourceAssetId;
               setItems((current) => [...current, { id: newId(), kind: "video", assetId: event.assetId, sourceAssetId }]);
-            } else if (event.role === "storyboard_frame" && context.scenesItemId && event.sceneIndex !== undefined) {
-              const sceneIndex = event.sceneIndex;
+            } else if (event.role === "storyboard_sheet" && context.scenesItemId) {
               patchItem(context.scenesItemId, (item) =>
-                item.kind === "scenes"
-                  ? {
-                      ...item,
-                      frames: { ...item.frames, [sceneIndex]: event.assetId },
-                      madeFrom: { ...item.madeFrom, [sceneIndex]: item.scenes[sceneIndex] },
-                      busy: (item.busy ?? []).filter((index) => index !== sceneIndex),
-                    }
-                  : item,
+                item.kind === "scenes" ? { ...item, sheet: event.assetId, madeFrom: item.scenes, busy: undefined } : item,
               );
             }
             break;
@@ -260,7 +245,8 @@ export default function ChatApp() {
                 finished: event.finished,
                 failedIndex: event.failedIndex,
                 voiceOver: event.voiceOver,
-                frames: Array.isArray(body.frames) ? (body.frames as string[]) : [],
+                sheet: typeof body.sheet === "string" ? body.sheet : "",
+                directions: event.directions,
               },
             ]);
             break;
@@ -268,7 +254,7 @@ export default function ChatApp() {
             setItems((current) => [...current, { id: newId(), kind: "confirm", message: event.message, estimatedUsd: event.estimatedUsd, retry }]);
             break;
           case "usage_updated":
-            setUsage({ monthUsd: event.monthUsd, budgetUsd: event.budgetUsd });
+            setUsage({ monthUsd: event.monthUsd });
             break;
           case "error":
             setItems((current) => [
@@ -314,17 +300,18 @@ export default function ChatApp() {
     ];
     const open = openStoryboard(itemsRef.current);
     // The storyboard may come from another chat, so a video chat can use a storyboard made elsewhere.
-    const { frames, scenes } = storyboardFor(workspaceRef.current);
+    const { sheet, scenes, artDirection } = storyboardFor(workspaceRef.current);
     return {
       messages,
-      // The finished storyboard frames, so a typed "video 10 detik" can be made from them.
-      frames: frames.length > 0 ? frames : undefined,
-      scenes: frames.length > 0 ? scenes : undefined,
+      // The finished storyboard picture, so a typed "video 10 detik" can be made from it.
+      sheet,
+      scenes: sheet ? scenes : undefined,
+      artDirection: sheet ? artDirection : undefined,
       // The video with a narration, so "ganti narasinya..." or "pakai suara cowok" can change it without new clips.
       revise: narratedVideo(itemsRef.current),
       // The newest result, or else the photo sent earlier, so "bikin foto studio" works on a later turn.
       lastImageAssetId: lastStudioAssetId(itemsRef.current) ?? lastPhotoAssetId(itemsRef.current),
-      storyboard: open ? { photoAssetId: open.sourceAssetId, scenes: open.scenes } : undefined,
+      storyboard: open ? { photoAssetId: open.sourceAssetId, scenes: open.scenes, artDirection: open.artDirection } : undefined,
       ...extra,
     };
   }
@@ -338,17 +325,14 @@ export default function ChatApp() {
       { intent, style: styleOf(preset) },
       { text: message, photoAssetId: photo?.assetId },
     );
-    // A new photo starts a new storyboard instead of editing the open one (frames follow the photo they were planned from).
+    // A new photo starts a new storyboard instead of editing the open one (the picture follows the photo it was planned from).
     if (photo) body.storyboard = undefined;
     setItems((current) => [...current, { id: newId(), kind: "user", text: message, photoAssetId: photo?.assetId }]);
     setText("");
     setPhoto(undefined);
     setIntent(undefined);
-    // A typed message may approve the open storyboard, which makes all four frames in order.
-    void run(body, {
-      scenesItemId: body.storyboard ? openStoryboard(itemsRef.current)?.id : undefined,
-      frameIndexes: [...SCENE_INDEXES],
-    });
+    // A typed message may approve the open storyboard, which makes its one picture.
+    void run(body, { scenesItemId: body.storyboard ? openStoryboard(itemsRef.current)?.id : undefined });
   }, [text, photo, busy, inThread, intent, preset, run, setItems]);
 
   const attach = useCallback(async (file: File) => {
@@ -380,36 +364,41 @@ export default function ChatApp() {
     [patchItem],
   );
 
-  /** Generates frames for an approved storyboard: all four, or just the one asked for. */
-  const makeFrames = useCallback(
-    (itemId: string, sceneIndex?: number) => {
+  /** Makes the one picture of an approved storyboard, or makes it again. */
+  const makeSheet = useCallback(
+    (itemId: string) => {
       const item = itemsRef.current.find((candidate) => candidate.id === itemId);
       if (busy || !item || item.kind !== "scenes" || item.scenes.some((scene) => !scene.trim())) return;
       patchItem(itemId, (current) => (current.kind === "scenes" ? { ...current, approved: true } : current));
       const body = {
-        messages: [{ role: "user", text: sceneIndex === undefined ? APPROVE_TEXT : `Buat ulang scene ${sceneIndex + 1}.` }],
-        storyboard: { photoAssetId: item.sourceAssetId, scenes: item.scenes.map((scene) => scene.trim()) },
-        approve: sceneIndex === undefined ? {} : { sceneIndex },
+        messages: [{ role: "user", text: APPROVE_TEXT }],
+        storyboard: {
+          photoAssetId: item.sourceAssetId,
+          scenes: item.scenes.map((scene) => scene.trim()),
+          artDirection: item.artDirection,
+        },
+        approve: {},
       };
-      void run(body, { scenesItemId: itemId, frameIndexes: sceneIndex === undefined ? [...SCENE_INDEXES] : [sceneIndex] });
+      void run(body, { scenesItemId: itemId });
     },
     [busy, patchItem, run],
   );
 
-  /** Makes the video of an approved storyboard from its four frames, with the length and voice-over the seller chose. */
+  /** Makes the video of an approved storyboard from its picture, with the length and voice-over the seller chose. */
   const makeVideo = useCallback(
     (itemId: string, options: { seconds: number; voiceOver: boolean }) => {
       const card = itemsRef.current.find((candidate) => candidate.id === itemId);
-      if (busy || !card || card.kind !== "scenes") return;
+      if (busy || !card || card.kind !== "scenes" || !card.sheet) return;
       void run(
         {
           messages: [{ role: "user", text: VIDEO_TEXT }],
-          frames: sceneFrames(card),
+          sheet: card.sheet,
           // The scenes let the narration be written from them when a voice-over is asked for.
           scenes: card.scenes,
+          artDirection: card.artDirection,
           video: options,
         },
-        { frameIndexes: [] },
+        {},
       );
     },
     [busy, run],
@@ -419,20 +408,17 @@ export default function ChatApp() {
   const retryRequest = useCallback(
     (request: RetryRequest) => {
       if (busy) return;
-      const approve = request.approve as { sceneIndex?: number } | undefined;
-      if (!approve) {
+      if (!request.approve) {
         // A retried scene replacement must patch the open storyboard, not add a second one.
-        void run(request, { scenesItemId: request.storyboard ? openStoryboard(itemsRef.current)?.id : undefined, frameIndexes: [] });
+        void run(request, { scenesItemId: request.storyboard ? openStoryboard(itemsRef.current)?.id : undefined });
         return;
       }
-      // A storyboard retry picks up where it stopped: only the first frame that is still missing.
+      // A storyboard retry makes its picture again.
       const scenes = itemsRef.current.findLast((item) => item.kind === "scenes");
       if (!scenes || scenes.kind !== "scenes") return;
-      const firstMissing = SCENE_INDEXES.find((index) => !scenes.frames[index]);
-      const anyDone = Object.keys(scenes.frames).length > 0;
-      makeFrames(scenes.id, approve.sceneIndex ?? (anyDone ? firstMissing : undefined));
+      makeSheet(scenes.id);
     },
-    [busy, run, makeFrames],
+    [busy, run, makeSheet],
   );
 
   /** Remakes only the clips of a stopped video that are still missing; the finished ones are reused. */
@@ -444,12 +430,19 @@ export default function ChatApp() {
       void run(
         {
           messages: [{ role: "user", text: "Coba ulang bagian yang gagal." }],
-          frames: item.frames,
+          sheet: item.sheet,
           // The scenes let the script be written again when the first try asked for a voice-over.
           scenes: item.voiceOver ? storyboardFor(workspaceRef.current).scenes : undefined,
-          resume: { seconds: item.seconds, clips: item.clips, finished: item.finished, voiceOver: item.voiceOver },
+          artDirection: storyboardFor(workspaceRef.current).artDirection,
+          resume: {
+            seconds: item.seconds,
+            clips: item.clips,
+            finished: item.finished,
+            voiceOver: item.voiceOver,
+            directions: item.directions,
+          },
         },
-        { frameIndexes: [] },
+        {},
       );
     },
     [busy, patchItem, run],
@@ -462,7 +455,7 @@ export default function ChatApp() {
       if (busy || !item || item.kind !== "confirm" || item.answer) return;
       patchItem(itemId, (current) => (current.kind === "confirm" ? { ...current, answer: yes ? "yes" : "no" } : current));
       // The yes is for this price: the server asks again if the same request would now cost more.
-      if (yes) void run({ ...item.retry, confirmedUsd: item.estimatedUsd }, { frameIndexes: [] });
+      if (yes) void run({ ...item.retry, confirmedUsd: item.estimatedUsd }, {});
     },
     [busy, patchItem, run],
   );
@@ -584,7 +577,7 @@ export default function ChatApp() {
                   busy={busy}
                   onRetry={retryRequest}
                   onEditScene={editScene}
-                  onMakeFrames={makeFrames}
+                  onMakeSheet={makeSheet}
                   onMakeVideo={makeVideo}
                   onAnswerConfirm={answerConfirmation}
                   onResumeVideo={resumeVideo}

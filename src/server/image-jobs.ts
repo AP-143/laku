@@ -3,7 +3,7 @@ import { COSTS } from "../config/models";
 import type { AssetRole, ChatEvent, JobKind } from "../shared/chat-events";
 import type { AssetFile, AssetStore } from "./asset-store";
 import type { ModelClient } from "./model-client";
-import { DailyCapReachedError, mayStillBeBilled, QuotaExhaustedError } from "./model-errors";
+import { DailyCapReachedError, mayStillBeBilled } from "./model-errors";
 import { preparePhoto } from "./photo-intake";
 import { readUsage, type UsageLedger } from "./usage-ledger";
 
@@ -14,8 +14,6 @@ interface ImageJobRequest {
   sourceAssetId: string;
   kind: JobKind;
   role: AssetRole;
-  /** For a storyboard frame: which scene it shows. */
-  sceneIndex?: number;
 }
 
 /** The image that would feed a paid model is not a product photo, so nothing was generated. */
@@ -36,26 +34,18 @@ export function createImageJobs(deps: {
   const { models, assets, ledger, send, isProduct } = deps;
 
   return {
-    async generate({ prompt, source, sourceAssetId, kind, role, sceneIndex }: ImageJobRequest) {
+    async generate({ prompt, source, sourceAssetId, kind, role }: ImageJobRequest) {
       if (!(await isProduct(source))) throw new NotAProductError();
 
-      // The balance is the hard limit, so a generation that would pass the month or the day never starts.
-      // The cost is booked before the call, so simultaneous requests cannot both squeeze under a limit.
-      const reservation = await ledger.reserve(COSTS.imageUsd, {
-        monthlyUsd: COSTS.monthlyBudgetUsd,
-        dailyUsd: COSTS.dailyBudgetUsd,
-      });
-      if (!reservation.ok) {
-        if (reservation.limit === "daily") {
-          throw new DailyCapReachedError(reservation.resetsAt, (await readUsage(ledger)).remainingUsd);
-        }
-        throw new QuotaExhaustedError();
-      }
+      // A generation that would pass the day's limit never starts.
+      // The cost is booked before the call, so simultaneous requests cannot both squeeze under the limit.
+      const reservation = await ledger.reserve(COSTS.imageUsd, { dailyUsd: COSTS.dailyBudgetUsd });
+      if (!reservation.ok) throw new DailyCapReachedError(reservation.resetsAt);
 
       send({ type: "job_started", jobId: randomUUID(), kind });
       let image;
       try {
-        image = await models.generateImage({ prompt, reference: source, aspectRatio: kind === "storyboard_frame" ? "9:16" : "1:1" });
+        image = await models.generateImage({ prompt, reference: source, aspectRatio: kind === "storyboard_sheet" ? "9:16" : "1:1" });
       } catch (error) {
         // A call that was rejected is not billed, so the booking goes back. A timeout or a cancel may still be
         // billed, so it stays booked: the limits would otherwise sit below the real spend.
@@ -65,10 +55,10 @@ export function createImageJobs(deps: {
 
       // Resized copy included, so the result can feed the next generation.
       const assetId = await assets.save(await preparePhoto(image.bytes));
-      send({ type: "asset_ready", assetId, kind: "image", url: `/api/assets/${assetId}`, role, sourceAssetId, sceneIndex });
+      send({ type: "asset_ready", assetId, kind: "image", url: `/api/assets/${assetId}`, role, sourceAssetId });
 
-      const { monthUsd, budgetUsd } = await readUsage(ledger);
-      send({ type: "usage_updated", monthUsd, budgetUsd });
+      const { monthUsd } = await readUsage(ledger);
+      send({ type: "usage_updated", monthUsd });
     },
   };
 }
