@@ -20,7 +20,7 @@ interface ThreadViewProps {
   /** The approve button, and the retry button of the storyboard picture. */
   onMakeSheet: (itemId: string) => void;
   /** The "Generate" button of the video panel under an approved storyboard. */
-  onMakeVideo: (itemId: string, options: { seconds: number; voiceOver: boolean }) => void;
+  onMakeVideo: (itemId: string, options: { seconds: number; voiceOver: boolean; music: boolean }) => void;
   onAnswerConfirm: (itemId: string, yes: boolean) => void;
   onResumeVideo: (itemId: string) => void;
   photoUrl: (assetId: string) => string;
@@ -53,10 +53,11 @@ function VideoPanel({
 }: {
   busy: boolean;
   hasVideo: boolean;
-  onMake: (options: { seconds: number; voiceOver: boolean }) => void;
+  onMake: (options: { seconds: number; voiceOver: boolean; music: boolean }) => void;
 }) {
   const [seconds, setSeconds] = useState<(typeof VIDEO_LENGTH_CHOICES)[number]>(VIDEO_LENGTH_CHOICES[0]);
   const [voiceOver, setVoiceOver] = useState(false);
+  const [music, setMusic] = useState(true);
   const [expanded, setExpanded] = useState(false);
 
   if (hasVideo && !expanded) {
@@ -94,12 +95,16 @@ function VideoPanel({
       </div>
       <label className="video-voice">
         <input type="checkbox" checked={voiceOver} disabled={busy} onChange={(event) => setVoiceOver(event.target.checked)} />
-        Tambahkan narasi suara (voice over)
+        Tambahkan suara (AI memilih: orang bicara atau narasi)
+      </label>
+      <label className="video-voice">
+        <input type="checkbox" checked={music} disabled={busy} onChange={(event) => setMusic(event.target.checked)} />
+        Tambahkan musik latar (AI memilih yang cocok, +US$0,04)
       </label>
       <div className="actions">
         <button type="button" className="btn btn-primary btn-ai" disabled={busy} onClick={() => {
             setExpanded(false);
-            onMake({ seconds, voiceOver });
+            onMake({ seconds, voiceOver, music });
           }}>
           <SparkleIcon />
           Generate
@@ -241,7 +246,7 @@ export function ThreadView({
                 <video className="video-player" src={assetUrl(item.assetId)} controls playsInline preload="metadata" aria-label="Video iklan hasil LAKU" />
                 {item.script && (
                   <p className="script">
-                    <strong>Naskah voice over:</strong> {item.script}
+                    <strong>Naskah voice over:</strong> {item.script.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()}
                   </p>
                 )}
                 <div className="actions">

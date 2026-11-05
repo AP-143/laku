@@ -1,4 +1,3 @@
-import { COSTS } from "../config/models";
 import type { ChatEvent } from "../shared/chat-events";
 
 /** Turns whatever a model call threw into the one error event the user sees. */
@@ -13,16 +12,6 @@ const UNSUPPORTED_MESSAGE = "Model gambar tidak bisa memakai fotonya. Coba foto 
 const NETWORK_MESSAGE = "Koneksi ke layanan AI bermasalah. Cek internetmu lalu coba lagi ya.";
 const GENERIC_MESSAGE = "Maaf, ada gangguan saat memproses pesanmu. Coba lagi ya.";
 
-/** Today's spend cap is reached, so no model was called. */
-export class DailyCapReachedError extends Error {
-  constructor(
-    /** When the day ends and today's total starts again from zero (00:00 UTC). */
-    readonly resetsAt: Date,
-  ) {
-    super("Daily spend cap reached");
-  }
-}
-
 /** One clip of a video did not come out. The clips made before it are kept; `cause` is what the model threw. */
 export class ClipFailedError extends Error {
   constructor(
@@ -32,26 +21,6 @@ export class ClipFailedError extends Error {
   ) {
     super(`Clip ${index + 1} of ${total} failed`);
   }
-}
-
-/** The video asked for costs more than the day has room for, but a shorter one fits. No model was called. */
-export class VideoNotAffordableError extends Error {
-  constructor(/** The most seconds of video the rest of today covers. */ readonly affordableSeconds: number) {
-    super("The video does not fit what is left of today's limit");
-  }
-}
-
-/** The reset time in the seller's own clock (WIB, UTC+7), as "07.00". */
-function wibClock(date: Date): string {
-  const hours = (date.getUTCHours() + 7) % 24;
-  return `${String(hours).padStart(2, "0")}.${String(date.getUTCMinutes()).padStart(2, "0")}`;
-}
-
-function dailyCapMessage(error: DailyCapReachedError): string {
-  return (
-    `Batas pemakaian hari ini (US$${COSTS.dailyBudgetUsd.toFixed(2)}) sudah tercapai, jadi aku berhenti dulu supaya tidak ada biaya berlebih. ` +
-    `Bisa dipakai lagi sekitar pukul ${wibClock(error.resetsAt)} WIB.`
-  );
 }
 
 function statusOf(error: unknown): number | undefined {
@@ -80,17 +49,6 @@ export function describeFailure(error: unknown): ErrorEvent {
   if (error instanceof ClipFailedError) {
     const why = describeFailure(error.cause);
     return { ...why, message: `Klip ${error.index + 1} dari ${error.total} gagal dibuat. ${why.message}` };
-  }
-  if (error instanceof DailyCapReachedError) {
-    return { type: "error", message: dailyCapMessage(error), retryable: true, code: "daily_cap_reached" };
-  }
-  if (error instanceof VideoNotAffordableError) {
-    return {
-      type: "error",
-      message: `Sisa batas hari ini baru cukup untuk sekitar ${error.affordableSeconds} detik video. Minta video yang lebih pendek ya.`,
-      retryable: true,
-      code: "daily_cap_reached",
-    };
   }
 
   const status = statusOf(error);

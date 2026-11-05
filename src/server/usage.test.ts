@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { COSTS } from "../config/models";
 import { fakeChatModel } from "./testing/fake-models";
 import { fakeImageModel } from "./testing/fake-image-model";
 import { readEvents } from "./testing/events";
 import { chatRequest, createTestApp } from "./testing/harness";
 import { makePhoto, uploadRequest } from "./testing/photos";
 
-/** The usage meter: a local estimate of this month's spend. Only the daily limit stops a request; the real balance is Google's. */
+/** The usage meter: a local estimate of this month's spend. It only counts; no limit stops a request, the real balance is Google's. */
 
 async function uploadPhoto(app: ReturnType<typeof createTestApp>): Promise<string> {
   const [event] = await readEvents(await app.upload(uploadRequest(await makePhoto("jpeg"))));
@@ -74,75 +73,28 @@ describe("usage meter", () => {
   });
 });
 
-/** The spend of today that leaves this much of the daily cap. */
-const todayLeaving = (leftUsd: number) => COSTS.dailyBudgetUsd - leftUsd;
-
-describe("daily spend cap", () => {
-  it("refuses once today's spend would pass the daily cap, names what is left and when it resets, and calls no model", async () => {
-    const app = createTestApp(fakeChatModel({ chunks: ["x"] }), undefined, { startingTodayUsd: todayLeaving(0.01) });
-    const photoAssetId = await uploadPhoto(app);
-
-    const events = await readEvents(await app.chat(studioRequest(photoAssetId)));
-
-    const error = events.at(-1);
-    assert.equal(error?.type === "error" && error.code, "daily_cap_reached");
-    const message = error?.type === "error" ? error.message : "";
-    assert.match(message, /hari ini/i);
-    assert.doesNotMatch(message, /bulan/i);
-    assert.match(message, /07\.00 WIB/); // the day follows UTC, so it resets at 00:00 UTC
-    assert.equal(app.imageModel.calls.length, 0);
-    assert.equal(events.some((e) => e.type === "done"), false);
-  });
-
-  it("only counts today: spend from earlier days of the month does not use up the day", async () => {
-    // More than the daily cap spent on the 1st is not today's spend.
-    const app = createTestApp(fakeChatModel({ chunks: ["x"] }), undefined, { startingMonthUsd: COSTS.dailyBudgetUsd + 0.1 });
+describe("no spending limit", () => {
+  it("makes a studio photo however much was already spent today and this month, and keeps counting", async () => {
+    // The app used to stop at US$3.50 a day; it sets no limit now, the balance on Google's side is the stop.
+    const app = createTestApp(fakeChatModel({ chunks: ["x"] }), undefined, { startingTodayUsd: 10 });
     const photoAssetId = await uploadPhoto(app);
 
     const events = await readEvents(await app.chat(studioRequest(photoAssetId)));
 
     assert.equal(events.some((e) => e.type === "asset_ready" && e.role === "studio_photo"), true);
     assert.equal(app.imageModel.calls.length, 1);
+    assert.equal((await readUsage(app)).monthUsd, 10.0336);
   });
 
-  it("starts the day again from zero at midnight UTC", async () => {
-    const app = createTestApp(fakeChatModel({ chunks: ["x"] }), undefined, { startingTodayUsd: todayLeaving(0.01) });
-    const photoAssetId = await uploadPhoto(app);
-    const refused = await readEvents(await app.chat(studioRequest(photoAssetId)));
-    assert.equal(refused.at(-1)?.type === "error" && (refused.at(-1) as { code?: string }).code, "daily_cap_reached");
-
-    app.clock.now = new Date("2026-11-16T00:00:01Z");
-    const events = await readEvents(await app.chat(studioRequest(photoAssetId)));
-
-    assert.equal(events.some((e) => e.type === "asset_ready" && e.role === "studio_photo"), true);
-  });
-
-  it("never lets simultaneous requests pass the cap together", async () => {
-    // Room for exactly one more image (US$0.0336 of the daily cap).
-    const app = createTestApp(fakeChatModel({ chunks: ["x"] }), undefined, { startingTodayUsd: todayLeaving(0.05) });
+  it("lets simultaneous requests all through, and books every one of them", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"] }), undefined, { startingTodayUsd: 10 });
     const photoAssetId = await uploadPhoto(app);
 
-    const turns = await Promise.all(
-      [1, 2, 3].map(async () => readEvents(await app.chat(studioRequest(photoAssetId)))),
-    );
+    const turns = await Promise.all([1, 2, 3].map(async () => readEvents(await app.chat(studioRequest(photoAssetId)))));
 
-    assert.equal(app.imageModel.calls.length, 1);
-    assert.equal(turns.filter((events) => events.some((e) => e.type === "asset_ready")).length, 1);
-  });
-
-  it("gives a failed call's reservation back to today's total too", async () => {
-    // Room for exactly one image today; if the failed call kept its booking, the second request would be refused.
-    const failing = fakeImageModel({ failWith: new Error("boom") });
-    const app = createTestApp(fakeChatModel({ chunks: ["x"] }), failing, { startingTodayUsd: todayLeaving(0.04) });
-    const photoAssetId = await uploadPhoto(app);
-
-    const first = await readEvents(await app.chat(studioRequest(photoAssetId)));
-    const second = await readEvents(await app.chat(studioRequest(photoAssetId)));
-
-    assert.equal(app.imageModel.calls.length, 2);
-    for (const events of [first, second]) {
-      assert.notEqual(events.at(-1)?.type === "error" && (events.at(-1) as { code?: string }).code, "daily_cap_reached");
-    }
+    assert.equal(app.imageModel.calls.length, 3);
+    assert.equal(turns.filter((events) => events.some((e) => e.type === "asset_ready")).length, 3);
+    assert.equal((await readUsage(app)).monthUsd, 10.1008);
   });
 });
 

@@ -1,5 +1,6 @@
 import type { StudioStyle, StylePreset } from "../shared/chat-events";
 import { PANEL_SHOTS, PANEL_TITLES } from "../shared/storyboard";
+import type { AudioMode } from "../shared/video-plan";
 
 /** Internal instructions for the image model. Written in English. */
 
@@ -47,7 +48,10 @@ export function clipPrompt(direction: string, artDirection?: string): string {
     `Edit it as a professional video editor would, as real full-frame footage with smooth camera moves, the effects, transitions and colour grade that suit this ad, and the natural sounds of the scene. ` +
     `Art direction of this ad: ${artDirection ?? DEFAULT_ART_DIRECTION} ` +
     `Add only a few small animated accents in that style, never covering the product or a face. ` +
-    `Show the captions as on-screen text in that style, with the words exactly as in the storyboard sheet. ` +
+    `Do not draw any text, subtitles, captions, logos or watermarks anywhere in the picture: the captions are added afterwards in the edit. ` +
+    `Direct the performance like a real shoot: natural micro-expressions, breathing, small head and hand movements, a living gaze and imperfect human timing; never a frozen pose and never a slideshow of stills. The first moment may match the panel, but the person keeps moving naturally. ` +
+    `Sound design like a professional editor: sound effects in sync with every visible action (cloth, footsteps, plates and cutlery, the sizzle, crunch or pour of food, clicks, whooshes on camera moves, pops for graphics) over a natural room tone, mixed at natural levels. No music, and no speech unless the direction says someone speaks. ` +
+    `When the clip plays more than one panel, change between them with hard cuts, as a professional editor would; never morph, dissolve or melt one scene into the next. ` +
     `Never show the grid, the panel borders, the panel numbers or the title label boxes. ` +
     `Keep the same person and the same product as in the storyboard sheet: the product keeps its shape, colour, logo and text. ` +
     `The person speaks or reacts only as the direction says.`
@@ -75,4 +79,21 @@ export function sheetPrompt(scenes: readonly string[], artDirection?: string): s
     `Add a few small accents in the style of the art direction near the action, never covering the product or a face. ` +
     `Show only what the scene describes; do not write the scene text itself. No camera notes, no other labels and no other text. ${KEEP_PRODUCT}`
   );
+}
+
+/**
+ * The direction of one clip with what is said in it. When the person speaks on camera the words and the voice are
+ * given, so the model makes lip movement that matches them; otherwise the mouths stay closed, so nothing fights the
+ * narration laid over the video, and nobody is left talking without a voice.
+ */
+export function withSpeech(clip: { direction: string; dialogue: string }, audio: AudioMode, voiceProfile: string): string {
+  if (audio === "on_camera" && clip.dialogue) {
+    return `${clip.direction} On camera the person says in Indonesian, with lip movement that matches the words exactly: "${clip.dialogue}". Voice: ${voiceProfile}.`;
+  }
+  return `${clip.direction} Nobody speaks on camera: the mouths stay closed and the person only reacts with expressions and gestures.`;
+}
+
+/** What the music model is asked for: the planner's brief, always without vocals. */
+export function musicPrompt(brief: string): string {
+  return `${brief.trim()} Instrumental only, no vocals.`;
 }

@@ -3,6 +3,8 @@
  * The wire format is shared by the server and the browser, so it lives in one place.
  */
 
+import type { AudioMode, ClipCaption, MusicPlan, TextPalette, VideoGrade, VoiceGender } from "./video-plan";
+
 export type ChatEvent =
   /** A piece of the assistant's reply. Concatenate the pieces in order. */
   | { type: "assistant_text"; text: string }
@@ -27,7 +29,7 @@ export type ChatEvent =
    * The video has a narration: the script that was read aloud, the voice, and the silent video it was laid over
    * (kept so the script or the voice can be changed without making the clips again).
    */
-  | { type: "voice_over"; script: string; voice: string; silentAssetId: string; seconds: number }
+  | { type: "voice_over"; script: string; voice: string; silentAssetId: string; seconds: number; delivery?: string }
   /**
    * A video stopped part way. The clips in `finished` (by position) are kept and saved; the rest can be remade by
    * sending `resume` with these same numbers. `failedIndex` is the first clip that did not come out.
@@ -41,8 +43,18 @@ export type ChatEvent =
       sourceAssetId: string;
       /** The seller asked for a voice-over, so it is added when the missing clips are remade. */
       voiceOver: boolean;
-      /** What each clip was told to play, sent back on a resume so the remade clips still fit the kept ones. */
+      /** What each clip was told to play and say, sent back on a resume so the remade clips still fit the kept ones. */
       directions: string[];
+      /** How the video sounds, so a remade video is joined and mixed the same way. */
+      audio: AudioMode;
+      /** The voice of the narration, when there is one. */
+      voice: VoiceGender;
+      /** The captions of each clip and the colour grade, so a remade video is finished the same way. */
+      captions: ClipCaption[][];
+      grade: VideoGrade;
+      palette: TextPalette;
+      /** The music the video was to get, made after the clips, so a remade video still gets it. */
+      music?: MusicPlan;
     }
   /** The proposed scenes of a storyboard (one per panel). Nothing is generated until the user approves them. */
   | { type: "storyboard_scenes"; sourceAssetId: string; scenes: string[]; artDirection?: string }
@@ -54,7 +66,7 @@ export type ChatEvent =
   | { type: "done" };
 
 /** Lets the UI tell the common failures apart; `message` is still what the user reads. */
-export type ErrorCode = "rate_limited" | "quota_exhausted" | "daily_cap_reached";
+export type ErrorCode = "rate_limited" | "quota_exhausted";
 
 export type JobKind = "studio_photo" | "storyboard_sheet" | "video";
 export type AssetKind = "image" | "video";

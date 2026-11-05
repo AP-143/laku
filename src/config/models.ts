@@ -23,6 +23,11 @@ export const MODELS = {
    * Measured 2026-11-02 (see BAKEOFF_NOTES): a 4 s clip came back at 720x1280 with an audio track, about US$0.10 per second.
    */
   video: "gemini-omni-1.1-flash",
+  /**
+   * Background music, called directly on the Google key (Interactions API) by src/server/music-model.ts. Always one
+   * 30 second MP3, instrumental when asked for, paid tier only (no free tier).
+   */
+  music: "lyria-3-clip-preview",
   /** Reads the voice-over aloud, called directly on the Google key (measured 2026-11-02: 12 s of Indonesian in 4 s). */
   speech: "gemini-3.8-flash-lite-tts",
   /** The one prebuilt voice used for every narration, so a video sounds the same from start to end. */
@@ -143,7 +148,10 @@ Acceptance run of 2026-11-03 (ticket #14), through the app's own handlers on the
   records what a real run spends, and that amount was added to the ledger by hand.
 `.trim();
 
-/** Estimated spend, used by the usage meter. Prices change, so re-check them against Google's pricing page. */
+/**
+ * Estimated spend, used by the usage meter. Prices change, so re-check them against Google's pricing page.
+ * The app sets no spend limit: the balance and any spend cap on Google's side are the only stops.
+ */
 export const COSTS = {
   /** One image from `MODELS.image` at 1K (US$0.0336 on Google's pricing page, see the bake-off notes). */
   imageUsd: 0.0336,
@@ -154,6 +162,8 @@ export const COSTS = {
    * per second, so the estimate is already the higher one.
    */
   speechUsdPerSecond: 0.0003,
+  /** One clip of background music from `MODELS.music`: US$0.04 per 30 second clip on Google's pricing page (not measured yet). */
+  musicUsd: 0.04,
   /** A video estimated above this is only made after the seller says yes; cheaper ones start at once. */
   videoConfirmAboveUsd: 1,
   /**
@@ -161,10 +171,4 @@ export const COSTS = {
    * billed at on 2026-11-03.
    */
   idrPerUsd: 18_200,
-  /**
-   * Stops a bug or a loop from burning the whole balance in one day. It is the app's only spend limit: there is no
-   * monthly one, since the prepaid Google balance (auto-reload off) is the real stop. It must fit one whole storyboard
-   * (one picture, US$0.0336) and the longest video the panel offers (30 seconds with a narration, US$3.009): about US$3.14.
-   */
-  dailyBudgetUsd: 3.5,
 } as const;

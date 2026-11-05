@@ -19,6 +19,7 @@ Every model runs directly on a Google AI Studio key (no gateway):
 | Studio photos and the storyboard picture | `gemini-nano-banana-2.1` |
 | Video clips | `gemini-omni-1.1-flash` (Interactions API) |
 | Voice-over | `gemini-3.8-flash-lite-tts` |
+| Background music (optional) | `lyria-3-clip-preview` (Interactions API) |
 
 All model IDs and estimated prices live in `src/config/models.ts`. Only `src/server/model-client.ts` talks to models.
 
@@ -40,7 +41,7 @@ Open http://localhost:3000/chat. Generated files go under `storage/` (git-ignore
 
 ## Cost
 
-Real runs spend real money: about US$0.03 for a studio photo or a storyboard picture, and about US$0.10 per second of video (US$1 for 10 seconds). The app keeps a local estimate of this month's spend (the usage meter) and refuses to pass a **daily limit** (`COSTS.dailyBudgetUsd`). That limit is an estimate and the only one the app sets: set a spend cap on the Google billing side as well.
+Real runs spend real money: about US$0.03 for a studio photo or a storyboard picture, about US$0.10 per second of video (US$1 for 10 seconds), and about US$0.04 for a clip of background music (paid tier only). The app keeps a local estimate of this month's spend (the usage meter) but sets **no spend limit** of its own, so a bug or a loop can spend until your balance ends. Set a spend cap on the Google billing side.
 
 ## Test
 

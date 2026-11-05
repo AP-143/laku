@@ -1,4 +1,5 @@
 import type { ErrorCode, StudioStyle } from "../../shared/chat-events";
+import type { AudioMode, ClipCaption, MusicPlan, TextPalette, VideoGrade, VoiceGender } from "../../shared/video-plan";
 
 /** What the chat page shows, one entry per thing in the conversation. Everything here is plain JSON so it can be saved. */
 
@@ -36,6 +37,8 @@ export type ThreadItem =
       /** The voice of the narration and the length of the video, sent back when the seller asks for a change. */
       voice?: string;
       seconds?: number;
+      /** How the narration is performed, sent back so a change of voice keeps the same way of speaking. */
+      delivery?: string;
     }
   /** A video stopped part way: the clips kept so far, and what is needed to remake only the rest. */
   | {
@@ -49,8 +52,17 @@ export type ThreadItem =
       voiceOver: boolean;
       /** The storyboard picture the video is made from, sent again with the resume. */
       sheet: string;
-      /** What each clip was told to play, sent again so the remade clips still fit the kept ones. */
+      /** What each clip was told to play and say, sent again so the remade clips still fit the kept ones. */
       directions: string[];
+      /** How the video sounds and the narrator voice, sent again so the remade video is mixed the same way. */
+      audio: AudioMode;
+      voice: VoiceGender;
+      /** The captions of each clip and the colour grade, sent again so the remade video is finished the same way. */
+      captions: ClipCaption[][];
+      grade: VideoGrade;
+      palette: TextPalette;
+      /** The music the video was to get, sent again so a remade video gets it. */
+      music?: MusicPlan;
       /** The seller already asked to remake the rest. */
       resumed?: boolean;
     }
@@ -87,8 +99,8 @@ export function lastPhotoAssetId(items: ThreadItem[]): string | undefined {
 export function narratedVideo(items: ThreadItem[]) {
   const latest = items.findLast((item) => item.kind === "video");
   if (!latest || latest.kind !== "video") return undefined;
-  const { script, silentAssetId, voice, seconds } = latest;
-  return script && silentAssetId && voice && seconds ? { silentAssetId, seconds, script, voice } : undefined;
+  const { script, silentAssetId, voice, seconds, delivery } = latest;
+  return script && silentAssetId && voice && seconds ? { silentAssetId, seconds, script, voice, delivery } : undefined;
 }
 
 /** The text of the newest storyboard's scenes, which a voice-over script is written from. */
