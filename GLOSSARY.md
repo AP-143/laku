@@ -71,8 +71,16 @@ One piece of an Ad video, 4 to 8 seconds, made from the Storyboard picture and a
 _Avoid_: Segment, shot
 
 **Voice-over**:
-A spoken narration laid over an Ad video, written from the Scenes to fit its Length. It can be changed without making the video again.
+A narrator read over an Ad video when the planner decides a narration suits the ad better than the person speaking on camera. It is written from the Scenes to fit the Length, directed with a delivery note so it is not read flat, and mixed over the sound the Clips came with. It can be changed without making the video again.
 _Avoid_: Dubbing, audio track, narrator
+
+**Music bed**:
+Instrumental background music under an Ad video, only when the Seller asks for it (it is part of the Price question). The planner designs it for the ad (genre, tempo so the cuts fall on a beat, mood, how loud) and Lyria makes a 30 second clip, which is mixed under the Sound with ducking and fades.
+_Avoid_: Soundtrack, jingle, song
+
+**Sound**:
+How an Ad video sounds, decided by the planner: the Clips keep their sound effects and room tone, and a voice is either the person speaking on camera (lip-synced) or a Voice-over. Music is a separate choice: see Music bed.
+_Avoid_: Audio, soundtrack
 
 ### Conversation
 
@@ -86,10 +94,6 @@ _Avoid_: Chat, thread, conversation, history (history is the list of Sessions)
 The question that tells the Seller what an Ad video will cost and asks before any of it is spent. A yes covers exactly that price, narration included; a video that would cost more asks again.
 _Avoid_: Confirmation, checkout, payment
 
-**Daily limit**:
-The most estimated spend LAKU allows itself in one UTC day, sized so one whole Storyboard and the longest Ad video fit in a day. It is the only limit LAKU sets for itself: there is no monthly one, because the prepaid balance on Google's side is the real hard stop.
-_Avoid_: Daily cap, daily quota, Monthly budget (it was removed)
-
 **Usage meter**:
-The estimated spend of the month shown to the Seller. It only counts; it stops nothing. It is an estimate and can run a little below what Google really bills.
+The estimated spend of the month shown to the Seller. It only counts; it stops nothing, because LAKU sets no spend limit (the monthly budget and the daily limit were removed): the balance on Google's side is the only stop. It is an estimate and can run a little below what Google really bills.
 _Avoid_: Balance, saldo, quota

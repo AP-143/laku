@@ -11,6 +11,7 @@ import {
 } from "ai";
 import { MODELS } from "../config/models";
 import type { AssetFile } from "./asset-store";
+import { createLyriaMusicModel, type MusicModel } from "./music-model";
 import { createOmniVideoModel, type VideoModel } from "./video-model";
 import {
   CHAT_SYSTEM_PROMPT,
@@ -21,6 +22,7 @@ import {
   parseReplacement,
   parseScenes,
   parseVideoPlan,
+  parseVoiceScript,
   parseVideoRequest,
   planScenesPrompt,
   replaceScenePrompt,
@@ -30,8 +32,10 @@ import {
   voiceRevisionPrompt,
   voiceScriptPrompt,
   type PlannedStoryboard,
+  type VideoPlan,
   type VideoRequest,
   type VoiceRevision,
+  type VoiceScript,
   type Intent,
   type IntentContext,
 } from "./chat-prompt";
@@ -48,8 +52,8 @@ const MAX_REPLY_TOKENS = 1024;
 const MAX_CHECK_TOKENS = 16;
 /** Six short scenes with their captions and the art direction, or one rewritten scene, as JSON. */
 const MAX_SCENE_TOKENS = 1600;
-/** One direction of a few sentences for each of up to four clips, as JSON. */
-const MAX_PLAN_TOKENS = 900;
+/** The reasoning, and a direction and a line to say for each of up to four clips, as JSON. */
+const MAX_PLAN_TOKENS = 2400;
 
 /** Studio photos are square; the storyboard picture is vertical so the video made from it is vertical too. */
 export type ImageAspectRatio = "1:1" | "9:16";
@@ -76,16 +80,31 @@ export interface ModelClient {
   replaceScene(scenes: string[], instruction: string): Promise<{ index: number; text: string }>;
   /** Makes one image from a reference photo and an instruction. Throws if the model fails. Never retries. */
   generateImage(request: { prompt: string; reference: AssetFile; aspectRatio: ImageAspectRatio }): Promise<AssetFile>;
-  /** Shares the scenes over the clips of a video: one direction per clip, in order. Throws if the model fails or answers badly. */
-  planVideo(request: { scenes: string[]; clips: number[]; artDirection?: string }): Promise<string[]>;
+  /**
+   * Looks at the storyboard picture, thinks, and decides how the video sounds and what each clip plays and says.
+   * Throws if the model fails or answers badly.
+   */
+  planVideo(request: {
+    scenes: string[];
+    clips: number[];
+    artDirection?: string;
+    wantsVoice: boolean;
+    wantsMusic?: boolean;
+    sheet?: AssetFile;
+  }): Promise<VideoPlan>;
+  /** Makes 30 seconds of instrumental music from a prompt. Throws if the model fails. Never retries. */
+  generateMusic(request: { prompt: string }): Promise<Uint8Array>;
   /** Reads the video length and the voice-over the seller asked for. Throws if the model fails or answers badly. */
   readVideoRequest(text: string): Promise<VideoRequest>;
   /** Writes the narration for a video of `seconds`, from its scenes. Throws if the model fails. */
-  writeVoiceScript(request: { scenes: string[]; seconds: number; text: string }): Promise<string>;
+  writeVoiceScript(request: { scenes: string[]; seconds: number; text: string; voiceProfile?: string; artDirection?: string }): Promise<VoiceScript>;
   /** Reads what the seller wants changed in a narration. Throws if the model fails or answers badly. */
   readVoiceRevision(text: string, currentScript: string): Promise<VoiceRevision>;
-  /** Reads a script aloud, in the app voice unless another is given. Throws if the model fails. Never retries. */
-  speak(script: string, voice?: string): Promise<AssetFile>;
+  /**
+   * Reads a script aloud, in the app voice unless another is given, performed as `instructions` direct (the manner,
+   * the emotion and how the pitch moves). Throws if the model fails. Never retries.
+   */
+  speak(script: string, voice?: string, instructions?: string): Promise<AssetFile>;
   /** Makes one clip of `seconds` from a frame. Throws if the model fails. Never retries. */
   generateClip(request: { prompt: string; frame: AssetFile; seconds: number }): Promise<Uint8Array>;
 }
@@ -95,7 +114,7 @@ const IMAGE_TIMEOUT_MS = 3 * 60_000;
 /** Reading a script aloud takes seconds; this only stops one stuck call from hanging a request. */
 const SPEECH_TIMEOUT_MS = 2 * 60_000;
 /** A narration is under a hundred words (a video is at most 32 seconds). */
-const MAX_SCRIPT_TOKENS = 400;
+const MAX_SCRIPT_TOKENS = 1200;
 
 /** Turns one chat message into the SDK's shape, attaching the photo as a file part when there is one. */
 function toModelMessage(message: ChatMessage): ModelMessage {
@@ -115,6 +134,7 @@ export function createModelClient(models: {
   imageModel: ImageModel;
   videoModel: VideoModel;
   speechModel: SpeechModel;
+  musicModel: MusicModel;
 }): ModelClient {
   /** Shows one image to the chat model with a question that is answered YES or NO. */
   async function askYesNo(question: string, image: AssetFile): Promise<boolean> {
@@ -213,11 +233,19 @@ export function createModelClient(models: {
     async planVideo(request) {
       const { text } = await generateText({
         model: models.chatModel,
-        messages: [{ role: "user", content: videoPlanPrompt(request) }],
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: videoPlanPrompt(request) },
+              ...(request.sheet ? [{ type: "file" as const, mediaType: request.sheet.mediaType, data: request.sheet.bytes }] : []),
+            ],
+          },
+        ],
         maxOutputTokens: MAX_PLAN_TOKENS,
         maxRetries: 0,
       });
-      return parseVideoPlan(text, request.clips.length);
+      return parseVideoPlan(text, request.clips);
     },
 
     async readVideoRequest(text) {
@@ -232,6 +260,8 @@ export function createModelClient(models: {
 
     generateClip: (request) => models.videoModel.generate(request),
 
+    generateMusic: (request) => models.musicModel.generate(request),
+
     async writeVoiceScript(request) {
       const { text } = await generateText({
         model: models.chatModel,
@@ -239,9 +269,7 @@ export function createModelClient(models: {
         maxOutputTokens: MAX_SCRIPT_TOKENS,
         maxRetries: 0,
       });
-      const script = text.trim();
-      if (!script) throw new Error("The model did not write a script.");
-      return script;
+      return parseVoiceScript(text);
     },
 
     async readVoiceRevision(text, currentScript) {
@@ -254,11 +282,12 @@ export function createModelClient(models: {
       return parseVoiceRevision(answer);
     },
 
-    async speak(script, voice = MODELS.voice) {
+    async speak(script, voice = MODELS.voice, instructions) {
       const { audio } = await generateSpeech({
         model: models.speechModel,
         text: script,
         voice,
+        instructions,
         maxRetries: 0,
         abortSignal: AbortSignal.timeout(SPEECH_TIMEOUT_MS),
       });
@@ -275,5 +304,6 @@ export function createDefaultModelClient(): ModelClient {
     imageModel: google.image(MODELS.image),
     videoModel: createOmniVideoModel(process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? ""),
     speechModel: google.speech(MODELS.speech),
+    musicModel: createLyriaMusicModel(process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? ""),
   });
 }

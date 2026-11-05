@@ -228,7 +228,14 @@ export default function ChatApp() {
               const index = current.findLastIndex((item) => item.kind === "video");
               return current.map((item, position) =>
                 position === index && item.kind === "video"
-                  ? { ...item, script: event.script, silentAssetId: event.silentAssetId, voice: event.voice, seconds: event.seconds }
+                  ? {
+                      ...item,
+                      script: event.script,
+                      silentAssetId: event.silentAssetId,
+                      voice: event.voice,
+                      seconds: event.seconds,
+                      delivery: event.delivery,
+                    }
                   : item,
               );
             });
@@ -247,6 +254,12 @@ export default function ChatApp() {
                 voiceOver: event.voiceOver,
                 sheet: typeof body.sheet === "string" ? body.sheet : "",
                 directions: event.directions,
+                audio: event.audio,
+                voice: event.voice,
+                captions: event.captions,
+                grade: event.grade,
+                palette: event.palette,
+                music: event.music,
               },
             ]);
             break;
@@ -386,7 +399,7 @@ export default function ChatApp() {
 
   /** Makes the video of an approved storyboard from its picture, with the length and voice-over the seller chose. */
   const makeVideo = useCallback(
-    (itemId: string, options: { seconds: number; voiceOver: boolean }) => {
+    (itemId: string, options: { seconds: number; voiceOver: boolean; music: boolean }) => {
       const card = itemsRef.current.find((candidate) => candidate.id === itemId);
       if (busy || !card || card.kind !== "scenes" || !card.sheet) return;
       void run(
@@ -440,6 +453,12 @@ export default function ChatApp() {
             finished: item.finished,
             voiceOver: item.voiceOver,
             directions: item.directions,
+            audio: item.audio,
+            voice: item.voice,
+            captions: item.captions,
+            grade: item.grade,
+            palette: item.palette,
+            music: item.music,
           },
         },
         {},

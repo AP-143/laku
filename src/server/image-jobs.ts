@@ -3,7 +3,7 @@ import { COSTS } from "../config/models";
 import type { AssetRole, ChatEvent, JobKind } from "../shared/chat-events";
 import type { AssetFile, AssetStore } from "./asset-store";
 import type { ModelClient } from "./model-client";
-import { DailyCapReachedError, mayStillBeBilled } from "./model-errors";
+import { mayStillBeBilled } from "./model-errors";
 import { preparePhoto } from "./photo-intake";
 import { readUsage, type UsageLedger } from "./usage-ledger";
 
@@ -37,10 +37,8 @@ export function createImageJobs(deps: {
     async generate({ prompt, source, sourceAssetId, kind, role }: ImageJobRequest) {
       if (!(await isProduct(source))) throw new NotAProductError();
 
-      // A generation that would pass the day's limit never starts.
-      // The cost is booked before the call, so simultaneous requests cannot both squeeze under the limit.
-      const reservation = await ledger.reserve(COSTS.imageUsd, { dailyUsd: COSTS.dailyBudgetUsd });
-      if (!reservation.ok) throw new DailyCapReachedError(reservation.resetsAt);
+      // The cost is booked before the call, so the meter already counts a call that is still running.
+      await ledger.record(COSTS.imageUsd);
 
       send({ type: "job_started", jobId: randomUUID(), kind });
       let image;

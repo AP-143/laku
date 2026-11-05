@@ -31,6 +31,24 @@ interface FakeChatModelOptions {
   artDirection?: string;
   /** Make the planner that shares the scenes over the video clips fail. */
   failVideoPlan?: boolean;
+  /**
+   * What the video planner decides about the sound: speech on camera (lip-synced, in the clips) or a separate
+   * narration, the voice that suits the person, and the words said in each clip. Defaults to a female narration.
+   */
+  videoPlan?: {
+    audio?: "on_camera" | "narration";
+    voice?: "female" | "male";
+    voiceProfile?: string;
+    dialogues?: string[];
+    /** The captions of each clip, with when they show (seconds from the start of the clip). */
+    captions?: { text: string; from: number; to: number; kind?: "subtitle" | "callout" | "cta" }[][];
+    /** The music the planner designed: a brief for the music model and how loud it sits. Left out means none. */
+    music?: { brief: string; level?: number };
+    /** The colours of the text bubbles, which the planner picks for the look of the ad. */
+    palette?: { bubble?: string; text?: string; accent?: string };
+    /** The colour grade of the whole video; keys that are left out take the app's default. */
+    grade?: { contrast?: number; saturation?: number; brightness?: number; warmth?: number; grain?: number; vignette?: boolean };
+  };
   /** The scene the editor rewrites (scene is 1 to 4). */
   replacement?: { scene: number; text: string };
   /** The video length the request reader finds in the message; leave out for "no length said". */
@@ -39,6 +57,8 @@ interface FakeChatModelOptions {
   voiceOver?: boolean;
   /** The narration script the writer answers with. */
   script?: string;
+  /** How the writer says the narration should be performed. When given, the writer answers with thinking, delivery and script as JSON. */
+  delivery?: string;
   /** What the voice reviser finds in a message about changing the narration. */
   voiceRevision?: { script?: string; voice?: "female" | "male" };
 }
@@ -69,7 +89,20 @@ export function fakeChatModel(options: FakeChatModelOptions) {
           : task === "product-check" && options.peopleInPictures
             ? "NO"
             : task === "video-plan"
-              ? JSON.stringify({ clips: Array.from({ length: clipCount }, (_, index) => `Direction for clip ${index + 1}`) })
+              ? JSON.stringify({
+                  thinking: "A short reasoning about the product, the person and the sound.",
+                  audio: options.videoPlan?.audio ?? "narration",
+                  voice: options.videoPlan?.voice ?? "female",
+                  voiceProfile: options.videoPlan?.voiceProfile ?? "Friendly young Indonesian voice, natural pace",
+                  ...(options.videoPlan?.grade ? { grade: options.videoPlan.grade } : {}),
+                  ...(options.videoPlan?.palette ? { palette: options.videoPlan.palette } : {}),
+                  music: options.videoPlan?.music ? { use: true, ...options.videoPlan.music } : { use: false },
+                  clips: Array.from({ length: clipCount }, (_, index) => ({
+                    direction: `Direction for clip ${index + 1}`,
+                    dialogue: options.videoPlan?.dialogues?.[index] ?? "",
+                    captions: options.videoPlan?.captions?.[index] ?? [],
+                  })),
+                })
             : task === "intent"
               ? (options.intent ?? "CHAT")
               : task === "plan-scenes"
@@ -79,7 +112,9 @@ export function fakeChatModel(options: FakeChatModelOptions) {
                   : task === "video-request"
                     ? JSON.stringify({ seconds: options.videoSeconds ?? null, voiceOver: options.voiceOver ?? false })
                     : task === "voice-script"
-                      ? (options.script ?? "Ini naskah contoh untuk iklan produk.")
+                      ? options.delivery
+                        ? JSON.stringify({ thinking: "How the mood moves through the ad.", delivery: options.delivery, script: options.script })
+                        : (options.script ?? "Ini naskah contoh untuk iklan produk.")
                       : task === "voice-revision"
                         ? JSON.stringify({
                             script: options.voiceRevision?.script ?? null,

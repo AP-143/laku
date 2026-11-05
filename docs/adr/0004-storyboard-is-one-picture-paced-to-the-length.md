@@ -10,7 +10,7 @@ A Storyboard is made as **one picture** with six panels (each with a numbered ti
 
 ## Consequences
 
-- The Storyboard costs one image instead of four, so the Daily limit has more room.
+- The Storyboard costs one image instead of four.
 - The bake-off of 2026-11-02 found that a contact sheet made each panel small and could drop items of a product set. The picture is vertical (9:16) and a Seller can ask for it again, but how well the panels read and how well the video model follows them is judged by eye on real runs, not by the automated tests.
 - The video model is told never to show the grid, the panel numbers or the label boxes. Whether it obeys is also only visible on a real run.
 - The planner's directions are sent back to the server when a stopped video is remade, so the remade Clips still fit the ones that were kept.
