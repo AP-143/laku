@@ -133,13 +133,12 @@ Acceptance run of 2026-11-03 (ticket #14), through the app's own handlers on the
 - Video: a 10 s request became a 6 s and a 4 s clip, so the real model accepts a 6 s clip. Result: one 720x1280 MP4 of
   exactly 10.000 s. Clips of 8 s are still untried.
 - Voice revision (new voice, same script and clips): no video-model call, about US$0.003.
-- Measured against Google (AI Studio Spend page, 2026-11-03): month-to-date spend IDR 58,408, about US$3.21 at the
-  rate Google bills at (about 18,180 IDR per US dollar, from the account's IDR 4,545,874.87 Tier 1 cap = US$250).
-  The estimates added up to about US$2.95 (bake-off US$1.64, acceptance run US$1.31), so the meter ran about 9% low;
-  the rest is most likely the thinking and input tokens of image and text calls, which the per-image prices leave out.
-- The video price holds: Omni was reported at IDR 7,460 for the 4.03 s bake-off clip (US$0.41, against US$0.40
-  estimated), so COSTS.videoUsdPerSecond stays at 0.10. The per-model charts lag by hours, so only that clip had
-  been reported when this was read.
+- Measured against Google (AI Studio Spend page, 2026-11-03): the real spend of the month so far was about 9% above
+  the sum of the estimates (bake-off US$1.64, acceptance run US$1.31), so the meter ran about 9% low; the rest is most
+  likely the thinking and input tokens of image and text calls, which the per-image prices leave out.
+- The video price holds: Omni was billed about 2% above the estimate for the 4.03 s bake-off clip (US$0.41, against
+  US$0.40 estimated), so COSTS.videoUsdPerSecond stays at 0.10. The per-model charts lag by hours, so only that clip
+  had been reported when this was read.
 - The bake-off script did not write to the app's usage meter, so the meter missed about US$1.90 of real spend; it now
   records what a real run spends, and that amount was added to the ledger by hand.
 `.trim();
@@ -159,7 +158,7 @@ export const COSTS = {
   videoConfirmAboveUsd: 1,
   /**
    * Only to show rupiah next to dollars in a question to the seller; a rough rate, not a quote. About what Google
-   * bills at (2026-11-03): the account's tier cap of IDR 4,545,874.87 is the US$250 Tier 1 cap.
+   * billed at on 2026-11-03.
    */
   idrPerUsd: 18_200,
   /**
