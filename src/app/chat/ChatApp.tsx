@@ -7,7 +7,18 @@ import { useInfoDialog } from "../InfoDialog";
 import { PaperBackground } from "../PaperBackground";
 import { assetUrl, fetchUsage, sendChat, uploadPhoto } from "./chat-client";
 import { Composer, type AttachedPhoto } from "./Composer";
-import { loadConversation, saveConversation } from "./saved-conversation";
+import {
+  activeSession,
+  browserStorage,
+  loadWorkspace,
+  saveWorkspace,
+  selectSession,
+  setActiveItems,
+  startSession,
+  storyboardFor,
+  type Workspace,
+} from "./saved-conversation";
+import { SessionList } from "./SessionList";
 import { ThreadView, type Progress } from "./ThreadView";
 import { SCENE_INDEXES } from "../../shared/storyboard";
 import {
@@ -15,8 +26,6 @@ import {
   lastStudioAssetId,
   narratedVideo,
   openStoryboard,
-  storyboardFrames,
-  storyboardScenes,
   styleOf,
   type Preset,
   type RetryRequest,
@@ -30,6 +39,8 @@ const APPROVE_TEXT = "Setuju, buatkan gambarnya ya.";
 const HISTORY_LENGTH = 12;
 
 const newId = () => crypto.randomUUID();
+
+const BEFORE_LOAD: Workspace = { sessions: [{ id: "before-load", items: [] }], activeId: "before-load" };
 
 interface Usage {
   monthUsd: number;
@@ -49,8 +60,10 @@ function formatUsd(value: number): string {
 }
 
 export default function ChatApp() {
-  const [items, setItems] = useState<ThreadItem[]>([]);
+  // Every saved chat. Until the browser's storage is read there is just one empty placeholder session (no random id during prerender).
+  const [workspace, setWorkspace] = useState<Workspace>(BEFORE_LOAD);
   const [ready, setReady] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [text, setText] = useState("");
   const [photo, setPhoto] = useState<AttachedPhoto | undefined>();
   const [intent, setIntent] = useState<ChatIntent | undefined>();
@@ -64,7 +77,14 @@ export default function ChatApp() {
   // The entrance animation plays once on first paint, then its class is removed.
   const [animating, setAnimating] = useState(true);
 
+  const items = activeSession(workspace).items;
+  /** Changes the messages of the session on screen. Requests are not started while another chat is open, so this is the one a request belongs to. */
+  const setItems = useCallback((update: (current: ThreadItem[]) => ThreadItem[]) => {
+    setWorkspace((current) => setActiveItems(current, update(activeSession(current).items)));
+  }, []);
+
   const itemsRef = useRef(items);
+  const workspaceRef = useRef(workspace);
   const cardRef = useRef<HTMLFormElement>(null);
   const flipFrom = useRef<DOMRect | null>(null);
 
@@ -73,15 +93,16 @@ export default function ChatApp() {
   // Load the saved conversation once, after the first render, so the server and browser markup match.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reading browser storage can only happen after mount
-    setItems(loadConversation());
+    setWorkspace(loadWorkspace(browserStorage()));
     setReady(true);
     void fetchUsage().then(setUsage);
   }, []);
 
-  // Callbacks read the newest thread through this ref, so they do not need to be rebuilt on every message.
+  // Callbacks read the newest thread through these refs, so they do not need to be rebuilt on every message.
   useLayoutEffect(() => {
     itemsRef.current = items;
-  }, [items]);
+    workspaceRef.current = workspace;
+  }, [items, workspace]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setAnimating(false), 2600);
@@ -89,8 +110,8 @@ export default function ChatApp() {
   }, []);
 
   useEffect(() => {
-    if (ready) saveConversation(items);
-  }, [items, ready]);
+    if (ready) saveWorkspace(browserStorage(), workspace);
+  }, [workspace, ready]);
 
   // When the first message turns the hero into a thread, glide the composer to its new place.
   useLayoutEffect(() => {
@@ -105,9 +126,12 @@ export default function ChatApp() {
     );
   }, [inThread]);
 
-  const patchItem = useCallback((id: string, change: (item: ThreadItem) => ThreadItem) => {
-    setItems((current) => current.map((item) => (item.id === id ? change(item) : item)));
-  }, []);
+  const patchItem = useCallback(
+    (id: string, change: (item: ThreadItem) => ThreadItem) => {
+      setItems((current) => current.map((item) => (item.id === id ? change(item) : item)));
+    },
+    [setItems],
+  );
 
   /** Sends one request and folds its events into the thread. Used by every button and by the composer. */
   const run = useCallback(
@@ -134,8 +158,9 @@ export default function ChatApp() {
           case "job_started": {
             if (event.kind === "storyboard_frame" && context.scenesItemId) {
               const sceneIndex = context.frameIndexes[framesStarted++];
+              // `approved` shows the frame area, which also covers a storyboard approved by typing.
               patchItem(context.scenesItemId, (item) =>
-                item.kind === "scenes" ? { ...item, busy: [...(item.busy ?? []), sceneIndex] } : item,
+                item.kind === "scenes" ? { ...item, approved: true, busy: [...(item.busy ?? []), sceneIndex] } : item,
               );
             }
             setProgress((current) => current ?? { message: event.kind === "video" ? "Sedang membuat video…" : "Sedang membuat gambar…" });
@@ -239,7 +264,7 @@ export default function ChatApp() {
       setProgress(undefined);
       setBusy(false);
     },
-    [patchItem],
+    [patchItem, setItems],
   );
 
   function conversationBody(extra: Record<string, unknown>, lastMessage: { text: string; photoAssetId?: string }) {
@@ -255,12 +280,13 @@ export default function ChatApp() {
       { role: "user", ...lastMessage },
     ];
     const open = openStoryboard(itemsRef.current);
-    const frames = storyboardFrames(itemsRef.current);
+    // The storyboard may come from another chat, so a video chat can use a storyboard made elsewhere.
+    const { frames, scenes } = storyboardFor(workspaceRef.current);
     return {
       messages,
       // The finished storyboard frames, so a typed "video 10 detik" can be made from them.
       frames: frames.length > 0 ? frames : undefined,
-      scenes: frames.length > 0 ? storyboardScenes(itemsRef.current) : undefined,
+      scenes: frames.length > 0 ? scenes : undefined,
       // The video with a narration, so "ganti narasinya..." or "pakai suara cowok" can change it without new clips.
       revise: narratedVideo(itemsRef.current),
       // The newest result, or else the photo sent earlier, so "bikin foto studio" works on a later turn.
@@ -285,8 +311,12 @@ export default function ChatApp() {
     setText("");
     setPhoto(undefined);
     setIntent(undefined);
-    void run(body, { scenesItemId: body.storyboard ? openStoryboard(itemsRef.current)?.id : undefined, frameIndexes: [] });
-  }, [text, photo, busy, inThread, intent, preset, run]);
+    // A typed message may approve the open storyboard, which makes all four frames in order.
+    void run(body, {
+      scenesItemId: body.storyboard ? openStoryboard(itemsRef.current)?.id : undefined,
+      frameIndexes: [...SCENE_INDEXES],
+    });
+  }, [text, photo, busy, inThread, intent, preset, run, setItems]);
 
   const attach = useCallback(async (file: File) => {
     setNote(undefined);
@@ -364,7 +394,7 @@ export default function ChatApp() {
           messages: [{ role: "user", text: "Coba ulang bagian yang gagal." }],
           frames: item.frames,
           // The scenes let the script be written again when the first try asked for a voice-over.
-          scenes: item.voiceOver ? storyboardScenes(itemsRef.current) : undefined,
+          scenes: item.voiceOver ? storyboardFor(workspaceRef.current).scenes : undefined,
           resume: { seconds: item.seconds, clips: item.clips, finished: item.finished, voiceOver: item.voiceOver },
         },
         { frameIndexes: [] },
@@ -385,13 +415,26 @@ export default function ChatApp() {
     [busy, patchItem, run],
   );
 
-  function newChat() {
-    if (busy) return;
-    setItems([]);
+  function clearComposer() {
     setText("");
     setPhoto(undefined);
     setIntent(undefined);
     setNote(undefined);
+  }
+
+  // Not while a request runs: its answer is added to the chat that was on screen when it started.
+  function newSession() {
+    if (busy) return;
+    setWorkspace(startSession);
+    clearComposer();
+    setHistoryOpen(false);
+  }
+
+  function openSession(id: string) {
+    if (busy) return;
+    setWorkspace((current) => selectSession(current, id));
+    clearComposer();
+    setHistoryOpen(false);
   }
 
   return (
@@ -406,10 +449,31 @@ export default function ChatApp() {
               <a {...info.link("cara-kerja")}>Cara Kerja</a>
               <a {...info.link("kontak")}>Kontak</a>
             </nav>
-            <button type="button" className="new-chat" onClick={newChat} disabled={busy || !inThread}>
-              Chat Baru
-            </button>
+            <div className="nav-actions">
+              <button
+                type="button"
+                className="history-toggle"
+                onClick={() => setHistoryOpen((open) => !open)}
+                aria-expanded={historyOpen}
+              >
+                Riwayat
+              </button>
+              <button type="button" className="new-chat" onClick={newSession} disabled={busy || !inThread}>
+                Sesi Baru
+              </button>
+            </div>
           </header>
+
+          {ready && (
+            <SessionList
+              workspace={workspace}
+              open={historyOpen}
+              disabled={busy}
+              onSelect={openSession}
+              onNew={newSession}
+              onClose={() => setHistoryOpen(false)}
+            />
+          )}
 
           <main className="hero">
             <h1 className="h1">Ubah foto produkmu jadi konten studio.</h1>

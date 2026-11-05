@@ -1241,3 +1241,156 @@
     display: none;
   }
 }
+
+/* ---------- sessions sidebar ---------- */
+
+/* Narrow screens: the list is a drawer, opened with the "Riwayat" button. */
+.chat .nav-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.9em;
+}
+
+.chat .history-toggle {
+  transition: opacity 0.18s ease;
+}
+
+.chat .history-toggle:hover {
+  opacity: 0.6;
+}
+
+.chat .sessions {
+  position: fixed;
+  z-index: 30;
+  inset: 0 auto 0 0;
+  width: min(84vw, 300px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px 14px;
+  background: #fff;
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.14);
+  transform: translateX(-105%);
+  visibility: hidden;
+  transition: transform 0.35s var(--e-primary), visibility 0s linear 0.35s;
+  font-size: 13px;
+}
+
+.chat .sessions.is-open {
+  transform: translateX(0);
+  visibility: visible;
+  transition: transform 0.35s var(--e-primary);
+}
+
+.chat .sessions-scrim {
+  position: fixed;
+  z-index: 25;
+  inset: 0;
+  background: rgba(29, 29, 29, 0.28);
+}
+
+.chat .sessions-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 6px;
+}
+
+.chat .sessions-head h2 {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.chat .sessions-new {
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px #d6d6d3;
+  transition: background 0.18s ease;
+}
+
+.chat .sessions-new:hover:not(:disabled) {
+  background: #f2f2f1;
+}
+
+.chat .sessions-new:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.chat .sessions ul {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.chat .session {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  text-align: left;
+  transition: background 0.18s ease;
+}
+
+.chat .session:hover:not(:disabled) {
+  background: rgba(29, 29, 29, 0.06);
+}
+
+.chat .session:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.chat .session.is-current {
+  background: #fff;
+  box-shadow: inset 2px 0 0 var(--accent), 0 1px 6px rgba(0, 0, 0, 0.06);
+}
+
+.chat .session-title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.chat .session-feature {
+  font-size: 11px;
+  color: #6d6d6a;
+}
+
+/* Wide screens: the list stays on the left, beside the chat. */
+@media (min-width: 1320px) and (min-height: 600px) {
+  .chat .history-toggle,
+  .chat .sessions-scrim {
+    display: none;
+  }
+
+  .chat .sessions {
+    position: absolute;
+    z-index: 2;
+    inset: calc(var(--fs) * 0.14 + max(12px, calc(var(--fs) * 0.072)) * 3.2) auto calc(var(--fs) * 0.64) calc(var(--fs) * 0.27);
+    width: 230px;
+    padding: 0;
+    background: none;
+    box-shadow: none;
+    transform: none;
+    visibility: visible;
+    transition: none;
+  }
+}

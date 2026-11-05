@@ -1,0 +1,216 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import {
+  describeSession,
+  loadWorkspace,
+  saveWorkspace,
+  selectSession,
+  setActiveItems,
+  startSession,
+  storyboardFor,
+  type ChatSession,
+  type Workspace,
+} from "./saved-conversation";
+import type { ThreadItem } from "./thread";
+
+/** The chat sessions the seller sees in the sidebar, kept in the browser's storage across reloads. */
+
+/** A stand-in for the browser's localStorage. */
+function memoryStorage(initial: Record<string, string> = {}) {
+  const data = new Map(Object.entries(initial));
+  return {
+    getItem: (key: string) => data.get(key) ?? null,
+    setItem: (key: string, value: string) => void data.set(key, value),
+  };
+}
+
+describe("chat sessions", () => {
+  it("starts with one empty session when nothing was saved", () => {
+    const workspace = loadWorkspace(memoryStorage());
+
+    assert.equal(workspace.sessions.length, 1);
+    assert.equal(workspace.activeId, workspace.sessions[0].id);
+    assert.deepEqual(workspace.sessions[0].items, []);
+  });
+
+  it("brings the messages back after a reload", () => {
+    const storage = memoryStorage();
+    const items: ThreadItem[] = [
+      { id: "a", kind: "user", text: "foto studio dong" },
+      { id: "b", kind: "bot", text: "Siap, ini hasilnya." },
+    ];
+
+    saveWorkspace(storage, setActiveItems(loadWorkspace(storage), items));
+    const reloaded = loadWorkspace(storage);
+
+    assert.deepEqual(reloaded.sessions.length, 1);
+    assert.deepEqual(reloaded.sessions[0].items, items);
+  });
+
+  it("starts a new session on top of the list and keeps the old one as it was", () => {
+    const items: ThreadItem[] = [{ id: "a", kind: "user", text: "foto studio dong" }];
+    const first = setActiveItems(loadWorkspace(memoryStorage()), items);
+
+    const second = startSession(first);
+
+    assert.equal(second.sessions.length, 2);
+    assert.equal(second.activeId, second.sessions[0].id);
+    assert.deepEqual(second.sessions[0].items, []);
+    assert.deepEqual(second.sessions[1].items, items);
+    assert.equal(second.sessions[1].id, first.activeId);
+  });
+
+  it("does not pile up empty sessions when the one on screen is still empty", () => {
+    const empty = loadWorkspace(memoryStorage());
+
+    const again = startSession(startSession(empty));
+
+    assert.deepEqual(again, empty);
+  });
+
+  it("switches to an older session and adds new messages to that session only", () => {
+    const studio: ThreadItem[] = [{ id: "a", kind: "user", text: "foto studio dong" }];
+    const video: ThreadItem[] = [{ id: "b", kind: "user", text: "bikin video" }];
+    const first = setActiveItems(loadWorkspace(memoryStorage()), studio);
+    const second = setActiveItems(startSession(first), video);
+
+    const back = selectSession(second, first.activeId);
+    const edited = setActiveItems(back, [...studio, { id: "c", kind: "bot", text: "Ini hasilnya." }]);
+
+    assert.equal(back.activeId, first.activeId);
+    assert.equal(edited.sessions[0].items, second.sessions[0].items);
+    assert.equal(edited.sessions[1].items.length, 2);
+    assert.equal(selectSession(second, "no-such-session"), second);
+  });
+
+  it("titles a session after the first message, shortened when it is long", () => {
+    const titleOf = (items: ThreadItem[]) => describeSession({ id: "s", items }).title;
+
+    assert.equal(titleOf([]), "Chat baru");
+    assert.equal(titleOf([{ id: "a", kind: "user", text: "Foto studio latar putih" }]), "Foto studio latar putih");
+    assert.equal(
+      titleOf([{ id: "a", kind: "user", text: "Bikinin storyboard 4 scene untuk Reels jualan sepatu" }]),
+      "Bikinin storyboard 4 scene untuk…",
+    );
+    assert.equal(titleOf([{ id: "a", kind: "user", text: "", photoAssetId: "p" }]), "Foto produk");
+  });
+
+  it("labels a session with the feature of its first result", () => {
+    const user: ThreadItem = { id: "u", kind: "user", text: "tolong" };
+    const studio: ThreadItem = { id: "s", kind: "studio", assetId: "x", sourceAssetId: "p", retry: {} };
+    const scenes: ThreadItem = { id: "c", kind: "scenes", sourceAssetId: "p", scenes: ["a", "b", "c", "d"], frames: {}, approved: false };
+    const video: ThreadItem = { id: "v", kind: "video", assetId: "x", sourceAssetId: "p" };
+    const featureOf = (items: ThreadItem[]) => describeSession({ id: "s", items }).feature;
+
+    assert.equal(featureOf([user]), undefined);
+    assert.equal(featureOf([user, studio]), "studio_photo");
+    assert.equal(featureOf([user, scenes]), "storyboard");
+    assert.equal(featureOf([user, video]), "video");
+    assert.equal(featureOf([user, studio, scenes, video]), "studio_photo");
+  });
+
+  it("keeps the single conversation saved before sessions existed as the first session", () => {
+    const old: ThreadItem[] = [{ id: "a", kind: "user", text: "foto studio dong" }];
+    const storage = memoryStorage({ "laku:conversation:v1": JSON.stringify(old) });
+
+    const workspace = loadWorkspace(storage);
+
+    assert.equal(workspace.sessions.length, 1);
+    assert.deepEqual(workspace.sessions[0].items, old);
+    assert.equal(workspace.activeId, workspace.sessions[0].id);
+  });
+
+  it("starts empty instead of failing when the saved data is broken", () => {
+    for (const broken of ["{not json", "{}", '{"sessions":"x","activeId":1}', '{"sessions":[],"activeId":"a"}', "null"]) {
+      const workspace = loadWorkspace(memoryStorage({ "laku:sessions:v1": broken }));
+
+      assert.equal(workspace.sessions.length, 1, broken);
+      assert.deepEqual(workspace.sessions[0].items, [], broken);
+    }
+    assert.equal(loadWorkspace(memoryStorage({ "laku:conversation:v1": "{not json" })).sessions.length, 1);
+  });
+
+  it("keeps working when the browser blocks or fills its storage", () => {
+    const blocked = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("full");
+      },
+    };
+
+    const workspace = loadWorkspace(blocked);
+    assert.doesNotThrow(() => saveWorkspace(blocked, workspace));
+    assert.doesNotThrow(() => saveWorkspace(undefined, workspace));
+    assert.equal(loadWorkspace(undefined).sessions.length, 1);
+  });
+
+  it("forgets the oldest session once there are more than 30", () => {
+    let workspace = loadWorkspace(memoryStorage());
+    for (let n = 1; n <= 31; n++) {
+      workspace = setActiveItems(workspace, [{ id: `m${n}`, kind: "user", text: `chat ${n}` }]);
+      workspace = startSession(workspace);
+    }
+
+    assert.equal(workspace.sessions.length, 30);
+    assert.equal(workspace.activeId, workspace.sessions[0].id);
+    assert.deepEqual(workspace.sessions[0].items, []);
+    assert.equal(describeSession(workspace.sessions[1]).title, "chat 31");
+    assert.equal(describeSession(workspace.sessions[29]).title, "chat 3");
+  });
+
+  describe("storyboard shared between sessions", () => {
+    const board = (id: string, frames: Record<number, string>, scenes = ["a", "b", "c", "d"]): ThreadItem => ({
+      id,
+      kind: "scenes",
+      sourceAssetId: "p",
+      scenes,
+      frames,
+      approved: true,
+    });
+    const sessionWith = (id: string, ...items: ThreadItem[]): ChatSession => ({ id, items });
+
+    it("lets a new session make a video from the newest storyboard of another session", () => {
+      const workspace: Workspace = {
+        sessions: [
+          sessionWith("video", { id: "u", kind: "user", text: "video 10 detik" }),
+          sessionWith("new", board("b2", { 0: "n0", 1: "n1" }, ["n-a", "n-b", "n-c", "n-d"])),
+          sessionWith("old", board("b1", { 0: "o0" })),
+        ],
+        activeId: "video",
+      };
+
+      assert.deepEqual(storyboardFor(workspace), { frames: ["n0", "n1"], scenes: ["n-a", "n-b", "n-c", "n-d"] });
+    });
+
+    it("prefers the storyboard of the session on screen", () => {
+      const workspace: Workspace = {
+        sessions: [sessionWith("here", board("b1", { 0: "mine" })), sessionWith("other", board("b2", { 0: "theirs" }))],
+        activeId: "here",
+      };
+
+      assert.deepEqual(storyboardFor(workspace).frames, ["mine"]);
+    });
+
+    it("ignores storyboards of other sessions that have no frame yet", () => {
+      const workspace: Workspace = {
+        sessions: [sessionWith("video"), sessionWith("draft", board("b1", {}))],
+        activeId: "video",
+      };
+
+      assert.deepEqual(storyboardFor(workspace), { frames: [], scenes: [] });
+    });
+  });
+
+  it("does not save which frames were still being drawn", () => {
+    const storage = memoryStorage();
+    const scenes: ThreadItem = { id: "c", kind: "scenes", sourceAssetId: "p", scenes: ["a", "b", "c", "d"], frames: { 0: "f" }, busy: [1], approved: true };
+
+    saveWorkspace(storage, setActiveItems(loadWorkspace(storage), [scenes]));
+
+    const [saved] = loadWorkspace(storage).sessions[0].items;
+    assert.equal(saved.kind === "scenes" && saved.busy, undefined);
+    assert.deepEqual(saved.kind === "scenes" && saved.frames, { 0: "f" });
+  });
+});
