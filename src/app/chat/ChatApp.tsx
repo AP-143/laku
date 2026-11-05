@@ -10,6 +10,7 @@ import { Composer, type AttachedPhoto } from "./Composer";
 import {
   activeSession,
   browserStorage,
+  deleteSession,
   loadWorkspace,
   saveWorkspace,
   selectSession,
@@ -18,7 +19,7 @@ import {
   storyboardFor,
   type Workspace,
 } from "./saved-conversation";
-import { SessionList } from "./SessionList";
+import { Sidebar } from "./Sidebar";
 import { ThreadView, type Progress } from "./ThreadView";
 import { SCENE_INDEXES } from "../../shared/storyboard";
 import {
@@ -26,6 +27,7 @@ import {
   lastStudioAssetId,
   narratedVideo,
   openStoryboard,
+  sceneFrames,
   styleOf,
   type Preset,
   type RetryRequest,
@@ -35,6 +37,11 @@ import "./chat.css";
 
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+/** The width from which the sidebar stays beside the chat; below it, it is a drawer. */
+const WIDE_SCREEN = "(min-width: 1000px)";
+/** How long the chat must stay unchanged before it is saved. */
+const SAVE_DELAY_MS = 400;
+const VIDEO_TEXT ="Buatkan video iklan dari storyboard ini.";
 const APPROVE_TEXT = "Setuju, buatkan gambarnya ya.";
 const HISTORY_LENGTH = 12;
 
@@ -55,15 +62,12 @@ interface RunContext {
   frameIndexes: number[];
 }
 
-function formatUsd(value: number): string {
-  return `US$${value.toFixed(2).replace(".", ",")}`;
-}
-
 export default function ChatApp() {
   // Every saved chat. Until the browser's storage is read there is just one empty placeholder session (no random id during prerender).
   const [workspace, setWorkspace] = useState<Workspace>(BEFORE_LOAD);
   const [ready, setReady] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const [text, setText] = useState("");
   const [photo, setPhoto] = useState<AttachedPhoto | undefined>();
   const [intent, setIntent] = useState<ChatIntent | undefined>();
@@ -85,6 +89,8 @@ export default function ChatApp() {
 
   const itemsRef = useRef(items);
   const workspaceRef = useRef(workspace);
+  /** The chat changed and is not written to the browser's storage yet. */
+  const savePending = useRef(false);
   const cardRef = useRef<HTMLFormElement>(null);
   const flipFrom = useRef<DOMRect | null>(null);
 
@@ -109,9 +115,35 @@ export default function ChatApp() {
     return () => window.clearTimeout(timer);
   }, []);
 
+  // A streamed reply changes the chat many times a second, so the whole history is written once things settle.
   useEffect(() => {
-    if (ready) saveWorkspace(browserStorage(), workspace);
+    if (!ready) return;
+    savePending.current = true;
+    const timer = window.setTimeout(() => {
+      saveWorkspace(browserStorage(), workspaceRef.current);
+      savePending.current = false;
+    }, SAVE_DELAY_MS);
+    return () => window.clearTimeout(timer);
   }, [workspace, ready]);
+
+  // A change made just before the tab is hidden, closed or left is saved at once instead of waiting for the delay.
+  useEffect(() => {
+    function flush() {
+      if (!savePending.current) return;
+      saveWorkspace(browserStorage(), workspaceRef.current);
+      savePending.current = false;
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+      flush();
+    };
+  }, []);
 
   // When the first message turns the hero into a thread, glide the composer to its new place.
   useLayoutEffect(() => {
@@ -197,6 +229,7 @@ export default function ChatApp() {
                   ? {
                       ...item,
                       frames: { ...item.frames, [sceneIndex]: event.assetId },
+                      madeFrom: { ...item.madeFrom, [sceneIndex]: item.scenes[sceneIndex] },
                       busy: (item.busy ?? []).filter((index) => index !== sceneIndex),
                     }
                   : item,
@@ -363,6 +396,25 @@ export default function ChatApp() {
     [busy, patchItem, run],
   );
 
+  /** Makes the video of an approved storyboard from its four frames, with the length and voice-over the seller chose. */
+  const makeVideo = useCallback(
+    (itemId: string, options: { seconds: number; voiceOver: boolean }) => {
+      const card = itemsRef.current.find((candidate) => candidate.id === itemId);
+      if (busy || !card || card.kind !== "scenes") return;
+      void run(
+        {
+          messages: [{ role: "user", text: VIDEO_TEXT }],
+          frames: sceneFrames(card),
+          // The scenes let the narration be written from them when a voice-over is asked for.
+          scenes: card.scenes,
+          video: options,
+        },
+        { frameIndexes: [] },
+      );
+    },
+    [busy, run],
+  );
+
   /** Resends the request that failed or produced an image, without adding a message to the thread. */
   const retryRequest = useCallback(
     (request: RetryRequest) => {
@@ -422,110 +474,148 @@ export default function ChatApp() {
     setNote(undefined);
   }
 
+  /** Puts the cursor in the message box, so the seller can type right after picking a chat. Not on a touch screen, where it would raise the keyboard. */
+  function focusComposer() {
+    if (window.matchMedia("(pointer: coarse)").matches) return;
+    window.requestAnimationFrame(() => cardRef.current?.querySelector("textarea")?.focus());
+  }
+
   // Not while a request runs: its answer is added to the chat that was on screen when it started.
   function newSession() {
     if (busy) return;
     setWorkspace(startSession);
     clearComposer();
     setHistoryOpen(false);
+    focusComposer();
   }
+
+  function removeSession(id: string) {
+    if (busy) return;
+    // The chat on screen changes when the one on screen is deleted, so what was typed for it goes too.
+    if (id === workspaceRef.current.activeId) {
+      clearComposer();
+      focusComposer();
+    }
+    setWorkspace((current) => deleteSession(current, id));
+  }
+
+  /** A new chat with a feature already chosen, from the sidebar. */
+  function startWithFeature(feature: ChatIntent) {
+    if (busy) return;
+    setWorkspace(startSession);
+    clearComposer();
+    setIntent(feature);
+    setHistoryOpen(false);
+    focusComposer();
+  }
+
+  /** Hides the sidebar on a wide screen, or slides the drawer in and out on a narrow one. */
+  const toggleSidebar = useCallback(() => {
+    if (window.matchMedia(WIDE_SCREEN).matches) setCollapsed((current) => !current);
+    else setHistoryOpen((current) => !current);
+  }, []);
 
   function openSession(id: string) {
     if (busy) return;
     setWorkspace((current) => selectSession(current, id));
     clearComposer();
     setHistoryOpen(false);
+    focusComposer();
   }
 
   return (
-    <div className={`chat${inThread ? " is-thread" : ""}${animating ? " anim" : ""}`}>
+    <div className={`chat${inThread ? " is-thread" : ""}${animating ? " anim" : ""}${collapsed ? " side-collapsed" : ""}`}>
       <div className="stage">
         <PaperBackground />
         <div className="frame">
-          <header className="nav">
-            <nav className="links" aria-label="Menu utama">
-              <Link href="/">Beranda</Link>
-              <a {...info.link("fitur")}>Fitur</a>
-              <a {...info.link("cara-kerja")}>Cara Kerja</a>
-              <a {...info.link("kontak")}>Kontak</a>
-            </nav>
-            <div className="nav-actions">
-              <button
-                type="button"
-                className="history-toggle"
-                onClick={() => setHistoryOpen((open) => !open)}
-                aria-expanded={historyOpen}
-              >
-                Riwayat
-              </button>
-              <button type="button" className="new-chat" onClick={newSession} disabled={busy || !inThread}>
-                Sesi Baru
-              </button>
-            </div>
-          </header>
+          <Sidebar
+            workspace={workspace}
+            ready={ready}
+            open={historyOpen}
+            disabled={busy}
+            usage={usage}
+            links={
+              <>
+                <a {...info.link("fitur")}>Fitur</a>
+                <a {...info.link("cara-kerja")}>Cara Kerja</a>
+                <a {...info.link("kontak")}>Kontak</a>
+              </>
+            }
+            onSelect={openSession}
+            onNew={newSession}
+            onFeature={startWithFeature}
+            onDelete={removeSession}
+            onToggle={toggleSidebar}
+          />
 
-          {ready && (
-            <SessionList
-              workspace={workspace}
-              open={historyOpen}
-              disabled={busy}
-              onSelect={openSession}
-              onNew={newSession}
-              onClose={() => setHistoryOpen(false)}
-            />
-          )}
+          <div className="main">
+            <header className="topbar">
+              <div className="topbar-left">
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label="Tampilkan menu samping"
+                  aria-expanded={collapsed ? false : historyOpen}
+                  onClick={toggleSidebar}
+                >
+                  <svg viewBox="0 0 18 18" width="18" height="18" aria-hidden="true">
+                    <rect x="2" y="3" width="14" height="12" rx="3" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                    <path d="M7 3.5v11" stroke="currentColor" strokeWidth="1.5" />
+                  </svg>
+                </button>
+              </div>
+              <div className="topbar-right">
+                <button type="button" className="topbar-new" onClick={newSession} disabled={busy}>
+                  <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                    <path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                  </svg>
+                  Sesi baru
+                </button>
+                <Link href="/">Beranda</Link>
+              </div>
+            </header>
 
-          <main className="hero">
-            <h1 className="h1">Ubah foto produkmu jadi konten studio.</h1>
-            {inThread && (
-              <ThreadView
-                items={items}
-                progress={progress}
-                busy={busy}
-                onRetry={retryRequest}
-                onEditScene={editScene}
-                onMakeFrames={makeFrames}
-                onAnswerConfirm={answerConfirmation}
-                onResumeVideo={resumeVideo}
-                photoUrl={(assetId) => assetUrl(assetId, "resized")}
-              />
-            )}
-            <Composer
-              ref={cardRef}
-              text={text}
-              onText={setText}
-              photo={photo}
-              onAttach={attach}
-              onRemovePhoto={() => setPhoto(undefined)}
-              intent={intent}
-              onIntent={(next) => setIntent((current) => (current === next ? undefined : next))}
-              preset={preset}
-              onPreset={setPreset}
-              menu={menu}
-              onMenu={setMenu}
-              note={note}
-              busy={busy}
-              onSubmit={submit}
-              inThread={inThread}
-              onSuggest={(suggestion) => {
-                setText(suggestion.text);
-                setIntent(suggestion.intent);
-                if (suggestion.preset) setPreset(suggestion.preset);
-              }}
-            />
-          </main>
-
-          <footer className="foot">
-            <p>Dibuat untuk penjual online Indonesia — foto studio dan storyboard iklan dari satu foto produk.</p>
-            <div className="foot-row">
-              <span className="rule" />
-              {usage && (
-                <span className="usage" title="Perkiraan pemakaian saldo bulan ini">
-                  Pemakaian bulan ini: {formatUsd(usage.monthUsd)} / {formatUsd(usage.budgetUsd)}
-                </span>
+            <main className="hero">
+              <h1 className="h1">Ubah foto produkmu jadi konten studio.</h1>
+              {inThread && (
+                <ThreadView
+                  items={items}
+                  progress={progress}
+                  busy={busy}
+                  onRetry={retryRequest}
+                  onEditScene={editScene}
+                  onMakeFrames={makeFrames}
+                  onMakeVideo={makeVideo}
+                  onAnswerConfirm={answerConfirmation}
+                  onResumeVideo={resumeVideo}
+                  photoUrl={(assetId) => assetUrl(assetId, "resized")}
+                />
               )}
-            </div>
-          </footer>
+              <Composer
+                ref={cardRef}
+                text={text}
+                onText={setText}
+                photo={photo}
+                onAttach={attach}
+                onRemovePhoto={() => setPhoto(undefined)}
+                intent={intent}
+                onIntent={(next) => setIntent((current) => (current === next ? undefined : next))}
+                preset={preset}
+                onPreset={setPreset}
+                menu={menu}
+                onMenu={setMenu}
+                note={note}
+                busy={busy}
+                onSubmit={submit}
+                inThread={inThread}
+                onSuggest={(suggestion) => {
+                  setText(suggestion.text);
+                  setIntent(suggestion.intent);
+                  if (suggestion.preset) setPreset(suggestion.preset);
+                }}
+              />
+            </main>
+          </div>
         </div>
       </div>
       {info.dialog}

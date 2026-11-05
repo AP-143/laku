@@ -61,7 +61,8 @@ export type AssetKind = "image" | "video";
 export type AssetRole = "studio_photo" | "storyboard_frame" | "video";
 
 /** The shortcut chips in the composer. */
-export type ChatIntent = "studio_photo" | "storyboard" | "video";
+/** The shortcut chips under the composer. A video is made from a storyboard, so it is not a chip of its own. */
+export type ChatIntent = "studio_photo" | "storyboard";
 
 export type StylePreset = "clean_white" | "solid_color" | "lifestyle";
 /** A look for the studio photo: one of the presets, or the seller's own words. */

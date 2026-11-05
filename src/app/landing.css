@@ -164,15 +164,10 @@
   width: calc(var(--fs) * 1.42);
   line-height: 1.45;
   color: var(--ink-soft);
-}
-
-.landing .foot p::first-letter {
-  float: left;
-  font-size: 2.35em;
-  font-weight: 650;
-  line-height: 0.8;
-  margin-right: 0.08em;
-  color: var(--accent);
+  /* A short accent bar instead of a drop cap: the text stays one tidy block. */
+  padding-left: 0.9em;
+  border-left: 2px solid var(--accent);
+  text-wrap: pretty;
 }
 
 .landing .foot-row {

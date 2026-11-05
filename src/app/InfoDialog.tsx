@@ -17,12 +17,11 @@ const TOPICS: Record<Topic, { title: string; body: ReactNode }> = {
           <span>Foto produk dari HP jadi foto studio: latar putih bersih, backdrop warna, atau suasana lifestyle.</span>
         </li>
         <li>
-          <strong>Storyboard</strong>
-          <span>4 scene iklan dari satu foto produk. Kamu setujui teksnya dulu, baru gambarnya dibuat.</span>
-        </li>
-        <li>
-          <strong>Video</strong>
-          <span>Video iklan dari gambar storyboard. Kamu sebut panjangnya di chat, misalnya “video 10 detik pakai voice over”.</span>
+          <strong>Storyboard &amp; Video</strong>
+          <span>
+            4 scene iklan dari satu foto produk. Kamu setujui teksnya dulu, baru gambarnya dibuat. Setelah itu, pilih durasi
+            pada panel “Buat video iklan” (dan voice over kalau mau), lalu tekan Generate.
+          </span>
         </li>
       </ul>
     ),

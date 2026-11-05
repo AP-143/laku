@@ -85,45 +85,119 @@
 
 
 
+/* The app shell: a sidebar column and the main area. Narrow screens turn the sidebar into a drawer. */
+.chat {
+  --side-w: 272px;
+  /* How much of the window the sidebar takes right now, so widths in the main area can follow it. */
+  --side-now: var(--side-w);
+}
+
 .chat .frame {
   position: absolute;
   inset: 0;
   z-index: 1;
+  display: grid;
+  grid-template-columns: var(--side-now) minmax(0, 1fr);
+  transition: grid-template-columns 0.35s var(--e-primary);
+}
+
+.chat.side-collapsed {
+  --side-now: 0px;
+}
+
+@media (max-width: 999px) {
+  .chat {
+    --side-now: 0px;
+  }
+}
+
+.chat .main {
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: calc(var(--fs) * 0.14) calc(var(--fs) * 0.27) calc(var(--fs) * 0.2);
+  padding: 14px calc(var(--fs) * 0.2) calc(var(--fs) * 0.16);
 }
 
-/* ---------- nav ---------- */
+/* ---------- top bar ---------- */
 
-.chat .nav {
+.chat .topbar {
   flex: none;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  font-size: max(12px, calc(var(--fs) * 0.072));
+  gap: 12px;
+  min-height: 40px;
+  font-size: 13.5px;
   font-weight: 450;
-  line-height: 1.2;
 }
 
-.chat .links {
+.chat .topbar-left,
+.chat .topbar-right {
   display: flex;
-  gap: 1.9em;
+  align-items: center;
+  gap: 8px;
 }
 
-.chat .links a,
-.chat .new-chat {
-  transition: opacity 0.18s ease;
+.chat .topbar a,
+.chat .topbar-new {
+  padding: 7px 12px;
+  border-radius: 999px;
+  transition: background 0.18s ease;
 }
 
-.chat .links a:hover,
-.chat .new-chat:hover:not(:disabled) {
-  opacity: 0.6;
+.chat .topbar a:hover,
+.chat .topbar-new:hover:not(:disabled) {
+  background: rgba(29, 29, 29, 0.07);
 }
 
-.chat .new-chat:disabled {
+.chat .topbar-new {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  font-weight: 550;
+}
+
+.chat .topbar-new:disabled {
   cursor: default;
   opacity: 0.35;
+}
+
+/* The toggle is only needed when the sidebar is not already on screen. */
+.chat .icon-btn {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  transition: background 0.18s ease;
+}
+
+.chat .icon-btn:hover {
+  background: rgba(29, 29, 29, 0.08);
+}
+
+.chat .topbar .icon-btn {
+  display: none;
+}
+
+.chat.side-collapsed .topbar .icon-btn,
+.chat.side-collapsed .topbar-new {
+  display: grid;
+}
+
+.chat.side-collapsed .topbar-new {
+  display: inline-flex;
+}
+
+@media (max-width: 999px) {
+  .chat .topbar .icon-btn {
+    display: grid;
+  }
+
+  .chat .topbar-new {
+    display: inline-flex;
+  }
 }
 
 /* ---------- hero ---------- */
@@ -140,62 +214,16 @@
 }
 
 .chat .h1 {
-  max-width: 10.5em;
-  font-size: calc(var(--fs) * 0.46);
-  font-weight: 800;
-  line-height: 0.98;
-  letter-spacing: -0.045em;
+  max-width: 14em;
+  font-size: calc(var(--fs) * 0.25);
+  font-weight: 750;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
   text-align: center;
   text-wrap: balance;
   transition: opacity 0.35s ease, max-height 0.5s var(--e-primary);
   max-height: 20em;
   color: #1d1d1d;
-}
-
-.chat .foot {
-  flex: none;
-  display: flex;
-  align-items: flex-end;
-  gap: calc(var(--fs) * 0.1);
-}
-
-.chat .foot p {
-  flex: none;
-  width: calc(var(--fs) * 1.42);
-  font-size: max(11px, calc(var(--fs) * 0.066));
-  line-height: 1.45;
-  color: #3a3a3a;
-}
-
-.chat .foot p::first-letter {
-  float: left;
-  font-size: 2.35em;
-  font-weight: 650;
-  line-height: 0.8;
-  margin-right: 0.08em;
-  color: var(--accent);
-}
-
-.chat .foot-row {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: calc(var(--fs) * 0.1);
-  min-width: 0;
-}
-
-.chat .rule {
-  flex: 1;
-  height: 1px;
-  background: #a9a9a6;
-}
-
-.chat .usage {
-  flex: none;
-  font-size: max(12px, calc(var(--fs) * 0.07));
-  font-weight: 450;
-  color: #3a3a3a;
-  white-space: nowrap;
 }
 
 /* ---------- composer card ---------- */
@@ -446,14 +474,15 @@
 }
 
 .chat .attach {
-  left: calc(599.15 * var(--u));
-  top: calc(10.14 * var(--u));
+  left: calc(599.65 * var(--u));
+  top: calc(10.54 * var(--u));
   color: #77776f;
   padding: 0;
 }
 
 .chat .attach svg {
-  width: calc(19.79 * var(--u));
+  /* 19.79 was the size for a 20 unit box; the box is 23 now, so the clip keeps its size. */
+  width: calc(22.76 * var(--u));
   height: auto;
 }
 
@@ -501,11 +530,6 @@
   pointer-events: none;
 }
 
-/* Once a thread is open, the footer keeps only its rule and the quota. */
-.chat.is-thread .foot p {
-  display: none;
-}
-
 .chat.is-thread .hero {
   justify-content: flex-end;
   gap: 12px;
@@ -514,7 +538,7 @@
 
 /* The composer keeps its proportions but is scaled to ordinary pixels, so text stays readable. */
 .chat.is-thread .card {
-  --u: min(1.2px, calc((100vw - 32px) / 708));
+  --u: min(1.2px, calc((100vw - var(--side-now) - 2 * var(--fs) * 0.2) / 708));
 }
 
 .chat.is-thread .card-wrap {
@@ -616,6 +640,168 @@
   font-size: 15px;
   font-weight: 600;
   margin-bottom: 10px;
+}
+
+.chat .board h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat .board-badge {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 650;
+  color: #2d6a3f;
+  background: rgba(60, 160, 100, 0.15);
+}
+
+/* The next step of an approved storyboard: the video. */
+.chat .video-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(120, 100, 190, 0.1), rgba(120, 100, 190, 0.05));
+  box-shadow: inset 0 0 0 1px rgba(120, 100, 190, 0.2);
+}
+
+.chat .video-panel h3 {
+  font-size: 14.5px;
+  font-weight: 650;
+}
+
+.chat .video-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat .video-field-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6d6d6a;
+}
+
+.chat .video-lengths {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chat .video-length {
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.chat .video-length:hover:not(:disabled) {
+  background: #fff;
+}
+
+.chat .video-length.is-on {
+  color: #fff;
+  background: #1d1d1d;
+  box-shadow: none;
+}
+
+.chat .video-length:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.chat .video-voice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.chat .video-voice input {
+  appearance: none;
+  flex: none;
+  margin-top: 1px;
+  display: grid;
+  place-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1.5px #8b8b88;
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.chat .video-voice input:checked {
+  background: #1d1d1d;
+  box-shadow: none;
+}
+
+.chat .video-voice input:checked::after {
+  content: "";
+  width: 9px;
+  height: 5px;
+  margin-top: -2px;
+  border: solid #fff;
+  border-width: 0 0 2px 2px;
+  transform: rotate(-45deg);
+}
+
+.chat .video-voice input:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.chat .video-panel .actions {
+  margin-top: 0;
+}
+
+/* The Generate button: an AI sparkle in front of the label. */
+.chat .btn-ai {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.chat .btn-ai svg {
+  flex: none;
+}
+
+/* On the dark button the sparkle is warm; on the light one it keeps the text colour. */
+.chat .btn-primary.btn-ai svg {
+  color: #f4c9a8;
+}
+
+/* After a video exists, the panel is just this one button. */
+.chat .video-again {
+  margin-top: 14px;
+  display: flex;
+}
+
+/* Where the storyboard stands now that the approve button is gone. */
+.chat .board-status {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #3a3a3a;
+  background: rgba(29, 29, 29, 0.04);
+}
+
+.chat .board-status[data-done="false"] {
+  color: #7a4a14;
+  background: rgba(232, 160, 60, 0.14);
 }
 
 .chat .pair {
@@ -723,28 +909,57 @@
 }
 
 .chat .scene-num {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: #c4622d;
+  display: inline-block;
+  margin-bottom: 8px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #a24f1f;
+  background: rgba(232, 134, 84, 0.16);
 }
 
+/* The height is set from the text (see SceneText), so there is no scrollbar and no resize handle. */
 .chat .scene textarea {
+  display: block;
   width: 100%;
-  resize: vertical;
-  padding: 9px 11px;
-  border-radius: 10px;
+  min-height: 3.6em;
+  resize: none;
+  overflow: hidden;
+  padding: 11px 13px;
+  border-radius: 12px;
   font-size: 14px;
-  line-height: 1.4;
-  background: rgba(0, 0, 0, 0.04);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1);
+  line-height: 1.55;
+  letter-spacing: 0.005em;
+  color: #2a2a2a;
+  background: #faf9f7;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.09);
+  transition: box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.chat .scene textarea:hover:not(:read-only) {
+  background: #fff;
 }
 
 .chat .scene textarea:focus {
   outline: none;
-  box-shadow: inset 0 0 0 1px var(--accent);
+  background: #fff;
+  box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px rgba(232, 134, 84, 0.18);
+}
+
+.chat .scene textarea:read-only {
+  color: #5a5a57;
+}
+
+.chat .scene-note {
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #7a4a14;
+  background: rgba(232, 160, 60, 0.14);
 }
 
 .chat .frame-box {
@@ -835,23 +1050,8 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .chat.anim .links a {
-    animation: e-settle-down 0.5s var(--e-soft) both;
-  }
-  .chat.anim .links a:nth-child(1) {
-    animation-delay: 0.16s;
-  }
-  .chat.anim .links a:nth-child(2) {
-    animation-delay: 0.21s;
-  }
-  .chat.anim .links a:nth-child(3) {
-    animation-delay: 0.26s;
-  }
-  .chat.anim .links a:nth-child(4) {
-    animation-delay: 0.31s;
-  }
-  .chat.anim .new-chat {
-    animation: e-settle-down 0.55s var(--e-soft) 0.34s both;
+  .chat.anim .topbar {
+    animation: e-settle-down 0.5s var(--e-soft) 0.16s both;
   }
   .chat.anim:not(.is-thread) .h1 {
     animation: e-focus 1s var(--e-primary) 0.3s both;
@@ -872,9 +1072,6 @@
   }
   .chat.anim:not(.is-thread) .send {
     animation: e-send 0.5s var(--e-primary) 1s both;
-  }
-  .chat.anim:not(.is-thread) .foot p {
-    animation: e-settle-up 0.55s var(--e-soft) 1.08s both;
   }
 }
 
@@ -1001,7 +1198,7 @@
   }
 
   .chat .attach svg {
-    width: 20px;
+    width: 23px;
   }
 
   .chat .send {
@@ -1037,23 +1234,18 @@
     --hero-gap: 28;
   }
 
-  .chat .frame {
-    padding: max(14px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
-      max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  .chat .main {
+    padding: max(10px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+      max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   }
 
-  .chat .nav {
+  .chat .topbar {
     font-size: 12.5px;
-  }
-
-  .chat .links {
-    gap: 14px;
-    flex-wrap: wrap;
   }
 
   .chat .h1 {
     width: 100%;
-    font-size: clamp(30px, 9.4vw, 56px);
+    font-size: clamp(26px, 7.6vw, 44px);
   }
 
   .chat .card-wrap {
@@ -1161,7 +1353,7 @@
   }
 
   .chat .attach svg {
-    width: 20px;
+    width: 23px;
   }
 
   .chat .send {
@@ -1172,26 +1364,6 @@
 
   .chat .send svg {
     width: 12px;
-  }
-
-  .chat .foot {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 14px;
-  }
-
-  .chat .foot p {
-    width: 100%;
-    font-size: 13px;
-    line-height: 1.5;
-  }
-
-  .chat .foot-row {
-    gap: 14px;
-  }
-
-  .chat .usage {
-    font-size: 12.5px;
   }
 
   .chat .thread {
@@ -1234,121 +1406,200 @@
   }
 
   .chat .h1 {
-    font-size: clamp(26px, 9vh, 44px);
-  }
-
-  .chat .foot p {
-    display: none;
+    font-size: clamp(22px, 7vh, 34px);
   }
 }
 
-/* ---------- sessions sidebar ---------- */
 
-/* Narrow screens: the list is a drawer, opened with the "Riwayat" button. */
-.chat .nav-actions {
-  display: flex;
-  align-items: flex-start;
-  gap: 1.9em;
-}
+/* ---------- sidebar ---------- */
 
-.chat .history-toggle {
-  transition: opacity 0.18s ease;
-}
-
-.chat .history-toggle:hover {
-  opacity: 0.6;
-}
-
-.chat .sessions {
-  position: fixed;
-  z-index: 30;
-  inset: 0 auto 0 0;
-  width: min(84vw, 300px);
+.chat .side {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 22px 14px;
-  background: #fff;
-  box-shadow: 0 0 40px rgba(0, 0, 0, 0.14);
-  transform: translateX(-105%);
-  visibility: hidden;
-  transition: transform 0.35s var(--e-primary), visibility 0s linear 0.35s;
+  gap: 10px;
+  padding: 16px 12px 12px;
+  overflow: hidden;
   font-size: 13px;
+  background: rgba(252, 252, 251, 0.74);
+  backdrop-filter: blur(20px) saturate(110%);
+  border-right: 1px solid rgba(29, 29, 29, 0.08);
+  transition: visibility 0s linear 0.35s;
 }
 
-.chat .sessions.is-open {
-  transform: translateX(0);
-  visibility: visible;
-  transition: transform 0.35s var(--e-primary);
+.chat.side-collapsed .side {
+  visibility: hidden;
+  border-right-color: transparent;
 }
 
-.chat .sessions-scrim {
-  position: fixed;
-  z-index: 25;
-  inset: 0;
-  background: rgba(29, 29, 29, 0.28);
+.chat .side-scrim {
+  display: none;
 }
 
-.chat .sessions-head {
+.chat .side-head {
   flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 0 6px;
+  padding: 0 4px 0 8px;
 }
 
-.chat .sessions-head h2 {
-  font-size: 13px;
-  font-weight: 650;
-  letter-spacing: 0.01em;
+.chat .brand {
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.05em;
 }
 
-.chat .sessions-new {
-  padding: 5px 10px;
+.chat .side-new {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 12px;
   border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-  background: #fff;
-  box-shadow: inset 0 0 0 1px #d6d6d3;
-  transition: background 0.18s ease;
+  font-size: 13px;
+  font-weight: 550;
+  color: #fff;
+  background: #1d1d1d;
+  transition: opacity 0.18s ease;
 }
 
-.chat .sessions-new:hover:not(:disabled) {
-  background: #f2f2f1;
+.chat .side-new:hover:not(:disabled) {
+  opacity: 0.82;
 }
 
-.chat .sessions-new:disabled {
+.chat .side-new:disabled {
   cursor: default;
   opacity: 0.35;
 }
 
-.chat .sessions ul {
-  flex: 1;
-  min-height: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  overflow-y: auto;
+.chat .side-hint {
+  flex: none;
+  margin: -4px 6px 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: #6d6d6a;
 }
 
-.chat .session {
-  width: 100%;
+.chat .side-label {
+  flex: none;
+  margin: 8px 8px 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8a8a87;
+}
+
+/* features: one click starts a new chat with that feature chosen */
+
+.chat .side-features {
+  flex: none;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   gap: 2px;
-  padding: 8px 10px;
-  border-radius: 10px;
+}
+
+.chat .side-feature {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 12px;
   text-align: left;
   transition: background 0.18s ease;
 }
 
-.chat .session:hover:not(:disabled) {
+.chat .side-feature:hover:not(:disabled) {
   background: rgba(29, 29, 29, 0.06);
+}
+
+.chat .side-feature:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.chat .side-feature-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  color: #6d6d6a;
+  background: rgba(29, 29, 29, 0.07);
+}
+
+.chat .side-feature.f-studio_photo .side-feature-icon {
+  color: #a24f1f;
+  background: rgba(232, 134, 84, 0.18);
+}
+
+.chat .side-feature.f-storyboard .side-feature-icon {
+  color: #2f5d8a;
+  background: rgba(70, 130, 190, 0.16);
+}
+
+.chat .side-feature-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.chat .side-feature-text strong {
+  font-weight: 550;
+}
+
+.chat .side-feature-text small {
+  font-size: 11.5px;
+  color: #8a8a87;
+}
+
+/* history */
+
+.chat .side-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 2px 2px 10px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+
+.chat .session-row {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+.chat .session {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 9px 34px 9px 12px;
+  border-radius: 12px;
+  text-align: left;
+  /* Every chat is a card, so a row never reads like a heading. */
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(29, 29, 29, 0.08);
+  transition: background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.chat .session:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .chat .session:disabled {
@@ -1358,7 +1609,7 @@
 
 .chat .session.is-current {
   background: #fff;
-  box-shadow: inset 2px 0 0 var(--accent), 0 1px 6px rgba(0, 0, 0, 0.06);
+  box-shadow: inset 3px 0 0 var(--accent), inset 0 0 0 1px rgba(29, 29, 29, 0.1), 0 2px 10px rgba(0, 0, 0, 0.07);
 }
 
 .chat .session-title {
@@ -1369,28 +1620,205 @@
   font-weight: 500;
 }
 
+.chat .session-blank {
+  font-size: 11.5px;
+  color: #8a8a87;
+}
+
 .chat .session-feature {
-  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 550;
+  color: #6d6d6a;
+  background: rgba(29, 29, 29, 0.07);
+}
+
+.chat .session-feature.f-studio_photo {
+  color: #a24f1f;
+  background: rgba(232, 134, 84, 0.16);
+}
+
+.chat .session-feature.f-storyboard {
+  color: #2f5d8a;
+  background: rgba(70, 130, 190, 0.14);
+}
+
+.chat .session-delete {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: #6d6d6a;
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+/* Shown on hover and for keyboard users; on touch screens there is no hover, so it is always there. */
+.chat .session-row:hover .session-delete,
+.chat .session-delete:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .chat .session-delete {
+    opacity: 1;
+  }
+}
+
+.chat .session-delete:hover:not(:disabled) {
+  color: #b3261e;
+  background: rgba(179, 38, 30, 0.1);
+}
+
+.chat .session-delete:disabled {
+  cursor: default;
+  opacity: 0;
+}
+
+.chat .session-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(179, 38, 30, 0.35);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.chat .session-ask-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.chat .session-cancel,
+.chat .session-danger {
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.chat .session-cancel {
+  background: #f2f2f1;
+  box-shadow: inset 0 0 0 1px #d6d6d3;
+}
+
+.chat .session-danger {
+  color: #fff;
+  background: #b3261e;
+}
+
+.chat .session-cancel:hover,
+.chat .session-danger:hover {
+  opacity: 0.85;
+}
+
+/* bottom: spend meter and info links */
+
+.chat .side-foot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(29, 29, 29, 0.1);
+}
+
+.chat .side-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 4px;
+  font-size: 11.5px;
   color: #6d6d6a;
 }
 
-/* Wide screens: the list stays on the left, beside the chat. */
-@media (min-width: 1320px) and (min-height: 600px) {
-  .chat .history-toggle,
-  .chat .sessions-scrim {
-    display: none;
+.chat .side-usage-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 8px;
+}
+
+.chat .side-usage-row strong {
+  font-weight: 600;
+  color: #1d1d1d;
+}
+
+.chat .side-meter {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(29, 29, 29, 0.1);
+  overflow: hidden;
+}
+
+.chat .side-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.chat .side-meter span.is-high {
+  background: #b3261e;
+}
+
+.chat .side-links {
+  display: flex;
+  gap: 4px;
+  font-size: 12px;
+  color: #6d6d6a;
+}
+
+.chat .side-links a {
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.chat .side-links a:hover {
+  color: #1d1d1d;
+  background: rgba(29, 29, 29, 0.07);
+}
+
+/* Narrow screens: the sidebar slides in over the chat. */
+@media (max-width: 999px) {
+  .chat .frame {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .chat .sessions {
-    position: absolute;
-    z-index: 2;
-    inset: calc(var(--fs) * 0.14 + max(12px, calc(var(--fs) * 0.072)) * 3.2) auto calc(var(--fs) * 0.64) calc(var(--fs) * 0.27);
-    width: 230px;
-    padding: 0;
-    background: none;
-    box-shadow: none;
-    transform: none;
+  .chat .side {
+    position: fixed;
+    z-index: 30;
+    inset: 0 auto 0 0;
+    width: min(86vw, 300px);
+    background: #f7f7f6;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.16);
+    transform: translateX(-105%);
+    visibility: hidden;
+    transition: transform 0.35s var(--e-primary), visibility 0s linear 0.35s;
+  }
+
+  .chat .side.is-open {
+    transform: translateX(0);
     visibility: visible;
-    transition: none;
+    transition: transform 0.35s var(--e-primary);
+  }
+
+  .chat .side-scrim {
+    display: block;
+    position: fixed;
+    z-index: 25;
+    inset: 0;
+    background: rgba(29, 29, 29, 0.28);
   }
 }
