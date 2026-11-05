@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { COSTS, VOICES } from "../config/models";
 import type { ChatIntent, StudioStyle } from "../shared/chat-events";
 import { SCENE_COUNT, SCENE_INDEXES } from "../shared/storyboard";
-import { CLIP_SECONDS, DEFAULT_VIDEO_SECONDS, planClips } from "../shared/video-plan";
+import { SCENE_REPLACED_MESSAGE, SCENES_PROPOSED_MESSAGE } from "../shared/chat-messages";
+import { CLIP_SECONDS, DEFAULT_VIDEO_SECONDS, planClips, VIDEO_LENGTH_CHOICES } from "../shared/video-plan";
 import { isAssetId, type AssetFile, type AssetStore } from "./asset-store";
 import { readBoundedBytes } from "./bounded-body";
 import { narrationFits, NARRATION_WORD_SLACK, wordRange, type Intent } from "./chat-prompt";
@@ -29,17 +30,13 @@ const WHAT_TO_CHANGE_MESSAGE =
 const CLIP_NOT_FOUND_MESSAGE = "Klip yang sudah jadi tidak ketemu lagi. Minta videonya dibuat dari awal ya.";
 const priceText = (usd: number) =>
   `US$${usd.toFixed(2)} (sekitar Rp${(Math.round((usd * COSTS.idrPerUsd) / 100) * 100).toLocaleString("id-ID")})`;
-const confirmVideoMessage = (seconds: number, clipCount: number, usd: number) =>
-  `Video ${seconds} detik (${clipCount} klip), perkiraan ${priceText(usd)}. Lanjut?`;
+const confirmVideoMessage = (seconds: number, usd: number) => `Video ${seconds} detik, perkiraan biaya ${priceText(usd)}. Lanjut?`;
 const resumeVideoMessage = (clipCount: number, usd: number) =>
   `Membuat ulang ${clipCount} klip yang belum jadi, perkiraan ${priceText(usd)}. Lanjut?`;
 const NARRATION_TOO_LONG_MESSAGE = (seconds: number, maxWords: number) =>
   `Narasinya terlalu panjang untuk video ${Math.round(seconds)} detik (maksimal sekitar ${maxWords} kata). Coba yang lebih singkat ya.`;
 const videoTooLongMessage = (maxSeconds: number) =>
   `Storyboard-mu bisa dijadikan video maksimal ${maxSeconds} detik. Coba minta video yang lebih pendek ya.`;
-const SCENES_PROPOSED_MESSAGE =
-  "Ini usulan 4 scene storyboard-nya. Kamu bisa ubah teksnya atau minta aku ganti scene tertentu. Kalau sudah cocok, setujui dulu ya, baru aku buatkan gambarnya.";
-const SCENE_REPLACED_MESSAGE = "Sudah kuganti. Kalau sudah cocok, setujui supaya aku buatkan gambarnya ya.";
 
 // Every accepted message costs model quota, so the size of a request is bounded before it reaches the model.
 const MAX_BODY_BYTES = 64 * 1024;
@@ -72,6 +69,8 @@ interface Conversation {
   scenes: string[];
   /** The price in US dollars the seller said yes to for an expensive video, quoted back to the server. */
   confirmedUsd?: number;
+  /** The seller pressed "Generate" in the video panel: the length and the voice-over are chosen, so nothing is read from the words. */
+  video?: { seconds: number; voiceOver: boolean };
   /** Remake only the missing clips of a video that stopped part way. */
   resume?: VideoResume;
   /** The video with a narration that the seller may want to change, as `voice_over` described it. */
@@ -94,7 +93,7 @@ interface VideoResume {
   voiceOver: boolean;
 }
 
-const INTENTS: readonly string[] = ["studio_photo", "storyboard", "video"];
+const INTENTS: readonly string[] = ["studio_photo", "storyboard"];
 const PRESETS: readonly string[] = ["clean_white", "solid_color", "lifestyle"];
 
 function readIntent(value: unknown): ChatIntent | undefined {
@@ -125,6 +124,15 @@ function readApproval(value: unknown): Conversation["approve"] | null | undefine
   return Number.isInteger(sceneIndex) && (sceneIndex as number) >= 0 && (sceneIndex as number) < SCENE_COUNT
     ? { sceneIndex: sceneIndex as number }
     : null;
+}
+
+/** `null` means the field was sent but is not one of the lengths the button offers; no field means a typed request. */
+function readVideo(value: unknown): Conversation["video"] | null | undefined {
+  if (value === undefined) return undefined;
+  const { seconds, voiceOver } = (value ?? {}) as { seconds?: unknown; voiceOver?: unknown };
+  if (!(VIDEO_LENGTH_CHOICES as readonly unknown[]).includes(seconds)) return null;
+  if (voiceOver !== undefined && typeof voiceOver !== "boolean") return null;
+  return { seconds: seconds as number, voiceOver: voiceOver === true };
 }
 
 /** `null` means the field was sent but is not a clip plan this server could have made; no field means no resume. */
@@ -240,6 +248,7 @@ async function readConversation(request: Request): Promise<Conversation | undefi
     lastImageAssetId?: unknown;
     storyboard?: unknown;
     approve?: unknown;
+    video?: unknown;
     frames?: unknown;
     confirmedUsd?: unknown;
     resume?: unknown;
@@ -251,16 +260,18 @@ async function readConversation(request: Request): Promise<Conversation | undefi
   }
   const storyboard = readStoryboard(fields.storyboard);
   const approve = readApproval(fields.approve);
+  const video = readVideo(fields.video);
   const frames = readFrames(fields.frames);
   const resume = readResume(fields.resume);
   const scenes = readScenes(fields.scenes);
   const revise = readRevise(fields.revise);
   // Approving needs the plan it approves.
   const invalid =
-    storyboard === null || approve === null || (approve && !storyboard) || frames === null || resume === null || scenes === null || revise === null;
+    storyboard === null || approve === null || (approve && !storyboard) || video === null || frames === null || resume === null || scenes === null || revise === null;
   if (invalid) return undefined;
 
   return {
+    video,
     frames,
     scenes,
     resume,
@@ -399,7 +410,8 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         if (photo && !(await isProduct(photo))) return reply(NOT_A_PRODUCT_MESSAGE);
 
         const lastText = conversation.messages.at(-1)!.text.trim();
-        let intent: Intent | undefined = conversation.intent;
+        // The video button is an explicit request, so the router is not asked what it means.
+        let intent: Intent | undefined = conversation.video ? "video" : conversation.intent;
         if (!intent && lastText && (photo || previous || storyboard || frames.length > 0 || conversation.revise)) {
           intent = await models.classifyIntent(lastText, {
             hasPhoto: Boolean(photo),
@@ -437,7 +449,7 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
 
         if (intent === "video") {
           if (frames.length === 0) return reply(NEED_FRAMES_MESSAGE);
-          const asked = lastText ? await models.readVideoRequest(lastText) : { seconds: undefined, voiceOver: false };
+          const asked = conversation.video ?? (lastText ? await models.readVideoRequest(lastText) : { seconds: undefined, voiceOver: false });
           const plan = planClips(asked.seconds ?? DEFAULT_VIDEO_SECONDS, frames.length);
           if (!plan.ok) return reply(videoTooLongMessage(plan.maxSeconds));
 
@@ -445,11 +457,13 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
           // The request is read again on the yes, so a video that now costs more than was agreed is asked about again.
           const estimatedUsd = videoCostUsd(plan.clips);
           const agreed = conversation.confirmedUsd !== undefined && estimatedUsd <= conversation.confirmedUsd;
-          if (estimatedUsd > COSTS.videoConfirmAboveUsd && !agreed) {
+          // Pressing the button always shows the price first; a typed request only asks when it is expensive.
+          const mustAsk = conversation.video !== undefined || estimatedUsd > COSTS.videoConfirmAboveUsd;
+          if (mustAsk && !agreed) {
             send({
               type: "confirmation_requested",
               confirmationId: randomUUID(),
-              message: confirmVideoMessage(plan.seconds, plan.clips.length, estimatedUsd),
+              message: confirmVideoMessage(plan.seconds, estimatedUsd),
               estimatedUsd,
             });
             send({ type: "done" });

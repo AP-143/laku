@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { COSTS, MODELS } from "../config/models";
 import type { ChatEvent } from "../shared/chat-events";
-import { CLIP_SECONDS, type ClipPlan } from "../shared/video-plan";
+import { CLIP_SECONDS, framesForClips, type ClipPlan } from "../shared/video-plan";
 import type { AssetFile, AssetStore } from "./asset-store";
 import { narrationFits } from "./chat-prompt";
 import { clipPrompt } from "./image-prompts";
@@ -55,7 +55,7 @@ export function createVideoJobs(deps: {
 
   return {
     /**
-     * `frames` are the storyboard frames in scene order; clip `i` is made from frame `i`.
+     * `frames` are the storyboard frames in scene order; the clips are made from the ones `framesForClips` picks.
      * `finished` holds clips made by an earlier try (by position), which are used as they are and not paid for again.
      */
     async generate(request: {
@@ -67,7 +67,7 @@ export function createVideoJobs(deps: {
     }) {
       const { plan, voiceOver } = request;
       const finished = request.finished ?? {};
-      const frames = request.frames.slice(0, plan.clips.length);
+      const frames = framesForClips(plan.clips.length, request.frames.length).map((index) => request.frames[index]);
       for (const frame of frames) {
         if (!(await isProduct(frame.file))) throw new NotAProductError();
       }

@@ -9,6 +9,20 @@ export const CLIP_SECONDS = { min: 4, max: 8, step: 2 } as const;
 /** The length used when the seller does not say one. */
 export const DEFAULT_VIDEO_SECONDS = 10;
 
+/** The lengths the video panel offers. The scenes are fitted to the length, not the other way round. */
+export const VIDEO_LENGTH_CHOICES = [10, 20, 30] as const;
+
+/**
+ * Which storyboard frames the clips are made from. When there are fewer clips than frames, they are spread over the
+ * storyboard and always keep the first frame (the hook) and the last (the call to action). It depends only on the two
+ * counts, so a video remade after a failed clip picks the same frames again.
+ */
+export function framesForClips(clipCount: number, frameCount: number): number[] {
+  if (clipCount >= frameCount) return Array.from({ length: frameCount }, (_, index) => index);
+  if (clipCount <= 1) return [0];
+  return Array.from({ length: clipCount }, (_, index) => Math.round((index * (frameCount - 1)) / (clipCount - 1)));
+}
+
 export type ClipPlan =
   /** `seconds` is the length of the finished video; the clips can add up to a little more, which is trimmed off. */
   | { ok: true; seconds: number; clips: number[] }

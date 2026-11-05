@@ -1,8 +1,24 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { planClips } from "./video-plan";
+import { framesForClips, planClips } from "./video-plan";
 
 /** How a requested video length is cut into clips, one per storyboard scene, in order. */
+
+describe("framesForClips", () => {
+  it("uses every frame when there is a clip for each", () => {
+    assert.deepEqual(framesForClips(4, 4), [0, 1, 2, 3]);
+  });
+
+  it("keeps the first and the last frame when there are fewer clips than frames", () => {
+    assert.deepEqual(framesForClips(2, 4), [0, 3]);
+    assert.deepEqual(framesForClips(3, 4), [0, 2, 3]);
+    assert.deepEqual(framesForClips(2, 3), [0, 2]);
+  });
+
+  it("starts from the first frame when there is a single clip", () => {
+    assert.deepEqual(framesForClips(1, 4), [0]);
+  });
+});
 
 describe("planClips", () => {
   it("splits 10 seconds into two clips, 6 and 4", () => {

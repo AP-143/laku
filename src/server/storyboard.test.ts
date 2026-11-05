@@ -55,6 +55,28 @@ describe("storyboard", () => {
     );
   });
 
+  it("explains the steps in its words: approve first, then the video panel with its Generate button follows the images", async () => {
+    const app = newApp({ intent: "EDIT_SCENE", replacement: { scene: 3, text: "Scene tiga baru di pantai" } });
+    const photoAssetId = await uploadPhoto(app);
+    const wordsOf = (events: ChatEvent[]) =>
+      events.flatMap((event) => (event.type === "assistant_text" ? [event.text] : [])).join("");
+
+    const proposal = await readEvents(
+      await app.chat(chatRequest({ messages: [{ role: "user", text: "", photoAssetId }], intent: "storyboard" })),
+    );
+    const replaced = await readEvents(
+      await app.chat(
+        chatRequest({ messages: [{ role: "user", text: "ganti scene 3" }], storyboard: { photoAssetId, scenes: SCENES } }),
+      ),
+    );
+
+    for (const words of [wordsOf(proposal), wordsOf(replaced)]) {
+      assert.match(words, /Setujui & buat gambar/);
+      assert.match(words, /Buat video iklan/);
+      assert.match(words, /Generate/);
+    }
+  });
+
   it("starts from a typed request and an already finished studio photo", async () => {
     const app = newApp({ intent: "STORYBOARD" });
     const studioPhotoId = await uploadPhoto(app);

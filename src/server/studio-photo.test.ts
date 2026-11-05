@@ -173,11 +173,11 @@ describe("studio photo details", () => {
   });
 
   it("asks for a storyboard first when a video is requested from a plain photo, instead of generating anything", async () => {
-    const app = createTestApp(fakeChatModel({ chunks: ["unused"] }));
+    const app = createTestApp(fakeChatModel({ chunks: ["unused"], intent: "VIDEO" }));
     const photoAssetId = await uploadPhoto(app);
 
     const events = await readEvents(
-      await app.chat(chatRequest({ messages: [{ role: "user", text: "", photoAssetId }], intent: "video" })),
+      await app.chat(chatRequest({ messages: [{ role: "user", text: "bikinin video dong", photoAssetId }] })),
     );
 
     assert.match(events.flatMap((e) => (e.type === "assistant_text" ? [e.text] : [])).join(""), /storyboard/i);
