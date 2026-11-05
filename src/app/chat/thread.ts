@@ -16,6 +16,8 @@ export type ThreadItem =
       scenes: string[];
       /** Finished frames by scene index (0 to 3). */
       frames: Record<number, string>;
+      /** The scene text each frame was made from, so a text changed afterwards can be pointed out. */
+      madeFrom?: Record<number, string>;
       /** Scenes whose frame is being generated right now (not saved). */
       busy?: number[];
       approved: boolean;
@@ -96,8 +98,12 @@ export function storyboardScenes(items: ThreadItem[]): string[] {
  */
 export function storyboardFrames(items: ThreadItem[]): string[] {
   const latest = items.findLast((item) => item.kind === "scenes");
-  if (!latest) return [];
-  return Object.entries(latest.frames)
+  return latest ? sceneFrames(latest) : [];
+}
+
+/** The finished frames of one storyboard card in scene order. */
+export function sceneFrames(card: Extract<ThreadItem, { kind: "scenes" }>): string[] {
+  return Object.entries(card.frames)
     .sort(([a], [b]) => Number(a) - Number(b))
     .map(([, assetId]) => assetId);
 }

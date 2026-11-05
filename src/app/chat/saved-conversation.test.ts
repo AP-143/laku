@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  deleteSession,
   describeSession,
   loadWorkspace,
   saveWorkspace,
@@ -11,6 +12,7 @@ import {
   type ChatSession,
   type Workspace,
 } from "./saved-conversation";
+import { SCENE_REPLACED_MESSAGE, SCENES_PROPOSED_MESSAGE } from "../../shared/chat-messages";
 import type { ThreadItem } from "./thread";
 
 /** The chat sessions the seller sees in the sidebar, kept in the browser's storage across reloads. */
@@ -68,6 +70,17 @@ describe("chat sessions", () => {
     assert.deepEqual(again, empty);
   });
 
+  it("shows the empty session that is already in the list instead of adding another one", () => {
+    const used: ChatSession = { id: "used", items: [{ id: "m", kind: "user", text: "foto studio dong" }] };
+    const blank: ChatSession = { id: "blank", items: [] };
+    const workspace: Workspace = { sessions: [used, blank], activeId: "used" };
+
+    const next = startSession(workspace);
+
+    assert.deepEqual(next.sessions, workspace.sessions);
+    assert.equal(next.activeId, "blank");
+  });
+
   it("switches to an older session and adds new messages to that session only", () => {
     const studio: ThreadItem[] = [{ id: "a", kind: "user", text: "foto studio dong" }];
     const video: ThreadItem[] = [{ id: "b", kind: "user", text: "bikin video" }];
@@ -83,6 +96,49 @@ describe("chat sessions", () => {
     assert.equal(selectSession(second, "no-such-session"), second);
   });
 
+  describe("deleting a session", () => {
+    const chat = (id: string, text: string): ChatSession => ({ id, items: [{ id: `m-${id}`, kind: "user", text }] });
+    const idsOf = (workspace: Workspace) => workspace.sessions.map((session) => session.id);
+
+    it("removes that session and keeps the one on screen", () => {
+      const workspace: Workspace = { sessions: [chat("a", "satu"), chat("b", "dua"), chat("c", "tiga")], activeId: "a" };
+
+      const after = deleteSession(workspace, "b");
+
+      assert.deepEqual(idsOf(after), ["a", "c"]);
+      assert.equal(after.activeId, "a");
+    });
+
+    it("shows the next older session when the one on screen is deleted, or the one above it when it was the oldest", () => {
+      const workspace: Workspace = { sessions: [chat("a", "satu"), chat("b", "dua"), chat("c", "tiga")], activeId: "b" };
+
+      const middle = deleteSession(workspace, "b");
+      assert.deepEqual(idsOf(middle), ["a", "c"]);
+      assert.equal(middle.activeId, "c");
+
+      const oldest = deleteSession(selectSession(workspace, "c"), "c");
+      assert.deepEqual(idsOf(oldest), ["a", "b"]);
+      assert.equal(oldest.activeId, "b");
+    });
+
+    it("leaves one fresh empty session when the last one is deleted", () => {
+      const only: Workspace = { sessions: [chat("a", "satu")], activeId: "a" };
+
+      const after = deleteSession(only, "a");
+
+      assert.equal(after.sessions.length, 1);
+      assert.notEqual(after.sessions[0].id, "a");
+      assert.deepEqual(after.sessions[0].items, []);
+      assert.equal(after.activeId, after.sessions[0].id);
+    });
+
+    it("changes nothing for a session that is not in the list", () => {
+      const workspace: Workspace = { sessions: [chat("a", "satu")], activeId: "a" };
+
+      assert.equal(deleteSession(workspace, "no-such-session"), workspace);
+    });
+  });
+
   it("titles a session after the first message, shortened when it is long", () => {
     const titleOf = (items: ThreadItem[]) => describeSession({ id: "s", items }).title;
 
@@ -95,18 +151,50 @@ describe("chat sessions", () => {
     assert.equal(titleOf([{ id: "a", kind: "user", text: "", photoAssetId: "p" }]), "Foto produk");
   });
 
-  it("labels a session with the feature of its first result", () => {
+  it("labels a session with the feature of its first result, where storyboard and video are one feature", () => {
     const user: ThreadItem = { id: "u", kind: "user", text: "tolong" };
     const studio: ThreadItem = { id: "s", kind: "studio", assetId: "x", sourceAssetId: "p", retry: {} };
     const scenes: ThreadItem = { id: "c", kind: "scenes", sourceAssetId: "p", scenes: ["a", "b", "c", "d"], frames: {}, approved: false };
     const video: ThreadItem = { id: "v", kind: "video", assetId: "x", sourceAssetId: "p" };
+    const partial: ThreadItem = { id: "t", kind: "partial", seconds: 16, clips: [4, 4, 4, 4], finished: {}, failedIndex: 0, voiceOver: false, frames: [] };
     const featureOf = (items: ThreadItem[]) => describeSession({ id: "s", items }).feature;
 
     assert.equal(featureOf([user]), undefined);
     assert.equal(featureOf([user, studio]), "studio_photo");
     assert.equal(featureOf([user, scenes]), "storyboard");
-    assert.equal(featureOf([user, video]), "video");
+    // A video typed for in an old chat, or one that stopped part way, belongs to the same feature as its storyboard.
+    assert.equal(featureOf([user, video]), "storyboard");
+    assert.equal(featureOf([user, partial]), "storyboard");
     assert.equal(featureOf([user, studio, scenes, video]), "studio_photo");
+  });
+
+  it("brings the storyboard replies saved with older wording up to date, and leaves every other message alone", () => {
+    const saved: ThreadItem[] = [
+      { id: "a", kind: "user", text: "buat storyboard" },
+      {
+        id: "b",
+        kind: "bot",
+        text: "Ini usulan 4 scene storyboard-nya. Kamu bisa ubah teksnya atau minta aku ganti scene tertentu. Kalau sudah cocok, setujui dulu ya, baru aku buatkan gambarnya.",
+      },
+      { id: "c", kind: "bot", text: "Sudah kuganti. Kalau sudah cocok, setujui supaya aku buatkan gambarnya ya." },
+      { id: "d", kind: "bot", text: "Halo! Ada yang bisa kubantu?" },
+      // The seller's own words are never rewritten, even when they match.
+      { id: "e", kind: "user", text: "Sudah kuganti. Kalau sudah cocok, setujui supaya aku buatkan gambarnya ya." },
+    ];
+    const storage = memoryStorage({ "laku:sessions:v1": JSON.stringify({ sessions: [{ id: "s", items: saved }], activeId: "s" }) });
+
+    const { items } = loadWorkspace(storage).sessions[0];
+
+    assert.deepEqual(
+      items.map((item) => (item.kind === "user" || item.kind === "bot" ? item.text : "")),
+      [
+        "buat storyboard",
+        SCENES_PROPOSED_MESSAGE,
+        SCENE_REPLACED_MESSAGE,
+        "Halo! Ada yang bisa kubantu?",
+        "Sudah kuganti. Kalau sudah cocok, setujui supaya aku buatkan gambarnya ya.",
+      ],
+    );
   });
 
   it("keeps the single conversation saved before sessions existed as the first session", () => {
