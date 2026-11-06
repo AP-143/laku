@@ -271,10 +271,9 @@ describe("storyboard", () => {
     assert.equal(app.imageModel.calls.length, 0);
   });
 
-  it("reads the first request from the start: the planner sees all of it, and the brief it writes for the video reaches the browser", async () => {
+  it("reads the first request from the start: the planner sees all of it, and the seller's own words reach the browser for the video", async () => {
     const WISH = "buatkan storyboard dan video 10 detik, santai tapi bikin lapar";
-    const BRIEF_TEXT = "A relaxed, mouth-watering ad video of about 10 seconds.";
-    const chat = fakeChatModel({ chunks: ["unused"], scenes: SCENES, intent: "STORYBOARD", brief: BRIEF_TEXT });
+    const chat = fakeChatModel({ chunks: ["unused"], scenes: SCENES, intent: "STORYBOARD" });
     const app = createTestApp(chat);
     const photoAssetId = await uploadPhoto(app);
 
@@ -282,33 +281,28 @@ describe("storyboard", () => {
 
     const plan = proposed(events);
     assert.ok(plan?.type === "storyboard_scenes");
-    assert.equal(plan.brief, BRIEF_TEXT);
+    // Not a summary written by a model: the words themselves, so nothing the seller asked for can be lost on the way.
+    assert.equal(plan.brief, WISH);
     const planned = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: plan-scenes]"));
     const prompt = JSON.stringify(planned?.prompt);
     assert.ok(prompt.includes(WISH));
-    // The planner is asked to adapt the scenes and the look to the request, and to write down what it wants of the video.
-    assert.match(prompt, /\\+"brief/);
-    assert.match(prompt, /the final video/i);
+    assert.doesNotMatch(prompt, /\\+"brief/);
   });
 
-  it("has no brief when the planner writes none, and keeps only a short text as the brief", async () => {
-    for (const given of [undefined, "", "   ", 42, ["a"], { text: "x" }]) {
-      const app = newApp({ brief: given });
-      const photoAssetId = await uploadPhoto(app);
-      const events = await readEvents(
-        await app.chat(chatRequest({ messages: [{ role: "user", text: "", photoAssetId }], intent: "storyboard" })),
-      );
-      const plan = proposed(events);
-      assert.ok(plan?.type === "storyboard_scenes");
-      assert.equal(plan.brief, undefined, JSON.stringify(given));
-    }
-
-    const app = newApp({ brief: "x".repeat(MAX_BRIEF_CHARS * 3) });
+  it("has no brief when the seller typed nothing, and keeps only a short text of what was typed", async () => {
+    const app = newApp();
     const photoAssetId = await uploadPhoto(app);
-    const events = await readEvents(
-      await app.chat(chatRequest({ messages: [{ role: "user", text: "", photoAssetId }], intent: "storyboard" })),
+    const empty = await readEvents(
+      await app.chat(chatRequest({ messages: [{ role: "user", text: "   ", photoAssetId }], intent: "storyboard" })),
     );
-    const plan = proposed(events);
+    const none = proposed(empty);
+    assert.ok(none?.type === "storyboard_scenes");
+    assert.equal(none.brief, undefined);
+
+    const long = await readEvents(
+      await app.chat(chatRequest({ messages: [{ role: "user", text: " " + "x".repeat(MAX_BRIEF_CHARS * 3), photoAssetId }], intent: "storyboard" })),
+    );
+    const plan = proposed(long);
     assert.ok(plan?.type === "storyboard_scenes");
     assert.equal(plan.brief?.length, MAX_BRIEF_CHARS);
   });

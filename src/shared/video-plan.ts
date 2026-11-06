@@ -41,6 +41,18 @@ export function planClips(requestedSeconds: number): ClipPlan {
 }
 
 /**
+ * The length a seller's own words ask for: a number of seconds written as "10 detik", "30s" or "20 sec", taken as the
+ * nearest length the app can make that is not longer ("15 detik" is 10). A time under 10 seconds is not a video length
+ * ("teks muncul 3 detik"), so it asks for nothing. Found by a fixed pattern, not by a model, so it can be relied on.
+ */
+export function requestedLength(text: string | undefined): (typeof VIDEO_LENGTH_CHOICES)[number] | undefined {
+  const match = text?.match(/(?<![\d.,])(\d{1,2})\s*(?:detik|dtk|sec(?:ond)?s?|s)\b/i);
+  const asked = match ? Number(match[1]) : 0;
+  if (asked < VIDEO_LENGTH_CHOICES[0]) return undefined;
+  return VIDEO_LENGTH_CHOICES.filter((choice) => choice <= asked).at(-1);
+}
+
+/**
  * The length and clips of a video the planner chose: its seconds when they fit the number of clips it wrote, otherwise
  * the length among the choices that has that many clips. Nothing when no length the app can make fits.
  */

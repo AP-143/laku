@@ -8,6 +8,7 @@ import {
   MAX_CLIPS,
   MAX_VIDEO_SECONDS,
   lineMustEndBy,
+  requestedLength,
   sanitizeGrade,
   sanitizeMusicPlan,
   sanitizeNarration,
@@ -16,7 +17,7 @@ import {
 } from "../shared/video-plan";
 import { isAssetId, type AssetFile, type AssetStore } from "./asset-store";
 import { readBoundedBytes } from "./bounded-body";
-import { DEFAULT_DELIVERY, narrationFits, NARRATION_WORD_SLACK, wordRange, type Intent } from "./chat-prompt";
+import { DEFAULT_DELIVERY, fitPlanToLength, narrationFits, NARRATION_WORD_SLACK, wordRange, type Intent } from "./chat-prompt";
 import { eventResponse } from "./event-response";
 import { NotAProductError, createImageJobs } from "./image-jobs";
 import { revisionPrompt, sheetPrompt, silentActor, studioPhotoPrompt, withoutMusic } from "./image-prompts";
@@ -419,13 +420,20 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
        * rest; it is only told what the app adds afterwards: a narrator, and music.
        */
       async function planVideoChoice(picture: AssetFile, wish: string | undefined): Promise<VideoChoice> {
-        const planned = await models.planVideo({
+        const ask = {
           scenes: conversation!.scenes,
           artDirection: conversation!.artDirection,
           brief: conversation!.brief,
           wish: wish || undefined,
           sheet: picture,
-        });
+        };
+        // A length the seller wrote is the length of the video, whatever the planner thinks suits the story better: what
+        // they typed now wins over their first request. The planner is told, asked once more if it still chose another,
+        // and then its plan is fitted to the length asked for. A text model only: never a second video.
+        const length = requestedLength(wish) ?? requestedLength(conversation!.brief);
+        let planned = await models.planVideo({ ...ask, length });
+        if (length && planned.seconds !== length) planned = await models.planVideo({ ...ask, length, wrong: planned.seconds });
+        if (length && planned.seconds !== length) planned = fitPlanToLength(planned, length);
         let clipStart = 0;
         const narration: NarrationLine[] = [];
         for (const [index, clip] of planned.clips.entries()) {
@@ -631,8 +639,9 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         if (intent === "storyboard") {
           if (!source || !sourceAssetId) return reply(NEED_PHOTO_MESSAGE);
           // Only the text is planned here (no image, no cost); the picture waits for approval.
-          const { scenes, artDirection, brief } = await models.planScenes(source, lastText);
-          return proposeScenes(sourceAssetId, scenes, SCENES_PROPOSED_MESSAGE, artDirection, brief);
+          const { scenes, artDirection } = await models.planScenes(source, lastText);
+          // The seller's own words go on with the storyboard to plan the video, as they wrote them and not as a model put them.
+          return proposeScenes(sourceAssetId, scenes, SCENES_PROPOSED_MESSAGE, artDirection, lastText.slice(0, MAX_BRIEF_CHARS).trim() || undefined);
         }
 
         // Typing "oke setuju" approves the open storyboard like the button does.

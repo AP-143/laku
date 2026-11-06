@@ -30,8 +30,6 @@ interface FakeChatModelOptions {
   scenes?: string[];
   /** The art direction the planner picks for the product (look, colour, effects). Left out when not given. */
   artDirection?: string;
-  /** What the storyboard planner writes down as the seller's wish for the final video (anything, so a bad answer can be tested). */
-  brief?: unknown;
   /** Make the planner that shares the scenes over the video clips fail. */
   failVideoPlan?: boolean;
   /**
@@ -50,8 +48,8 @@ interface FakeChatModelOptions {
   };
   /** The scene the editor rewrites (scene is 1 to 4). */
   replacement?: { scene: number; text: string };
-  /** The length the video planner chooses, in seconds (10, 20 or 30); 10 when left out. */
-  videoSeconds?: number;
+  /** The length the video planner chooses, in seconds (10, 20 or 30); 10 when left out. A list is one answer for each planner call, the last one repeating. */
+  videoSeconds?: number | number[];
   /** Whether the video planner chooses a voice-over (the lines of `videoPlan.narration`); none when left out. */
   voiceOver?: boolean;
   /** What the voice reviser finds in a message about changing the narration. */
@@ -74,6 +72,7 @@ function taskOf(callOptions: LanguageModelV4CallOptions): string | undefined {
  * The streamed reply is the chat; the single-shot answer is the product check (YES or NO).
  */
 export function fakeChatModel(options: FakeChatModelOptions) {
+  let planCalls = 0;
   return new MockLanguageModelV4({
     doGenerate: async (callOptions) => {
       const task = taskOf(callOptions);
@@ -83,7 +82,9 @@ export function fakeChatModel(options: FakeChatModelOptions) {
       if (task === "video-plan" && options.failVideoPlan) throw new Error("fake video plan failure");
       const yesNo = (yes: boolean) => (yes ? "YES" : "NO");
       // The directions are "Direction for clip 1", "Direction for clip 2" and so on, one per clip of the length chosen.
-      const chosen = planClips(options.videoSeconds ?? 10);
+      const given = options.videoSeconds ?? 10;
+      const planned = task === "video-plan" ? planCalls++ : 0;
+      const chosen = planClips(Array.isArray(given) ? given[Math.min(planned, given.length - 1)] : given);
       const seconds = chosen.ok ? chosen.seconds : 10;
       const clipCount = chosen.ok ? chosen.clips.length : 2;
       const answer =
@@ -108,7 +109,7 @@ export function fakeChatModel(options: FakeChatModelOptions) {
             : task === "intent"
               ? (options.intent ?? "CHAT")
               : task === "plan-scenes"
-                ? JSON.stringify({ scenes: options.scenes, artDirection: options.artDirection, brief: options.brief })
+                ? JSON.stringify({ scenes: options.scenes, artDirection: options.artDirection})
                 : task === "replace-scene"
                   ? JSON.stringify(options.replacement)
                   : task === "voice-revision"

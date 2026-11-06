@@ -819,11 +819,11 @@ describe("confirming an expensive video", () => {
   });
 
   it("asks again when the video would now cost more than the price the seller said yes to", async () => {
-    // The seller agreed to US$2.00, but this time the request is read as 30 seconds (US$3.00).
+    // The seller agreed to US$2.00, but this time the planner chooses 30 seconds (US$3.00); the request names no length.
     const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 30 }));
     const sheet = await uploadSheet(app);
 
-    const events = await readEvents(await app.chat(videoRequest("video 20 detik", sheet, { confirmedUsd: 2 })));
+    const events = await readEvents(await app.chat(videoRequest("bikinin video iklan dong", sheet, { confirmedUsd: 2 })));
 
     const ask = confirmationOf(events);
     assert.ok(ask && ask.type === "confirmation_requested");
@@ -961,14 +961,14 @@ describe("a video whose length, voice-over and music the AI chooses", () => {
   it("tells the planner that it chooses the length, the voice-over and the music, and passes on what a typed request says", async () => {
     const typedChat = fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 20 });
     const typedApp = createTestApp(typedChat);
-    const typed = await readEvents(await typedApp.chat(videoRequest("buat video 20 detik dong pakai suara", await uploadSheet(typedApp))));
+    const typed = await readEvents(await typedApp.chat(videoRequest("buat video yang santai dong pakai suara", await uploadSheet(typedApp))));
 
     const buttonChat = fakeChatModel({ chunks: ["x"] });
     const pressed = createTestApp(buttonChat);
     await readEvents(await pressed.chat(button(await uploadSheet(pressed))));
 
     const prompt = JSON.stringify(planCalls(typedChat)[0].prompt);
-    for (const need of [/buat video 20 detik dong pakai suara/, /choose \\+"seconds/, /voiceOver/, /choose \\+"use/, /10 seconds/, /20 seconds/, /30 seconds/]) {
+    for (const need of [/buat video yang santai dong pakai suara/, /choose \\+"seconds/, /voiceOver/, /choose \\+"use/, /10 seconds/, /20 seconds/, /30 seconds/]) {
       assert.match(prompt, need);
     }
     // A typed request that costs more than US$1 asks, like the button.
@@ -1453,5 +1453,114 @@ describe("video spending", () => {
 
     // The first clip (6 s, US$0.60) stays booked; the clip that never started (4 s) is given back.
     assert.equal((await usageOf(app)).monthUsd, 0.6);
+  });
+});
+
+/** What the seller wrote in the first request is kept as it was written, and a length they named is the length of the video. */
+describe("a video of the length the seller asked for", () => {
+  const FIRST = "buatkan storyboard dan video 10 detik";
+  const button = (sheet: string, extra: object = {}) =>
+    videoRequest("Buat video dari storyboard ini.", sheet, { video: true, scenes: ["a", "b", "c", "d", "e", "f"], ...extra });
+  const askOf = (events: ChatEvent[]) => {
+    const ask = events.find((event) => event.type === "confirmation_requested");
+    assert.ok(ask && ask.type === "confirmation_requested");
+    return ask;
+  };
+  const planCalls = (chat: ReturnType<typeof fakeChatModel>) =>
+    chat.doGenerateCalls.filter((call) => JSON.stringify(call.prompt).includes("[task: video-plan]"));
+  const promptOf = (chat: ReturnType<typeof fakeChatModel>, call = 0) => JSON.stringify(planCalls(chat)[call].prompt);
+
+  it("tells the planner the seller's own words and that the length they named is the length", async () => {
+    const chat = fakeChatModel({ chunks: ["x"], videoSeconds: 10 });
+    const app = createTestApp(chat);
+
+    const ask = askOf(await readEvents(await app.chat(button(await uploadSheet(app), { brief: FIRST }))));
+
+    const prompt = promptOf(chat);
+    assert.ok(prompt.includes(FIRST));
+    assert.match(prompt, /must be exactly 10/);
+    assert.equal(planCalls(chat).length, 1);
+    assert.match(ask.message, /10 detik/);
+  });
+
+  it("asks the planner once more when it chose another length, and the price is for the length the seller asked for", async () => {
+    const chat = fakeChatModel({ chunks: ["x"], videoSeconds: [20, 10] });
+    const app = createTestApp(chat);
+
+    const ask = askOf(await readEvents(await app.chat(button(await uploadSheet(app), { brief: FIRST }))));
+
+    assert.equal(planCalls(chat).length, 2);
+    // The second try is told what went wrong.
+    assert.match(promptOf(chat, 1), /20 seconds/);
+    assert.match(ask.message, /10 detik/);
+    assert.equal(ask.estimatedUsd, 1);
+    assert.equal(app.videoModel.calls.length, 0);
+  });
+
+  it("makes the video the length the seller asked for even when the planner keeps choosing another, and never asks it a third time", async () => {
+    const chat = fakeChatModel({ chunks: ["x"], videoSeconds: 20 });
+    const app = createTestApp(chat);
+    const sheet = await uploadSheet(app);
+
+    const ask = askOf(await readEvents(await app.chat(button(sheet, { brief: FIRST }))));
+
+    assert.equal(planCalls(chat).length, 2);
+    assert.match(ask.message, /10 detik/);
+    assert.equal(ask.estimatedUsd, 1);
+    assert.equal(ask.videoChoice?.seconds, 10);
+    assert.equal(ask.videoChoice?.directions.length, ask.videoChoice?.clips.length);
+
+    const events = await readEvents(await app.chat(button(sheet, { brief: FIRST, videoChoice: ask.videoChoice, confirmedUsd: ask.estimatedUsd })));
+    assert.equal(planCalls(chat).length, 2);
+    assert.equal(app.videoModel.calls.length, ask.videoChoice?.clips.length);
+    assert.ok(finishedVideo(events));
+  });
+
+  it("takes a number between the options as the nearest one that is not longer, and ignores a time that is not a video length", async () => {
+    for (const [said, pinned] of [
+      ["video 15 detik", 10],
+      ["video 25 detik ya", 20],
+      ["video 35 detik", 30],
+      ["video 30s", 30],
+      ["iklan 20 sec", 20],
+    ] as const) {
+      const chat = fakeChatModel({ chunks: ["x"], videoSeconds: pinned });
+      const app = createTestApp(chat);
+      await readEvents(await app.chat(button(await uploadSheet(app), { brief: said })));
+      assert.match(promptOf(chat), new RegExp(`must be exactly ${pinned}\\b`), said);
+    }
+    for (const said of ["teks muncul 3 detik", "video yang santai", "pakai 20 gambar"]) {
+      const chat = fakeChatModel({ chunks: ["x"], videoSeconds: 20 });
+      const app = createTestApp(chat);
+      const ask = askOf(await readEvents(await app.chat(button(await uploadSheet(app), { brief: said }))));
+      assert.doesNotMatch(promptOf(chat), /must be exactly/, said);
+      assert.equal(planCalls(chat).length, 1, said);
+      // The planner is free: what it chose stands.
+      assert.match(ask.message, /20 detik/, said);
+    }
+  });
+
+  it("leaves the planner free when the first request says nothing about a length or any extra", async () => {
+    const chat = fakeChatModel({ chunks: ["x"], videoSeconds: 20 });
+    const app = createTestApp(chat);
+
+    await readEvents(await app.chat(button(await uploadSheet(app))));
+
+    assert.doesNotMatch(promptOf(chat), /must be exactly/);
+    assert.doesNotMatch(promptOf(chat), /first request/i);
+    assert.match(promptOf(chat), /everything is yours to decide/);
+  });
+
+  it("follows what is typed with the video request over the first request", async () => {
+    const chat = fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 30 });
+    const app = createTestApp(chat);
+
+    const ask = askOf(
+      await readEvents(await app.chat(videoRequest("bikin 30 detik ya", await uploadSheet(app), { brief: FIRST, scenes: ["a", "b", "c", "d", "e", "f"] }))),
+    );
+
+    assert.match(promptOf(chat), /must be exactly 30/);
+    assert.doesNotMatch(promptOf(chat), /must be exactly 10/);
+    assert.match(ask.message, /30 detik/);
   });
 });
