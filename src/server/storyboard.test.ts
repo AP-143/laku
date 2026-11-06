@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ChatEvent } from "../shared/chat-events";
-import { PANEL_SHOTS, PANEL_TITLES } from "../shared/storyboard";
+import { MAX_BRIEF_CHARS, PANEL_SHOTS, PANEL_TITLES } from "../shared/storyboard";
 import { fakeChatModel } from "./testing/fake-models";
 import { fakeImageModel } from "./testing/fake-image-model";
 import { readEvents } from "./testing/events";
@@ -269,6 +269,89 @@ describe("storyboard", () => {
 
     assert.equal(response.status, 400);
     assert.equal(app.imageModel.calls.length, 0);
+  });
+
+  it("reads the first request from the start: the planner sees all of it, and the brief it writes for the video reaches the browser", async () => {
+    const WISH = "buatkan storyboard dan video 10 detik, santai tapi bikin lapar";
+    const BRIEF_TEXT = "A relaxed, mouth-watering ad video of about 10 seconds.";
+    const chat = fakeChatModel({ chunks: ["unused"], scenes: SCENES, intent: "STORYBOARD", brief: BRIEF_TEXT });
+    const app = createTestApp(chat);
+    const photoAssetId = await uploadPhoto(app);
+
+    const events = await readEvents(await app.chat(chatRequest({ messages: [{ role: "user", text: WISH, photoAssetId }] })));
+
+    const plan = proposed(events);
+    assert.ok(plan?.type === "storyboard_scenes");
+    assert.equal(plan.brief, BRIEF_TEXT);
+    const planned = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: plan-scenes]"));
+    const prompt = JSON.stringify(planned?.prompt);
+    assert.ok(prompt.includes(WISH));
+    // The planner is asked to adapt the scenes and the look to the request, and to write down what it wants of the video.
+    assert.match(prompt, /\\+"brief/);
+    assert.match(prompt, /the final video/i);
+  });
+
+  it("has no brief when the planner writes none, and keeps only a short text as the brief", async () => {
+    for (const given of [undefined, "", "   ", 42, ["a"], { text: "x" }]) {
+      const app = newApp({ brief: given });
+      const photoAssetId = await uploadPhoto(app);
+      const events = await readEvents(
+        await app.chat(chatRequest({ messages: [{ role: "user", text: "", photoAssetId }], intent: "storyboard" })),
+      );
+      const plan = proposed(events);
+      assert.ok(plan?.type === "storyboard_scenes");
+      assert.equal(plan.brief, undefined, JSON.stringify(given));
+    }
+
+    const app = newApp({ brief: "x".repeat(MAX_BRIEF_CHARS * 3) });
+    const photoAssetId = await uploadPhoto(app);
+    const events = await readEvents(
+      await app.chat(chatRequest({ messages: [{ role: "user", text: "", photoAssetId }], intent: "storyboard" })),
+    );
+    const plan = proposed(events);
+    assert.ok(plan?.type === "storyboard_scenes");
+    assert.equal(plan.brief?.length, MAX_BRIEF_CHARS);
+  });
+
+  it("keeps the brief when one scene is replaced", async () => {
+    const app = newApp({ intent: "EDIT_SCENE", replacement: { scene: 2, text: "Scene dua baru" } });
+    const photoAssetId = await uploadPhoto(app);
+
+    const events = await readEvents(
+      await app.chat(
+        chatRequest({
+          messages: [{ role: "user", text: "ganti scene 2" }],
+          storyboard: { photoAssetId, scenes: SCENES, artDirection: ART, brief: "About 10 seconds, with a voice-over." },
+        }),
+      ),
+    );
+
+    const plan = proposed(events);
+    assert.ok(plan?.type === "storyboard_scenes");
+    assert.equal(plan.brief, "About 10 seconds, with a voice-over.");
+  });
+
+  it("rejects a brief that is not a short text, and still accepts a storyboard from before there was a brief", async () => {
+    for (const bad of [42, "x".repeat(MAX_BRIEF_CHARS + 1)]) {
+      const app = newApp();
+      const photoAssetId = await uploadPhoto(app);
+      const response = await app.chat(
+        chatRequest({
+          messages: [{ role: "user", text: "Setuju" }],
+          storyboard: { photoAssetId, scenes: SCENES, brief: bad },
+          approve: {},
+        }),
+      );
+      assert.equal(response.status, 400);
+      assert.equal(app.imageModel.calls.length, 0);
+    }
+
+    const app = newApp();
+    const photoAssetId = await uploadPhoto(app);
+    const old = await app.chat(
+      chatRequest({ messages: [{ role: "user", text: "Setuju" }], storyboard: { photoAssetId, scenes: SCENES }, approve: {} }),
+    );
+    assert.equal(old.status, 200);
   });
 
   it("asks the planner for a different shot in each panel, and for the closing caption to end with the call to buy", async () => {

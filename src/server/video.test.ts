@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { VOICES } from "../config/models";
 import type { ChatEvent } from "../shared/chat-events";
+import { MAX_BRIEF_CHARS } from "../shared/storyboard";
 import { fakeChatModel } from "./testing/fake-models";
 import { fakeMusicModel } from "./testing/fake-music-model";
 import { fakeSpeechModel } from "./testing/fake-speech-model";
@@ -974,6 +975,51 @@ describe("a video whose length, voice-over and music the AI chooses", () => {
     assert.equal(askOf(typed).estimatedUsd, 2);
     // The button has no words to pass on.
     assert.doesNotMatch(JSON.stringify(planCalls(buttonChat)[0].prompt), /The seller wrote/);
+  });
+
+  it("gives the video planner the brief of the first request, with whatever is typed with the video request", async () => {
+    const BRIEF_TEXT = "A calm, premium ad video of about 10 seconds with soft music.";
+    const briefChat = fakeChatModel({ chunks: ["x"], videoSeconds: 10 });
+    const app = createTestApp(briefChat);
+    await readEvents(await app.chat(button(await uploadSheet(app), { brief: BRIEF_TEXT })));
+
+    const both = fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10 });
+    const bothApp = createTestApp(both);
+    await readEvents(await bothApp.chat(videoRequest("pakai suara ya", await uploadSheet(bothApp), { brief: BRIEF_TEXT })));
+
+    const prompt = JSON.stringify(planCalls(briefChat)[0].prompt);
+    assert.ok(prompt.includes(BRIEF_TEXT));
+    assert.match(prompt, /first request/i);
+    // The button has no typed words, so the brief is all the seller has said.
+    assert.doesNotMatch(prompt, /The seller wrote/);
+    const typedPrompt = JSON.stringify(planCalls(both)[0].prompt);
+    assert.ok(typedPrompt.includes(BRIEF_TEXT));
+    assert.ok(typedPrompt.includes("pakai suara ya"));
+  });
+
+  it("adds nothing about a brief when there is none, and rejects a brief that is not a short text", async () => {
+    const chat = fakeChatModel({ chunks: ["x"], videoSeconds: 10 });
+    const app = createTestApp(chat);
+    const sheet = await uploadSheet(app);
+    await readEvents(await app.chat(button(sheet)));
+    assert.doesNotMatch(JSON.stringify(planCalls(chat)[0].prompt), /first request/i);
+
+    for (const bad of [42, ["a"], "x".repeat(MAX_BRIEF_CHARS + 1)]) {
+      assert.equal((await app.chat(button(sheet, { brief: bad }))).status, 400, JSON.stringify(bad).slice(0, 30));
+    }
+    assert.equal(app.videoModel.calls.length, 0);
+  });
+
+  it("does not ask the planner again on the yes, so the brief cannot change what was priced", async () => {
+    const chat = fakeChatModel({ chunks: ["x"], videoSeconds: 10 });
+    const app = createTestApp(chat);
+    const sheet = await uploadSheet(app);
+    const ask = askOf(await readEvents(await app.chat(button(sheet, { brief: "About 10 seconds." }))));
+
+    await readEvents(await app.chat(button(sheet, { brief: "About 30 seconds.", videoChoice: ask.videoChoice, confirmedUsd: ask.estimatedUsd })));
+
+    assert.equal(planCalls(chat).length, 1);
+    assert.equal(app.videoModel.calls.length, 2);
   });
 
   it("rejects a plan sent back that this server could not have made", async () => {

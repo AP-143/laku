@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { COSTS, VOICES } from "../config/models";
 import type { ChatIntent, StudioStyle } from "../shared/chat-events";
-import { MAX_ART_DIRECTION_CHARS, SCENE_COUNT } from "../shared/storyboard";
+import { MAX_ART_DIRECTION_CHARS, MAX_BRIEF_CHARS, SCENE_COUNT } from "../shared/storyboard";
 import { SCENE_REPLACED_MESSAGE, SCENES_PROPOSED_MESSAGE } from "../shared/chat-messages";
 import {
   CLIP_SECONDS,
@@ -65,6 +65,8 @@ interface Storyboard {
   scenes: string[];
   /** The look the planner picked for this product, kept with the scenes so the picture and the video share it. */
   artDirection?: string;
+  /** What the seller's first request asked of the final video, kept with the scenes so the video planner reads it. */
+  brief?: string;
 }
 
 interface Conversation {
@@ -85,6 +87,8 @@ interface Conversation {
   scenes: string[];
   /** The art direction of the storyboard, which the video is edited in. */
   artDirection?: string;
+  /** What the seller's first request asked of the final video, which the video planner reads. */
+  brief?: string;
   /** The price in US dollars the seller said yes to for an expensive video, quoted back to the server. */
   confirmedUsd?: number;
   /** The seller pressed "Generate" in the video panel. It has no options: the planner decides everything. */
@@ -134,19 +138,26 @@ function readStyle(value: unknown): StudioStyle | undefined {
 /** `null` means the field was sent but is not a valid storyboard; `undefined` means it was not sent. */
 function readStoryboard(value: unknown): Storyboard | null | undefined {
   if (value === undefined) return undefined;
-  const { photoAssetId, scenes, artDirection } = (value ?? {}) as { photoAssetId?: unknown; scenes?: unknown; artDirection?: unknown };
+  const { photoAssetId, scenes, artDirection, brief } = (value ?? {}) as { photoAssetId?: unknown; scenes?: unknown; artDirection?: unknown; brief?: unknown };
   if (typeof photoAssetId !== "string" || !isAssetId(photoAssetId)) return null;
   const direction = readArtDirection(artDirection);
-  if (direction === null) return null;
+  const wish = readBrief(brief);
+  if (direction === null || wish === null) return null;
   if (!Array.isArray(scenes) || scenes.length !== SCENE_COUNT) return null;
   if (!scenes.every((scene) => typeof scene === "string" && scene.trim() !== "" && scene.length <= MAX_SCENE_CHARS)) return null;
-  return { photoAssetId, scenes: scenes.map((scene: string) => scene.trim()), artDirection: direction };
+  return { photoAssetId, scenes: scenes.map((scene: string) => scene.trim()), artDirection: direction, brief: wish };
 }
 
 /** `null` means the field was sent but is not a short text; no field means no art direction. */
 function readArtDirection(value: unknown): string | null | undefined {
   if (value === undefined) return undefined;
   return typeof value === "string" && value.length <= MAX_ART_DIRECTION_CHARS ? value.trim() || undefined : null;
+}
+
+/** `null` means the field was sent but is not a short text; no field means the first request said nothing about the video. */
+function readBrief(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  return typeof value === "string" && value.length <= MAX_BRIEF_CHARS ? value.trim() || undefined : null;
 }
 
 /** `null` means the field was sent but is not an object; `undefined` means it was not sent. */
@@ -308,6 +319,7 @@ async function readConversation(request: Request): Promise<Conversation | undefi
     scenes?: unknown;
     revise?: unknown;
     artDirection?: unknown;
+    brief?: unknown;
   };
   if (fields.lastImageAssetId !== undefined && (typeof fields.lastImageAssetId !== "string" || !isAssetId(fields.lastImageAssetId))) {
     return undefined;
@@ -321,9 +333,10 @@ async function readConversation(request: Request): Promise<Conversation | undefi
   const scenes = readScenes(fields.scenes);
   const revise = readRevise(fields.revise);
   const artDirection = readArtDirection(fields.artDirection);
+  const brief = readBrief(fields.brief);
   // Approving needs the plan it approves.
   const invalid =
-    storyboard === null || approve === null || (approve && !storyboard) || video === null || videoChoice === null || sheet === null || resume === null || scenes === null || revise === null || artDirection === null;
+    storyboard === null || approve === null || (approve && !storyboard) || video === null || videoChoice === null || sheet === null || resume === null || scenes === null || revise === null || artDirection === null || brief === null;
   if (invalid) return undefined;
 
   return {
@@ -332,6 +345,7 @@ async function readConversation(request: Request): Promise<Conversation | undefi
     sheet,
     scenes,
     artDirection: artDirection ?? undefined,
+    brief: brief ?? undefined,
     resume,
     revise,
     confirmedUsd: typeof fields.confirmedUsd === "number" && Number.isFinite(fields.confirmedUsd) ? fields.confirmedUsd : undefined,
@@ -392,9 +406,9 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
       }
 
       // The words come first: the chat scrolls to its last item, and the card holds the approve button the words point to.
-      function proposeScenes(sourceAssetId: string, scenes: string[], text: string, artDirection?: string) {
+      function proposeScenes(sourceAssetId: string, scenes: string[], text: string, artDirection?: string, brief?: string) {
         send({ type: "assistant_text", text });
-        send({ type: "storyboard_scenes", sourceAssetId, scenes, artDirection });
+        send({ type: "storyboard_scenes", sourceAssetId, scenes, artDirection, brief });
         send({ type: "done" });
       }
 
@@ -408,6 +422,7 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         const planned = await models.planVideo({
           scenes: conversation!.scenes,
           artDirection: conversation!.artDirection,
+          brief: conversation!.brief,
           wish: wish || undefined,
           sheet: picture,
         });
@@ -616,8 +631,8 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         if (intent === "storyboard") {
           if (!source || !sourceAssetId) return reply(NEED_PHOTO_MESSAGE);
           // Only the text is planned here (no image, no cost); the picture waits for approval.
-          const { scenes, artDirection } = await models.planScenes(source, lastText);
-          return proposeScenes(sourceAssetId, scenes, SCENES_PROPOSED_MESSAGE, artDirection);
+          const { scenes, artDirection, brief } = await models.planScenes(source, lastText);
+          return proposeScenes(sourceAssetId, scenes, SCENES_PROPOSED_MESSAGE, artDirection, brief);
         }
 
         // Typing "oke setuju" approves the open storyboard like the button does.
@@ -626,7 +641,7 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         if (intent === "edit_scene" && storyboard) {
           const { index, text } = await models.replaceScene(storyboard.scenes, lastText);
           const scenes = storyboard.scenes.map((scene, position) => (position === index ? text : scene));
-          return proposeScenes(storyboard.photoAssetId, scenes, SCENE_REPLACED_MESSAGE, storyboard.artDirection);
+          return proposeScenes(storyboard.photoAssetId, scenes, SCENE_REPLACED_MESSAGE, storyboard.artDirection, storyboard.brief);
         }
 
         const messages = conversation.messages.map((message, index) =>

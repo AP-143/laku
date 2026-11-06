@@ -30,6 +30,8 @@ interface FakeChatModelOptions {
   scenes?: string[];
   /** The art direction the planner picks for the product (look, colour, effects). Left out when not given. */
   artDirection?: string;
+  /** What the storyboard planner writes down as the seller's wish for the final video (anything, so a bad answer can be tested). */
+  brief?: unknown;
   /** Make the planner that shares the scenes over the video clips fail. */
   failVideoPlan?: boolean;
   /**
@@ -106,7 +108,7 @@ export function fakeChatModel(options: FakeChatModelOptions) {
             : task === "intent"
               ? (options.intent ?? "CHAT")
               : task === "plan-scenes"
-                ? JSON.stringify({ scenes: options.scenes, artDirection: options.artDirection })
+                ? JSON.stringify({ scenes: options.scenes, artDirection: options.artDirection, brief: options.brief })
                 : task === "replace-scene"
                   ? JSON.stringify(options.replacement)
                   : task === "voice-revision"

@@ -32,3 +32,5 @@ export const SCENE_INDEXES: readonly number[] = Array.from({ length: SCENE_COUNT
 
 /** The most characters of the art direction a request may carry. */
 export const MAX_ART_DIRECTION_CHARS = 1200;
+/** The longest brief: one or two plain sentences about what the seller wants of the final video. */
+export const MAX_BRIEF_CHARS = 400;

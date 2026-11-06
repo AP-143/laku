@@ -50,6 +50,10 @@ _Avoid_: Shot, slide (a panel is the Scene as drawn in the Storyboard picture)
 The look of one ad, written by the planner for this product, its buyers and its story: mood, colour grade, light, the graphic style of labels and accents, and the effects, transitions and text animations that fit. It is chosen like a professional editor would, not taken from one fixed recipe, and the Storyboard picture is made in it. The video model is not given it again: it sees the look in the picture and decides the rest itself. The Seller does not see or edit it.
 _Avoid_: Style (that is the Studio photo Style), theme, template
 
+**Brief**:
+One or two plain sentences, written by the planner while it plans the Storyboard, that record what the Seller's first request asked of the final Ad video (its Length, a Voice-over, Music, the vibe). Everything the Seller said in that request also shapes the Scenes and the Art direction. The brief travels with the Storyboard to the video planner, which reads it together with any words typed with the video request (the newer words win) and decides the Length, Voice-over and Music from them; a request that said nothing about the video leaves the brief empty and the planner free. The Seller does not see or edit it.
+_Avoid_: Prompt, instructions, requirements
+
 **Approval**:
 The Seller's yes to the Scenes of a Storyboard. Nothing is drawn before it, so no image is paid for on a plan the Seller does not want.
 _Avoid_: Confirmation (that is the Price question), sign-off

@@ -17,6 +17,8 @@ export type ThreadItem =
       scenes: string[];
       /** The look the planner picked for this product, kept so the picture and the video share it. Not shown. */
       artDirection?: string;
+      /** What the first request asked of the final video, kept so the video planner reads it. Not shown. */
+      brief?: string;
       /** The finished storyboard picture: all the panels in one image. */
       sheet?: string;
       /** The scene texts the picture was made from, so a text changed afterwards can be pointed out. */
@@ -109,6 +111,11 @@ export function storyboardScenes(items: ThreadItem[]): string[] {
 /** The art direction of the newest storyboard, which a video is edited in. */
 export function storyboardArtDirection(items: ThreadItem[]): string | undefined {
   return items.findLast((item) => item.kind === "scenes")?.artDirection;
+}
+
+/** What the first request asked of the final video, from the newest storyboard. */
+export function storyboardBrief(items: ThreadItem[]): string | undefined {
+  return items.findLast((item) => item.kind === "scenes")?.brief;
 }
 
 /** The finished picture of the newest storyboard, which a video is made from. */

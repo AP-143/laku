@@ -195,12 +195,12 @@ export default function ChatApp() {
           case "storyboard_scenes": {
             if (context.scenesItemId) {
               patchItem(context.scenesItemId, (item) =>
-                item.kind === "scenes" ? { ...item, scenes: event.scenes, artDirection: event.artDirection ?? item.artDirection } : item,
+                item.kind === "scenes" ? { ...item, scenes: event.scenes, artDirection: event.artDirection ?? item.artDirection, brief: event.brief ?? item.brief } : item,
               );
             } else {
               setItems((current) => [
                 ...current,
-                { id: newId(), kind: "scenes", sourceAssetId: event.sourceAssetId, scenes: event.scenes, artDirection: event.artDirection, approved: false },
+                { id: newId(), kind: "scenes", sourceAssetId: event.sourceAssetId, scenes: event.scenes, artDirection: event.artDirection, brief: event.brief, approved: false },
               ]);
             }
             break;
@@ -314,18 +314,19 @@ export default function ChatApp() {
     ];
     const open = openStoryboard(itemsRef.current);
     // The storyboard may come from another chat, so a video chat can use a storyboard made elsewhere.
-    const { sheet, scenes, artDirection } = storyboardFor(workspaceRef.current);
+    const { sheet, scenes, artDirection, brief } = storyboardFor(workspaceRef.current);
     return {
       messages,
       // The finished storyboard picture, so a typed "video 10 detik" can be made from it.
       sheet,
       scenes: sheet ? scenes : undefined,
       artDirection: sheet ? artDirection : undefined,
+      brief: sheet ? brief : undefined,
       // The video with a narration, so "ganti narasinya..." or "pakai suara cowok" can change it without new clips.
       revise: narratedVideo(itemsRef.current),
       // The newest result, or else the photo sent earlier, so "bikin foto studio" works on a later turn.
       lastImageAssetId: lastStudioAssetId(itemsRef.current) ?? lastPhotoAssetId(itemsRef.current),
-      storyboard: open ? { photoAssetId: open.sourceAssetId, scenes: open.scenes, artDirection: open.artDirection } : undefined,
+      storyboard: open ? { photoAssetId: open.sourceAssetId, scenes: open.scenes, artDirection: open.artDirection, brief: open.brief } : undefined,
       ...extra,
     };
   }
@@ -390,6 +391,7 @@ export default function ChatApp() {
           photoAssetId: item.sourceAssetId,
           scenes: item.scenes.map((scene) => scene.trim()),
           artDirection: item.artDirection,
+          brief: item.brief,
         },
         approve: {},
       };
@@ -410,6 +412,8 @@ export default function ChatApp() {
           // The scenes let the planner share the story over the clips.
           scenes: card.scenes,
           artDirection: card.artDirection,
+          // What the first request asked of the video, so the planner starts from it.
+          brief: card.brief,
           video: true,
         },
         {},
