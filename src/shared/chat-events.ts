@@ -55,7 +55,7 @@ export type ChatEvent =
       music?: MusicPlan;
     }
   /** The proposed scenes of a storyboard (one per panel). Nothing is generated until the user approves them. */
-  | { type: "storyboard_scenes"; sourceAssetId: string; scenes: string[]; artDirection?: string }
+  | { type: "storyboard_scenes"; sourceAssetId: string; scenes: string[]; artDirection?: string; brief?: string }
   /** Something went wrong. `message` is shown to the user as is, so it is Indonesian. */
   | { type: "error"; message: string; retryable: boolean; code?: ErrorCode }
   /** This month's estimated spend changed (sent after every paid generation). */

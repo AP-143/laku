@@ -1,6 +1,6 @@
 import type { ChatIntent } from "../../shared/chat-events";
 import { OUTDATED_REPLIES } from "../../shared/chat-messages";
-import { storyboardArtDirection, storyboardScenes, storyboardSheet, type ThreadItem } from "./thread";
+import { storyboardArtDirection, storyboardBrief, storyboardScenes, storyboardSheet, type ThreadItem } from "./thread";
 
 /** The chats live in this browser only. Every access is guarded: storage can be blocked or full. */
 
@@ -115,7 +115,7 @@ function featureOf(items: ThreadItem[]): ChatIntent | undefined {
  * The storyboard a video is made from. The session on screen comes first; without a picture of its own it borrows
  * the newest storyboard of another session, so a video chat can use a storyboard made in a storyboard chat.
  */
-export function storyboardFor(workspace: Workspace): { sheet?: string; scenes: string[]; artDirection?: string } {
+export function storyboardFor(workspace: Workspace): { sheet?: string; scenes: string[]; artDirection?: string; brief?: string } {
   const here = activeSession(workspace);
   const source = storyboardSheet(here.items)
     ? here
@@ -124,6 +124,7 @@ export function storyboardFor(workspace: Workspace): { sheet?: string; scenes: s
     sheet: storyboardSheet(source.items),
     scenes: storyboardScenes(source.items),
     artDirection: storyboardArtDirection(source.items),
+    brief: storyboardBrief(source.items),
   };
 }
 

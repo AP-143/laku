@@ -76,9 +76,10 @@ export interface ModelClient {
   generateImage(request: { prompt: string; reference: AssetFile; aspectRatio: ImageAspectRatio }): Promise<AssetFile>;
   /**
    * Looks at the storyboard picture, thinks, and decides the length of the video, whether it has a voice-over and music,
-   * and what each clip plays and says. `wish` is what the seller typed, if they typed. Throws if the model fails or answers badly.
+   * and what each clip plays and says. `brief` is what the first request asked of the video and `wish` is what the seller
+   * typed with this request, if they typed. Throws if the model fails or answers badly.
    */
-  planVideo(request: { scenes: string[]; artDirection?: string; wish?: string; sheet?: AssetFile }): Promise<VideoPlan>;
+  planVideo(request: { scenes: string[]; artDirection?: string; brief?: string; wish?: string; sheet?: AssetFile }): Promise<VideoPlan>;
   /** Makes 30 seconds of instrumental music from a prompt. Throws if the model fails. Never retries. */
   generateMusic(request: { prompt: string }): Promise<Uint8Array>;
   /** Reads what the seller wants changed in a narration. Throws if the model fails or answers badly. */

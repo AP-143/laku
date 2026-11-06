@@ -29,7 +29,7 @@ Answer YES if a product or object that could be sold is clearly visible and is t
 Answer NO if there is no clear product in it, or it only shows a person, a face, a screenshot, a document, a landscape, or an animal.
 `.trim();
 
-import { MAX_ART_DIRECTION_CHARS, PANEL_SHOTS, PANEL_TITLES, SCENE_COUNT } from "../shared/storyboard";
+import { MAX_ART_DIRECTION_CHARS, MAX_BRIEF_CHARS, PANEL_SHOTS, PANEL_TITLES, SCENE_COUNT } from "../shared/storyboard";
 import {
   dialogueWords,
   planChosenLength,
@@ -58,9 +58,10 @@ Each panel is a scene of one or two sentences in casual Bahasa Indonesia describ
 The person is the same friendly person in every panel that shows one: curious or in need at first, then enjoying the product.
 End every scene with a short caption that is written on the panel, like this: ${CAPTION_MARK} "<casual Bahasa Indonesia>".
 Panels 1 to 4: a caption of at most 8 words, in the voice of the person. Panel 5: three short benefits of the product, separated by " | ". Panel 6: a short headline, then " | ", then the call to buy such as "Yuk, Pesan Sekarang!".
-${request ? `The seller asked for: ${JSON.stringify(request)}` : ""}
+${request ? `The seller's first request: ${JSON.stringify(request)}. Read all of it and let it shape the whole ad: adapt the scenes and the art direction to what it says (the mood, who the buyers are, the pace, anything about the video).` : ""}
 Also act as the art director and professional editor of this ad, and write the art direction in English, in two to four sentences. Choose it so it suits this product, the people who buy it and the story, instead of using one fixed recipe: the mood, the colour palette and colour grade, the lighting, the graphic style of the labels, bubbles and hand-drawn or digital accents (playful doodles, clean minimal lines, neon, elegant gold and so on), and which effects, transitions and text animations fit (for example steam and drips for hot food, glow and glitch for a gadget, soft light and gentle motion for skincare).
-Reply with JSON only, in this shape: {"artDirection": "<the art direction>", "scenes": [${Array.from({ length: SCENE_COUNT }, () => '"..."').join(", ")}]}
+Also write a "brief": one or two plain sentences in English that record what the seller wants of the final video (its length, a voice-over, music, the vibe), only when the request says something about it; otherwise an empty string. The video is planned later from your brief, so keep what the seller asked for in it.
+Reply with JSON only, in this shape: {"artDirection": "<the art direction>", "brief": "<the brief or an empty string>", "scenes": [${Array.from({ length: SCENE_COUNT }, () => '"..."').join(", ")}]}
 `.trim();
 }
 
@@ -84,19 +85,24 @@ function parseJsonObject(answer: string): Record<string, unknown> {
   return JSON.parse(answer.slice(start, end + 1)) as Record<string, unknown>;
 }
 
-/** The scenes of a storyboard and the art direction the planner picked for the product (none if it gave none). */
+/**
+ * The scenes of a storyboard, the art direction the planner picked for the product and the brief: what the seller's first
+ * request asked of the final video (none if it gave none).
+ */
 export interface PlannedStoryboard {
   scenes: string[];
   artDirection?: string;
+  brief?: string;
 }
 
 export function parseScenes(answer: string): PlannedStoryboard {
-  const { scenes, artDirection } = parseJsonObject(answer);
+  const { scenes, artDirection, brief } = parseJsonObject(answer);
   if (!Array.isArray(scenes) || scenes.length !== SCENE_COUNT || !scenes.every((s) => typeof s === "string" && s.trim())) {
     throw new Error("The model did not return exactly the number of scenes asked for.");
   }
   const direction = typeof artDirection === "string" ? artDirection.trim().slice(0, MAX_ART_DIRECTION_CHARS) : "";
-  return { scenes: scenes.map((scene) => (scene as string).trim()), artDirection: direction || undefined };
+  const wish = typeof brief === "string" ? brief.trim().slice(0, MAX_BRIEF_CHARS) : "";
+  return { scenes: scenes.map((scene) => (scene as string).trim()), artDirection: direction || undefined, brief: wish || undefined };
 }
 
 /** The index (0 to 3) and new text of the one scene to replace. */
@@ -113,10 +119,11 @@ export function parseReplacement(answer: string): { index: number; text: string 
  * Decides a whole video: how long it is, whether it has a voice-over and whether it has music, how the story is shared over
  * the clips, and the colour grade. The video model is given the storyboard picture and one direction per clip, so a clip
  * plays only its part and the clips together tell the whole story, in order; how it looks, moves and sounds is the video
- * model's own choice. `wish` is what the seller typed, when they typed instead of pressing the button.
+ * model's own choice. `brief` is what the first request of the seller asked of the video (the storyboard was planned from
+ * it), and `wish` is what the seller typed with this request, when they typed instead of only pressing the button.
  * Written in English because it is read by models, not by the seller.
  */
-export function videoPlanPrompt(request: { scenes: string[]; artDirection?: string; wish?: string }): string {
+export function videoPlanPrompt(request: { scenes: string[]; artDirection?: string; brief?: string; wish?: string }): string {
   const scenes =
     request.scenes.length > 0
       ? request.scenes.map((scene, index) => `${index + 1}. ${PANEL_TITLES[index] ?? "Panel"}: ${scene}`).join("\n")
@@ -132,9 +139,14 @@ export function videoPlanPrompt(request: { scenes: string[]; artDirection?: stri
       `- ${seconds} seconds: ${plan.clips.length} clips of ${plan.clips.join(", ")} seconds; a narration line of at most ${words.join(", ")} words in them; ${cuts.length > 0 ? `the cuts fall at ${cuts.join(", ")}` : "no cut inside the video"}`,
     ];
   }).join("\n");
-  const wish = request.wish
-    ? `The seller wrote: ${JSON.stringify(request.wish)}. Follow what they ask for (the length, a voice-over, music) as far as the options allow, and decide whatever they did not mention.`
-    : "The seller only pressed the Generate button: everything is yours to decide.";
+  const asked = [
+    request.brief ? `In their first request the seller asked this of the video (the storyboard was already planned from it): ${JSON.stringify(request.brief)}.` : "",
+    request.wish ? `The seller wrote: ${JSON.stringify(request.wish)}${request.brief ? " (what they wrote now wins where it differs from the first request)" : ""}.` : "",
+  ].filter(Boolean);
+  const wish =
+    asked.length > 0
+      ? `${asked.join(" ")} Follow what they ask for (the length, a voice-over, music) as far as the options allow, and decide whatever they did not mention.`
+      : "The seller only pressed the Generate button: everything is yours to decide.";
   return `
 [task: video-plan]
 You are the producer of a vertical ad video that is made from a storyboard picture (a grid of ${SCENE_COUNT} panels), in clips one after the other. Look at the picture: it shows the person and the product. You decide how long the video is, whether it has a voice-over and whether it has music.

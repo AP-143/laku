@@ -249,12 +249,13 @@ describe("chat sessions", () => {
   });
 
   describe("storyboard shared between sessions", () => {
-    const board = (id: string, sheet?: string, scenes = ["a", "b", "c", "d", "e", "f"], artDirection?: string): ThreadItem => ({
+    const board = (id: string, sheet?: string, scenes = ["a", "b", "c", "d", "e", "f"], artDirection?: string, brief?: string): ThreadItem => ({
       id,
       kind: "scenes",
       sourceAssetId: "p",
       scenes,
       artDirection,
+      brief,
       sheet,
       approved: true,
     });
@@ -264,17 +265,18 @@ describe("chat sessions", () => {
       const workspace: Workspace = {
         sessions: [
           sessionWith("video", { id: "u", kind: "user", text: "video 10 detik" }),
-          sessionWith("new", board("b2", "new-sheet", ["n-a", "n-b", "n-c", "n-d", "n-e", "n-f"], "neon look")),
+          sessionWith("new", board("b2", "new-sheet", ["n-a", "n-b", "n-c", "n-d", "n-e", "n-f"], "neon look", "About 10 seconds.")),
           sessionWith("old", board("b1", "old-sheet")),
         ],
         activeId: "video",
       };
 
-      // The look travels with the storyboard, so a video made in another chat is edited in the same style.
+      // The look and the brief travel with the storyboard, so a video made in another chat is planned and edited the same way.
       assert.deepEqual(storyboardFor(workspace), {
         sheet: "new-sheet",
         scenes: ["n-a", "n-b", "n-c", "n-d", "n-e", "n-f"],
         artDirection: "neon look",
+        brief: "About 10 seconds.",
       });
     });
 
@@ -293,7 +295,7 @@ describe("chat sessions", () => {
         activeId: "video",
       };
 
-      assert.deepEqual(storyboardFor(workspace), { sheet: undefined, scenes: [], artDirection: undefined });
+      assert.deepEqual(storyboardFor(workspace), { sheet: undefined, scenes: [], artDirection: undefined, brief: undefined });
     });
   });
 
