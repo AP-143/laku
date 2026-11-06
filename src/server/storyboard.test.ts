@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ChatEvent } from "../shared/chat-events";
-import { PANEL_SHOTS, PANEL_TITLES } from "../shared/storyboard";
+import { MAX_SCENES } from "../shared/storyboard";
 import { fakeChatModel } from "./testing/fake-models";
 import { fakeImageModel } from "./testing/fake-image-model";
 import { readEvents } from "./testing/events";
@@ -66,6 +66,68 @@ describe("storyboard", () => {
     );
   });
 
+  it("draws as many panels as the planner chose for the request, not always six", async () => {
+    for (const count of [4, 8]) {
+      const scenes = Array.from({ length: count }, (_, index) => `Adegan ${index + 1} di tempat ${index + 1}`);
+      const app = createTestApp(fakeChatModel({ chunks: ["unused"], scenes }));
+      const photoAssetId = await uploadPhoto(app);
+
+      const events = await makeStoryboard(app, photoAssetId, "storyboard video iklan 10 detik");
+
+      const plan = proposed(events);
+      assert.ok(plan?.type === "storyboard_scenes");
+      assert.deepEqual(plan.scenes, scenes);
+      assert.equal(sheets(events).length, 1);
+      // Every scene is in the one prompt, in order, and the grid is told how many there are.
+      const prompt = app.imageModel.calls[0].prompt ?? "";
+      let from = 0;
+      for (const scene of scenes) {
+        const at = prompt.indexOf(scene, from);
+        assert.ok(at >= from, `missing, or out of order: ${scene}`);
+        from = at;
+      }
+      assert.match(prompt, new RegExp(`grid of ${count} scenes`));
+    }
+  });
+
+  it("does not draw a storyboard whose planner answered with more scenes than a picture can hold, so every picture can be drawn again", async () => {
+    const scenes = Array.from({ length: MAX_SCENES + 1 }, (_, index) => `Adegan ${index + 1}`);
+    const app = createTestApp(fakeChatModel({ chunks: ["unused"], scenes }));
+    const photoAssetId = await uploadPhoto(app);
+
+    const events = await makeStoryboard(app, photoAssetId);
+
+    assert.equal(app.imageModel.calls.length, 0);
+    assert.equal(sheets(events).length, 0);
+    assert.equal(events.at(-1)?.type, "error");
+  });
+
+  it("lays an odd number of panels out in whole rows, the last one across the full width", async () => {
+    const scenes = Array.from({ length: 5 }, (_, index) => `Adegan ${index + 1} di tempat ${index + 1}`);
+    const app = createTestApp(fakeChatModel({ chunks: ["unused"], scenes }));
+    const photoAssetId = await uploadPhoto(app);
+
+    await makeStoryboard(app, photoAssetId);
+
+    const prompt = app.imageModel.calls[0].prompt ?? "";
+    assert.match(prompt, /2 columns by 3 rows/);
+    assert.match(prompt, /last scene[^.]*full width/i);
+    assert.doesNotMatch(prompt, /\d\.\d/);
+  });
+
+  it("numbers the panels and gives them no fixed titles or shots, because the planner writes each scene itself", async () => {
+    const scenes = Array.from({ length: 8 }, (_, index) => `Adegan ${index + 1} di tempat ${index + 1}`);
+    const app = createTestApp(fakeChatModel({ chunks: ["unused"], scenes }));
+    const photoAssetId = await uploadPhoto(app);
+
+    await makeStoryboard(app, photoAssetId);
+
+    const prompt = app.imageModel.calls[0].prompt ?? "";
+    scenes.forEach((scene, index) => assert.ok(prompt.includes(`${index + 1}. ${scene}`), scene));
+    assert.doesNotMatch(prompt, /undefined|Opening|Closing|Perkenalan Produk|Detail Produk|Menikmati|Keunggulan/);
+    assert.match(prompt, /label[^.]*number/i);
+  });
+
   it("draws the picture from the scenes and the art direction of this request, from the product photo, for the price of one image", async () => {
     const app = newApp({ artDirection: ART });
     const photoAssetId = await uploadPhoto(app);
@@ -77,10 +139,9 @@ describe("storyboard", () => {
     const reference = Buffer.from((await app.store.read(photoAssetId, "resized"))!.bytes);
     const file = app.imageModel.calls[0].files?.[0];
     assert.deepEqual(Buffer.from(file && file.type === "file" ? (file.data as Uint8Array) : []), reference);
-    // Every scene and every panel title is in the one prompt, in order.
+    // Every scene is in the one prompt, in order.
     const prompt = app.imageModel.calls[0].prompt ?? "";
     SCENES.forEach((scene) => assert.match(prompt, new RegExp(scene)));
-    PANEL_TITLES.forEach((title, index) => assert.match(prompt, new RegExp(`${index + 1}\\. ${title}`)));
     assert.ok(prompt.indexOf(SCENES[0]) < prompt.indexOf(SCENES[5]));
     assert.ok(prompt.includes(ART));
     // One picture costs one image, not six; vertical (9:16), so the video made from it is vertical too.
@@ -128,6 +189,21 @@ describe("storyboard", () => {
     assert.match(prompt, /suits? this product/i);
   });
 
+  it("leaves the number of panels to the planner, who is told the request decides it, instead of asking for six", async () => {
+    const chat = fakeChatModel({ chunks: ["unused"], scenes: SCENES });
+    const app = createTestApp(chat);
+    const photoAssetId = await uploadPhoto(app);
+
+    await makeStoryboard(app, photoAssetId, "storyboard video iklan 10 detik");
+
+    const planned = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: plan-scenes]"));
+    const prompt = JSON.stringify(planned?.prompt);
+    assert.ok(prompt.includes("video iklan 10 detik"));
+    assert.match(prompt, /choose how many panels/i);
+    assert.match(prompt, /length of the video/i);
+    assert.doesNotMatch(prompt, /exactly \d+ panels|Perkenalan Produk|Keunggulan/i);
+  });
+
   it("asks the planner for a different shot in each panel, and for the closing caption to end with the call to buy", async () => {
     const chat = fakeChatModel({ chunks: ["unused"], scenes: SCENES });
     const app = createTestApp(chat);
@@ -137,7 +213,7 @@ describe("storyboard", () => {
 
     const planned = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: plan-scenes]"));
     const prompt = JSON.stringify(planned?.prompt);
-    for (const shot of PANEL_SHOTS) assert.ok(prompt.includes(shot), shot);
+    assert.match(prompt, /different (kind of )?shot/i);
     assert.match(prompt, /call to buy/i);
     assert.match(prompt, /three short benefits/i);
   });
@@ -171,7 +247,7 @@ describe("storyboard", () => {
     assert.equal(app.imageModel.calls[0].aspectRatio, "9:16");
   });
 
-  it("asks for a professionally designed ad sheet, with a different kind of shot in each panel", async () => {
+  it("asks for a professionally designed ad sheet", async () => {
     // A plain grid with white captions looked flat next to a hand-finished ad storyboard.
     const app = newApp({ artDirection: ART });
     const photoAssetId = await uploadPhoto(app);
@@ -189,13 +265,6 @@ describe("storyboard", () => {
     // A real run drew the benefits twice in the checklist panel: as ticks and again in a bubble, with a raw "|" in it.
     assert.match(prompt, /only as the tick checklist/i);
     assert.match(prompt, /never write the "\|" sign/i);
-    // Each panel is told its own kind of shot, in order, so the sheet is not six copies of the same medium shot.
-    let from = 0;
-    for (const shot of PANEL_SHOTS) {
-      const at = prompt.indexOf(shot, from);
-      assert.ok(at >= from, `missing, or out of order: ${shot}`);
-      from = at;
-    }
   });
 
   it("makes the sheet with a neutral professional look when the planner gave no art direction, and says nothing odd about it", async () => {
@@ -271,11 +340,25 @@ describe("storyboard", () => {
     assert.deepEqual(events.at(-1), { type: "done" });
   });
 
-  it("rejects a retry whose scenes are not exactly six, or whose art direction is not a short text", async () => {
+  it("draws again a storyboard of any number of panels the planner chose, up to the most a picture can hold", async () => {
+    const app = newApp();
+    const photoAssetId = await uploadPhoto(app);
+
+    for (const count of [4, 8, MAX_SCENES]) {
+      const scenes = Array.from({ length: count }, (_, index) => `Adegan ${index + 1}`);
+      const response = await app.chat(chatRequest({ messages: [{ role: "user", text: "Coba lagi" }], redraw: { photoAssetId, scenes } }));
+      assert.equal(response.status, 200);
+      assert.equal(sheets(await readEvents(response)).length, 1);
+    }
+    assert.equal(app.imageModel.calls.length, 3);
+  });
+
+  it("rejects a retry with no scenes, with more scenes than a picture can hold, or whose art direction is not a short text", async () => {
     const app = newApp();
     const photoAssetId = await uploadPhoto(app);
     const bad = [
-      { photoAssetId, scenes: SCENES.slice(0, 4) },
+      { photoAssetId, scenes: [] },
+      { photoAssetId, scenes: Array.from({ length: MAX_SCENES + 1 }, (_, index) => `Adegan ${index + 1}`) },
       { photoAssetId, scenes: SCENES, artDirection: 42 },
     ];
     for (const redraw of bad) {

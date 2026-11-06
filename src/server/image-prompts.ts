@@ -1,5 +1,4 @@
 import type { StudioStyle, StylePreset } from "../shared/chat-events";
-import { PANEL_SHOTS, PANEL_TITLES } from "../shared/storyboard";
 
 /** Internal instructions for the image model. Written in English. */
 
@@ -53,19 +52,20 @@ export function clipPrompt(direction: string): string {
  * that is drawn on the panel; a "|" in a caption starts a new line (a checklist, or the call to buy).
  */
 export function sheetPrompt(scenes: readonly string[], artDirection?: string): string {
-  const listed = scenes.map((scene, index) => `${index + 1}. ${PANEL_TITLES[index]} (${PANEL_SHOTS[index]}): ${scene}`).join("\n");
+  const listed = scenes.map((scene, index) => `${index + 1}. ${scene}`).join("\n");
   return (
     `Create ONE tall vertical advertisement picture that shows the ${scenes.length} scenes of an ad in order, designed the way a professional video editor and art director would present an ad, using this exact product from the reference photo. ` +
     `Art direction, chosen for this product (follow it for the mood, colour, light, graphic style and effects): ${artDirection ?? DEFAULT_ART_DIRECTION} ` +
-    `Layout: a grid of ${scenes.length} scenes, 2 columns by ${scenes.length / 2} rows, read left to right and top to bottom, with thin white gutters that are slightly angled instead of perfectly straight. ` +
+    `Layout: a grid of ${scenes.length} scenes, 2 columns by ${Math.ceil(scenes.length / 2)} rows, read left to right and top to bottom, with thin white gutters that are slightly angled instead of perfectly straight. ` +
+    (scenes.length % 2 === 1 ? `The last scene is across the full width of the bottom row. ` : "") +
     `The photos are high-end commercial photography with crisp detail on the product. Every scene shares the same place and light. Wherever a person appears it is the same friendly Indonesian person, with the same face, hair and clothes in every scene. ` +
-    `The scenes, in order, each with the kind of shot it must be (the shots differ from scene to scene):\n${listed}\n` +
-    `Add graphics on top of the photos, like a designed ad. In the top-left corner of each scene put a dark-brown rounded pill label with white italic handwritten lettering of its number and title, written exactly as above (for example "1. ${PANEL_TITLES[0]}"). ` +
+    `The scenes, in order (each one describes its own kind of shot, so the shots differ from scene to scene):\n${listed}\n` +
+    `Add graphics on top of the photos, like a designed ad. In the top-left corner of each scene put a dark-brown rounded pill label with white italic handwritten lettering of its number only, as a single digit (for example "1"). ` +
     `Add a cream speech bubble (or cloud bubble) with bold brown handwritten lettering for the words that follow "Caption:" in that scene, copied exactly and spelled correctly in Indonesian; make the most important word bold and underlined. ` +
     `Where the caption has several lines separated by "|", write each line on its own line and never write the "|" sign itself. In the scene with three benefits show them only as the tick checklist, one line per benefit with a yellow circle tick, and give that scene no speech bubble. ` +
     `In the last scene the first line is a headline in a cream bubble and the second line is a yellow rounded call-to-action pill with an orange swoosh underline. ` +
     `Add a few small accents in the style of the art direction near the action, never covering the product or a face. ` +
-    `The only text on the picture is the number-and-title pills and the captions, each written once, with no camera notes. Show only what the scene describes; do not write the scene text itself. ${KEEP_PRODUCT}`
+    `The only text on the picture is the number pills and the captions, each written once, with no camera notes. Show only what the scene describes; do not write the scene text itself. ${KEEP_PRODUCT}`
   );
 }
 

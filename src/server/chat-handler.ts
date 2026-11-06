@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { COSTS, VOICES } from "../config/models";
 import type { ChatIntent, StudioStyle } from "../shared/chat-events";
-import { MAX_ART_DIRECTION_CHARS, SCENE_COUNT } from "../shared/storyboard";
+import { MAX_ART_DIRECTION_CHARS, MAX_SCENES } from "../shared/storyboard";
 import { STORYBOARD_READY_MESSAGE } from "../shared/chat-messages";
 import {
   CLIP_SECONDS,
@@ -61,7 +61,7 @@ const MAX_TOTAL_CHARS = 20_000;
 const MAX_SCENE_CHARS = 600;
 const MAX_DIRECTION_CHARS = 1500;
 
-/** The storyboard whose picture is to be drawn: the photo it is made from, its six scenes and the look they are drawn in. */
+/** The storyboard whose picture is to be drawn: the photo it is made from, its scenes and the look they are drawn in. */
 interface Storyboard {
   photoAssetId: string;
   scenes: string[];
@@ -133,7 +133,7 @@ function readRedraw(value: unknown): Storyboard | null | undefined {
   if (typeof photoAssetId !== "string" || !isAssetId(photoAssetId)) return null;
   const direction = readArtDirection(artDirection);
   if (direction === null) return null;
-  if (!Array.isArray(scenes) || scenes.length !== SCENE_COUNT) return null;
+  if (!Array.isArray(scenes) || scenes.length === 0 || scenes.length > MAX_SCENES) return null;
   if (!scenes.every((scene) => typeof scene === "string" && scene.trim() !== "" && scene.length <= MAX_SCENE_CHARS)) return null;
   return { photoAssetId, scenes: scenes.map((scene: string) => scene.trim()), artDirection: direction };
 }

@@ -42,7 +42,7 @@ import {
 const MAX_REPLY_TOKENS = 1024;
 /** The product check and the intent router only need one word back. */
 const MAX_CHECK_TOKENS = 16;
-/** Six short scenes with their captions and the art direction, or one rewritten scene, as JSON. */
+/** The short scenes (as many as the ad needs) with their captions and the art direction, or one rewritten scene, as JSON. */
 const MAX_SCENE_TOKENS = 1600;
 /** The reasoning, and a direction and a line to say for each of up to four clips, as JSON. */
 const MAX_PLAN_TOKENS = 2400;
@@ -66,7 +66,7 @@ export interface ModelClient {
   isProductFrame(frame: AssetFile): Promise<boolean>;
   /** Decides which feature a typed message asks for. Throws if the model fails. */
   classifyIntent(text: string, context: IntentContext): Promise<Intent>;
-  /** Proposes one scene per storyboard panel (six) and the art direction for this product. Throws if the model fails or answers badly. */
+  /** Proposes one scene per storyboard panel (the planner chooses how many) and the art direction for this product. Throws if the model fails or answers badly. */
   planScenes(photo: AssetFile, request: string): Promise<PlannedStoryboard>;
   /** Makes one image from a reference photo and an instruction. Throws if the model fails. Never retries. */
   generateImage(request: { prompt: string; reference: AssetFile; aspectRatio: ImageAspectRatio }): Promise<AssetFile>;

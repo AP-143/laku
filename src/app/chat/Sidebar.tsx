@@ -22,7 +22,7 @@ const FEATURES: Array<{ intent: ChatIntent; label: string; hint: string; icon: R
   {
     intent: "storyboard",
     label: "Storyboard",
-    hint: "6 panel iklan dalam satu gambar",
+    hint: "Panel iklan dalam satu gambar",
     icon: (
       <svg viewBox="0 0 14 14" width="14" aria-hidden="true">
         <path

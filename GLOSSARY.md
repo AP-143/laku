@@ -43,11 +43,11 @@ _Avoid_: Reel maker, Storyboard & Video
 ### Storyboard and video
 
 **Storyboard**:
-Six Scenes that together tell one short ad for the product (opening, product, detail, enjoying it, why it is good, closing), planned from a Product photo and drawn as one picture.
+The Scenes that together tell one short ad for the product (an opening first, a closing that asks to buy last), planned from a Product photo and drawn as one picture. The planner decides how many Scenes the ad needs from the Seller's request (a short video has fewer, a long one more, and a number the Seller names is used), up to 20.
 _Avoid_: Script, plan, shot list
 
 **Scene**:
-The text of one of the six moments of a Storyboard: what is seen, and the Caption written on its panel. The planner writes it and the Storyboard picture is drawn from it; the Seller does not read or edit it. It is kept only to draw the picture again on a retry.
+The text of one of the moments of a Storyboard: what is seen, and the Caption written on its panel. The planner writes it and the Storyboard picture is drawn from it; the Seller does not read or edit it. It is kept only to draw the picture again on a retry.
 _Avoid_: Shot, slide (a panel is the Scene as drawn in the Storyboard picture)
 
 **Art direction**:
@@ -55,7 +55,7 @@ The look of one ad, written by the planner for this product, its buyers and its 
 _Avoid_: Style (that is the Studio photo Style), theme, template
 
 **Storyboard picture**:
-The whole Storyboard as one tall vertical image: a grid of six panels, each with its numbered title and the Caption of its Scene (those are its only text; it carries no words about itself), made from the Product photo so the product stays the same in every panel. It is made in the same request as the Seller asks for the Storyboard (no approval of the Scenes in between), costs one image and can be made again from the same Scenes.
+The whole Storyboard as one tall vertical image: a grid of panels (two columns; an odd last panel runs across the full width), each with its number and the Caption of its Scene (those are its only text; panels have no fixed titles, and it carries no words about itself), made from the Product photo so the product stays the same in every panel. It is made in the same request as the Seller asks for the Storyboard (no approval of the Scenes in between), costs one image and can be made again from the same Scenes.
 _Avoid_: Frame, sheet (in the UI), scene image, thumbnail
 
 **Ad video**:
@@ -63,7 +63,7 @@ A vertical video made from the Storyboard picture of a Storyboard, 10, 20 or 30 
 _Avoid_: Reel, clip (a Clip is only a piece of it)
 
 **Length**:
-How long the Ad video runs: 10, 20 or 30 seconds, chosen by the planner for the story (a typed request may say what the Seller wants). All six Scenes of the picture are always in the video; a text model shares them over the Clips, so a short Length moves fast and a long one lingers.
+How long the Ad video runs: 10, 20 or 30 seconds, chosen by the planner for the story (a typed request may say what the Seller wants). All the Scenes of the picture are always in the video; a text model shares them over the Clips, so a short Length moves fast and a long one lingers.
 _Avoid_: Duration, any other number of seconds
 
 **Clip**:

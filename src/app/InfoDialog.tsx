@@ -18,7 +18,7 @@ const TOPICS: Record<Topic, { title: string; body: ReactNode }> = {
         </li>
         <li>
           <strong>Storyboard</strong>
-          <span>Storyboard 6 panel dari satu foto produk, langsung jadi satu gambar lengkap dengan judul dan caption.</span>
+          <span>Storyboard dari satu foto produk, jumlah panelnya disesuaikan AI dengan permintaanmu, langsung jadi satu gambar lengkap dengan nomor dan caption.</span>
         </li>
         <li>
           <strong>Video</strong>
