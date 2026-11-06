@@ -58,8 +58,10 @@ export function createVideoJobs(deps: {
   send: (event: ChatEvent) => void;
   /** Asked about the picture every clip is made from, so no paid path skips the product check (the frame check, not the photo one). */
   isProduct: (image: AssetFile) => Promise<boolean>;
+  /** Told what each clip is asked of the video model (the prompt only), so a bad clip can be traced to its words. */
+  log?: (message: string) => void;
 }) {
-  const { models, assets, ledger, send, isProduct } = deps;
+  const { models, assets, ledger, send, isProduct, log } = deps;
 
   /** Where a line starts and how much it is sped up: it is read in the voice and the emotion it was given. */
   async function speakLines(lines: NarrationLine[], voice: string) {
@@ -124,7 +126,9 @@ export function createVideoJobs(deps: {
           percent: Math.round((index / plan.clips.length) * 100),
         });
         try {
-          made.push(await models.generateClip({ prompt: clipPrompt(directions[index]), frame: sheet.file, seconds }));
+          const prompt = clipPrompt(directions[index]);
+          log?.(`[clip ${index + 1}/${plan.clips.length}] prompt: ${prompt}`);
+          made.push(await models.generateClip({ prompt, frame: sheet.file, seconds }));
         } catch (error) {
           // Clips that were not made are given back, and so is the voice, which was never started.
           // A clip that timed out may still be billed, so it stays booked.

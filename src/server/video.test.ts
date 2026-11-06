@@ -718,11 +718,47 @@ describe("the video model is given no rules of ours", () => {
     assert.equal(app.videoModel.calls.length, 2);
     app.videoModel.calls.forEach((call, index) => {
       assert.match(call.prompt, /storyboard of an ad/i);
+      // What the picture is is information, not a rule: a plan of scenes to film, not footage to copy.
+      assert.match(call.prompt, /a plan of its scenes to film, not footage/i);
       assert.ok(call.prompt.includes(directionOf(index)), `clip ${index + 1} plays its own part`);
       assert.ok(call.prompt.length < 220, `short: ${call.prompt.length} letters`);
       assert.doesNotMatch(call.prompt, OLD_RULES);
       // The look is already in the picture, so the art direction is not repeated to the video model.
       assert.equal(call.prompt.includes(ART.slice(0, 30)), false);
+    });
+  });
+
+  it("gives the planner the scenes by number only, and asks each clip's direction to carry the scene's story and caption words", async () => {
+    // A real run's clip drew the label "4. Opening" because the directions talked about panels and titles.
+    const chat = fakeChatModel({ chunks: ["x"] });
+    const app = createTestApp(chat);
+    const sheet = await uploadSheet(app);
+    const scenes = ["a man scratches his head. Caption: \"Duh, susah!\"", "b", "c", "d", "e", "f. Caption: \"Yuk, Pesan Sekarang!\""];
+
+    await readEvents(await app.chat(request(sheet, { artDirection: ART, scenes })));
+
+    const prompt = planPrompt(chat);
+    assert.match(prompt, /Scene 1: a man scratches his head/);
+    assert.match(prompt, /Scene 6: f. Caption: \\"Yuk, Pesan Sekarang!\\"/);
+    // No titles to reuse, and no talk of panels.
+    assert.doesNotMatch(prompt, /Opening|Perkenalan Produk|Detail Produk|Menikmati|Keunggulan|Closing|panel/i);
+    // The direction is the story in plain words, with the caption words as they were written; nothing about how the text looks.
+    assert.match(prompt, /as a film scene/i);
+    assert.match(prompt, /caption/i);
+    assert.match(prompt, /copied as written/i);
+    assert.doesNotMatch(prompt, /font|bubble|colou?r of the text|typeface/i);
+  });
+
+  it("logs the prompt of every clip, and only the prompt, so what the video model was told can be seen", async () => {
+    const logged: string[] = [];
+    const app = createTestApp(fakeChatModel({ chunks: ["x"] }), undefined, { log: (message) => logged.push(message) });
+    const sheet = await uploadSheet(app);
+
+    await readEvents(await app.chat(request(sheet)));
+
+    assert.equal(logged.length, app.videoModel.calls.length);
+    logged.forEach((message, index) => {
+      assert.equal(message, `[clip ${index + 1}/${logged.length}] prompt: ${app.videoModel.calls[index].prompt}`);
     });
   });
 
@@ -748,14 +784,14 @@ describe("the video model is given no rules of ours", () => {
     for (const call of without.videoModel.calls) assert.doesNotMatch(call.prompt, /music/i);
   });
 
-  it("asks the planner only which panels each clip plays, and none of the choices the video model makes", async () => {
+  it("asks the planner only for the story each clip plays, and none of the choices the video model makes", async () => {
     const chat = fakeChatModel({ chunks: ["x"] });
     const app = createTestApp(chat);
     await readEvents(await app.chat(request(await uploadSheet(app), { confirmedUsd: 1 })));
 
     const prompt = planPrompt(chat);
-    for (const need of [/which panels it plays/i, /none (is )?skipped/i, /think/i, /colourist/i]) assert.match(prompt, need);
-    for (const gone of [/camera move/i, /push-in/i, /effects shown/i, /acting beats/i, /sound effects/i, /transition/i, /word for word/i, /never invent/i, /caption/i, /call to buy/i]) {
+    for (const need of [/told as a film scene/i, /none (is )?skipped/i, /think/i, /colourist/i]) assert.match(prompt, need);
+    for (const gone of [/camera move/i, /push-in/i, /effects shown/i, /acting beats/i, /sound effects/i, /transition/i, /word for word/i, /never invent/i, /call to buy/i]) {
       assert.doesNotMatch(prompt, gone);
     }
   });

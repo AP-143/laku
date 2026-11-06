@@ -6,6 +6,6 @@ import { createDefaultUsageLedger } from "../../../server/usage-ledger";
 let handler: ChatHandler | undefined;
 
 export async function POST(request: Request) {
-  handler ??= createChatHandler(createDefaultModelClient(), createDefaultAssetStore(), createDefaultUsageLedger());
+  handler ??= createChatHandler(createDefaultModelClient(), createDefaultAssetStore(), createDefaultUsageLedger(), { log: console.info });
   return handler(request);
 }
