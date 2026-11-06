@@ -8,7 +8,6 @@ import {
   selectSession,
   setActiveItems,
   startSession,
-  storyboardFor,
   type ChatSession,
   type Workspace,
 } from "./saved-conversation";
@@ -27,13 +26,12 @@ function memoryStorage(initial: Record<string, string> = {}) {
 
 describe("redrawing a storyboard picture", () => {
   it("asks for the picture again from the scenes it was planned with, so nothing is planned again", () => {
-    const request = redrawRequest({ sourceAssetId: "photo", scenes: ["a", "b", "c", "d", "e", "f"], artDirection: "neon", brief: "video 10 detik" });
+    const request = redrawRequest({ sourceAssetId: "photo", scenes: ["a", "b", "c", "d", "e", "f"], artDirection: "neon" });
 
     assert.deepEqual(request.redraw, {
       photoAssetId: "photo",
       scenes: ["a", "b", "c", "d", "e", "f"],
       artDirection: "neon",
-      brief: "video 10 detik",
     });
     // It is a request on its own: no intent to guess and no stale storyboard fields of the old approve flow.
     assert.equal("approve" in request || "storyboard" in request, false);
@@ -214,8 +212,8 @@ describe("chat sessions", () => {
     const { items } = loadWorkspace(storage).sessions[0];
 
     assert.deepEqual(items.map((item) => item.id), ["u", "c1"]);
-    // A video can still be made from the storyboard that kept its picture.
-    assert.equal(storyboardFor(loadWorkspace(storage)).sheet, "sheet");
+    // The storyboard that kept its picture keeps it.
+    assert.equal(items[1].kind === "scenes" && items[1].sheet, "sheet");
   });
 
   it("keeps the single conversation saved before sessions existed as the first session", () => {
@@ -267,56 +265,6 @@ describe("chat sessions", () => {
     assert.deepEqual(workspace.sessions[0].items, []);
     assert.equal(describeSession(workspace.sessions[1]).title, "chat 31");
     assert.equal(describeSession(workspace.sessions[29]).title, "chat 3");
-  });
-
-  describe("storyboard shared between sessions", () => {
-    const board = (id: string, sheet?: string, scenes = ["a", "b", "c", "d", "e", "f"], artDirection?: string, brief?: string): ThreadItem => ({
-      id,
-      kind: "scenes",
-      sourceAssetId: "p",
-      scenes,
-      artDirection,
-      brief,
-      sheet,
-    });
-    const sessionWith = (id: string, ...items: ThreadItem[]): ChatSession => ({ id, items });
-
-    it("lets a new session make a video from the newest storyboard of another session", () => {
-      const workspace: Workspace = {
-        sessions: [
-          sessionWith("video", { id: "u", kind: "user", text: "video 10 detik" }),
-          sessionWith("new", board("b2", "new-sheet", ["n-a", "n-b", "n-c", "n-d", "n-e", "n-f"], "neon look", "About 10 seconds.")),
-          sessionWith("old", board("b1", "old-sheet")),
-        ],
-        activeId: "video",
-      };
-
-      // The look and the brief travel with the storyboard, so a video made in another chat is planned and edited the same way.
-      assert.deepEqual(storyboardFor(workspace), {
-        sheet: "new-sheet",
-        scenes: ["n-a", "n-b", "n-c", "n-d", "n-e", "n-f"],
-        artDirection: "neon look",
-        brief: "About 10 seconds.",
-      });
-    });
-
-    it("prefers the storyboard of the session on screen", () => {
-      const workspace: Workspace = {
-        sessions: [sessionWith("here", board("b1", "mine")), sessionWith("other", board("b2", "theirs"))],
-        activeId: "here",
-      };
-
-      assert.equal(storyboardFor(workspace).sheet, "mine");
-    });
-
-    it("ignores storyboards of other sessions that have no picture yet", () => {
-      const workspace: Workspace = {
-        sessions: [sessionWith("video"), sessionWith("draft", board("b1"))],
-        activeId: "video",
-      };
-
-      assert.deepEqual(storyboardFor(workspace), { sheet: undefined, scenes: [], artDirection: undefined, brief: undefined });
-    });
   });
 
   it("does not save that the picture was still being drawn", () => {

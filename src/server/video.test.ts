@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { VOICES } from "../config/models";
 import type { ChatEvent } from "../shared/chat-events";
-import { MAX_BRIEF_CHARS } from "../shared/storyboard";
 import { fakeChatModel } from "./testing/fake-models";
 import { fakeMusicModel } from "./testing/fake-music-model";
 import { fakeSpeechModel } from "./testing/fake-speech-model";
@@ -29,9 +28,12 @@ async function uploadSheet(app: App): Promise<string> {
   return uploadPhoto(app, "#cc3333");
 }
 
-/** A request with the storyboard picture the video is made from. */
+/** A price high enough to cover any video, so a test of something else is not stopped by the price question. */
+const ANY_PRICE_USD = 10;
+
+/** A request in the Video feature, with the storyboard picture attached to the message and the price already agreed. */
 const videoRequest = (text: string, sheet: string | undefined, extra: object = {}) =>
-  chatRequest({ messages: [{ role: "user", text }], sheet, ...extra });
+  chatRequest({ messages: [{ role: "user", text, photoAssetId: sheet }], intent: "video", sheet, confirmedUsd: ANY_PRICE_USD, ...extra });
 
 /** The art direction the planner picked, sent back with the video request. */
 const ART = "Night-time neon palette of electric blue and magenta, glossy highlights, glitchy speed-ramp transitions and HUD-style graphic accents.";
@@ -124,7 +126,7 @@ describe("video from the storyboard", () => {
 /** The "Generate" button under a storyboard picture: a flag with no options, since the planner chooses the length. */
 describe("video from the button of a storyboard picture", () => {
   const buttonRequest = (sheet: string | undefined, extra: object = {}) =>
-    videoRequest("Buat video dari storyboard ini.", sheet, { video: true, ...extra });
+    videoRequest("", sheet, { confirmedUsd: undefined, ...extra });
 
   it("fits 10, 20 and 30 seconds with 2, 3 and 4 clips that add up to the length, all from the same picture", async () => {
     for (const [seconds, clips] of [
@@ -146,20 +148,17 @@ describe("video from the button of a storyboard picture", () => {
     }
   });
 
-  it("asks the text model to share the scenes over the clips in order, and does not ask what the seller meant", async () => {
-    // The router would call this message plain chat: the button decides.
+  it("plans the video once and does not ask what the seller meant", async () => {
+    // The router would call this message plain chat: the Video feature decides.
     const chat = fakeChatModel({ chunks: ["x"], videoSeconds: 20 });
     const app = createTestApp(chat);
     const sheet = await uploadSheet(app);
-    const scenes = ["Satu di dapur", "Dua di meja", "Tiga", "Empat", "Lima", "Enam di kasir"];
 
-    await readEvents(await app.chat(buttonRequest(sheet, { scenes, confirmedUsd: 2 })));
+    await readEvents(await app.chat(buttonRequest(sheet, { confirmedUsd: 2 })));
 
     const planned = chat.doGenerateCalls.filter((call) => JSON.stringify(call.prompt).includes("[task: video-plan]"));
     assert.equal(planned.length, 1);
-    const prompt = JSON.stringify(planned[0].prompt);
     assert.equal(app.videoModel.calls.length, 3);
-    assert.ok(prompt.indexOf("Satu di dapur") < prompt.indexOf("Enam di kasir"));
     // Only the product check of the picture and this plan asked the chat model anything.
     assert.equal(chat.doGenerateCalls.length, 2);
   });
@@ -185,18 +184,6 @@ describe("video from the button of a storyboard picture", () => {
     assert.ok(finishedVideo(events));
     assert.equal(app.videoModel.calls.length, 2);
     assert.deepEqual(events.at(-1), { type: "done" });
-  });
-
-  it("takes the button as a flag, and refuses a value that is neither a flag nor an object", async () => {
-    const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
-    const sheet = await uploadSheet(app);
-
-    for (const video of [true, {}]) {
-      assert.equal((await app.chat(videoRequest("Buat video.", sheet, { video }))).status, 200, JSON.stringify(video));
-    }
-    for (const video of ["yes", 20, null, false]) {
-      assert.equal((await app.chat(videoRequest("Buat video.", sheet, { video }))).status, 400, JSON.stringify(video));
-    }
   });
 
   it("always asks for the price first, whatever the length, and spends nothing until the seller agrees", async () => {
@@ -267,7 +254,7 @@ describe("video from the button of a storyboard picture", () => {
     const sheet = await uploadSheet(app);
 
     const events = await readEvents(
-      await app.chat(buttonRequest(sheet, { scenes: ["a", "b", "c", "d"], confirmedUsd: 3.009 })),
+      await app.chat(buttonRequest(sheet, { confirmedUsd: 3.009 })),
     );
 
     assert.equal(errorOf(events), undefined);
@@ -285,22 +272,13 @@ describe("video from the button of a storyboard picture", () => {
     assert.equal(app.speechModel.calls.length, 0);
   });
 
-  it("asks for the storyboard first when the button is pressed without a storyboard picture", async () => {
-    const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
-
-    const events = await readEvents(await app.chat(buttonRequest(undefined)));
-
-    const text = events.flatMap((event) => (event.type === "assistant_text" ? [event.text] : [])).join("");
-    assert.match(text, /storyboard/i);
-    assert.equal(app.videoModel.calls.length, 0);
-  });
 });
 
 /** The sound of the video: the actor is silent and a narrator speaks one line for each moment of the acting. */
 describe("a video that sounds and moves naturally", () => {
   const PROFILE = "Warm young Indonesian man, relaxed and friendly, medium pace";
-  const buttonRequest = (sheet: string | undefined, extra: object = {}) => videoRequest("Buat video dari storyboard ini.", sheet, { video: true, ...extra });
-  const voiceRequest = (sheet: string) => buttonRequest(sheet, { scenes: ["a", "b", "c", "d", "e", "f"], confirmedUsd: 1.003 });
+  const buttonRequest = (sheet: string | undefined, extra: object = {}) => videoRequest("", sheet, { confirmedUsd: undefined, ...extra });
+  const voiceRequest = (sheet: string) => buttonRequest(sheet, { confirmedUsd: 1.003 });
 
   it("keeps the actor silent and has a narrator, in the voice that suits the actor, say what the actor feels", async () => {
     const chat = fakeChatModel({ chunks: ["x"], voiceOver: true, videoPlan: { voice: "male", voiceProfile: PROFILE } });
@@ -447,14 +425,14 @@ describe("a video that sounds and moves naturally", () => {
 });
 
 describe("a video that is finished like a professional edit", () => {
-  const buttonRequest = (sheet: string | undefined, extra: object = {}) => videoRequest("Buat video dari storyboard ini.", sheet, { video: true, ...extra });
+  const buttonRequest = (sheet: string | undefined, extra: object = {}) => videoRequest("", sheet, { confirmedUsd: undefined, ...extra });
 
-  const voiceRequestFor = (sheet: string) => buttonRequest(sheet, { scenes: ["a", "b", "c", "d", "e", "f"], confirmedUsd: 1.003 });
+  const voiceRequestFor = (sheet: string) => buttonRequest(sheet, { confirmedUsd: 1.003 });
 
   async function finished(videoPlan: Parameters<typeof fakeChatModel>[0]["videoPlan"], extra: object = {}) {
     const app = createTestApp(fakeChatModel({ chunks: ["x"], videoPlan }));
     const sheet = await uploadSheet(app);
-    const events = await readEvents(await app.chat(videoRequest("Buat video dari storyboard ini.", sheet, { video: true, confirmedUsd: 1, ...extra })));
+    const events = await readEvents(await app.chat(videoRequest("", sheet, { confirmedUsd: 1, ...extra })));
     const ready = finishedVideo(events);
     assert.ok(ready && ready.type === "asset_ready");
     return { app, sheet, events, bytes: new Uint8Array((await app.store.read(ready.assetId, "original"))!.bytes) };
@@ -494,7 +472,7 @@ describe("a video that is finished like a professional edit", () => {
     const model = fakeVideoModel({ failOnClip: 1, failWith: Object.assign(new Error("bad request"), { statusCode: 400 }) });
     const app = createTestApp(fakeChatModel({ chunks: ["x"], videoPlan: { grade: { saturation: 1.2, grain: 0, vignette: false } } }), undefined, { videoModel: model });
     const sheet = await uploadSheet(app);
-    const first = await readEvents(await app.chat(videoRequest("Buat video dari storyboard ini.", sheet, { video: true, confirmedUsd: 1 })));
+    const first = await readEvents(await app.chat(videoRequest("", sheet, { confirmedUsd: 1 })));
     const partial = first.find((event) => event.type === "video_partial");
     assert.ok(partial && partial.type === "video_partial");
     assert.equal(partial.grade.saturation, 1.2);
@@ -528,7 +506,7 @@ describe("a video that is finished like a professional edit", () => {
 describe("music under the video", () => {
   const BRIEF = "Upbeat lo-fi hip hop at 92 BPM in D minor, warm Rhodes piano and soft drums, steady energy from the first beat.";
   const musicRequest = (sheet: string, extra: object = {}) =>
-    videoRequest("Buat video dari storyboard ini.", sheet, { video: true, confirmedUsd: 1.04, ...extra });
+    videoRequest("", sheet, { confirmedUsd: 1.04, ...extra });
 
   it("adds the music the planner designed, ends it with a fade, and books its price with the video", async () => {
     const chat = fakeChatModel({ chunks: ["x"], videoPlan: { music: { brief: BRIEF, level: 0.2 } } });
@@ -555,7 +533,7 @@ describe("music under the video", () => {
     const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
     const sheet = await uploadSheet(app);
 
-    const events = await readEvents(await app.chat(videoRequest("Buat video dari storyboard ini.", sheet, { video: true, confirmedUsd: 1 })));
+    const events = await readEvents(await app.chat(videoRequest("", sheet, { confirmedUsd: 1 })));
 
     assert.equal(app.musicModel.calls.length, 0);
     const ready = finishedVideo(events);
@@ -568,7 +546,7 @@ describe("music under the video", () => {
     const app = createTestApp(fakeChatModel({ chunks: ["x"], videoPlan: { music: { brief: BRIEF } } }));
     const sheet = await uploadSheet(app);
 
-    const asked = await readEvents(await app.chat(videoRequest("Buat video dari storyboard ini.", sheet, { video: true })));
+    const asked = await readEvents(await app.chat(videoRequest("", sheet, { confirmedUsd: undefined })));
     const ask = asked.find((event) => event.type === "confirmation_requested");
     assert.ok(ask && ask.type === "confirmation_requested");
     assert.equal(ask.estimatedUsd, 1.04);
@@ -655,7 +633,7 @@ describe("music under the video", () => {
 /** The video model is given the storyboard picture as it is. The app draws no text and cleans nothing. */
 describe("the storyboard picture as the reference of the video model", () => {
   const request = (sheet: string, extra: object = {}) =>
-    videoRequest("Buat video dari storyboard ini.", sheet, { video: true, confirmedUsd: 1, ...extra });
+    videoRequest("", sheet, { confirmedUsd: 1, ...extra });
   it("makes every clip from the storyboard picture as it is, with no picture drawn first and none booked", async () => {
     const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
     const sheet = await uploadSheet(app);
@@ -702,7 +680,7 @@ describe("the storyboard picture as the reference of the video model", () => {
 
 /** The video model decides everything about how the ad looks and sounds: the app only names the part and what is added later. */
 describe("the video model is given no rules of ours", () => {
-  const request = (sheet: string, extra: object = {}) => videoRequest("Buat video dari storyboard ini.", sheet, { video: true, confirmedUsd: 1.04, ...extra });
+  const request = (sheet: string, extra: object = {}) => videoRequest("", sheet, { confirmedUsd: 1.04, ...extra });
   const planPrompt = (chat: ReturnType<typeof fakeChatModel>) =>
     JSON.stringify(chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: video-plan]"))?.prompt);
   // Every word of advice we used to give: how to move, act, sound, grade, show text, or what a storyboard sheet is.
@@ -713,7 +691,7 @@ describe("the video model is given no rules of ours", () => {
     const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
     const sheet = await uploadSheet(app);
 
-    await readEvents(await app.chat(request(sheet, { artDirection: ART, scenes: ["a", "b", "c", "d", "e", "f"] })));
+    await readEvents(await app.chat(request(sheet, { artDirection: ART })));
 
     assert.equal(app.videoModel.calls.length, 2);
     app.videoModel.calls.forEach((call, index) => {
@@ -728,18 +706,14 @@ describe("the video model is given no rules of ours", () => {
     });
   });
 
-  it("gives the planner the scenes by number only, and asks each clip's direction to carry the scene's story and caption words", async () => {
+  it("asks each clip's direction to carry the story of its scenes and their caption words, and gives the planner no titles to reuse", async () => {
     // A real run's clip drew the label "4. Opening" because the directions talked about panels and titles.
     const chat = fakeChatModel({ chunks: ["x"] });
     const app = createTestApp(chat);
     const sheet = await uploadSheet(app);
-    const scenes = ["a man scratches his head. Caption: \"Duh, susah!\"", "b", "c", "d", "e", "f. Caption: \"Yuk, Pesan Sekarang!\""];
-
-    await readEvents(await app.chat(request(sheet, { artDirection: ART, scenes })));
+    await readEvents(await app.chat(request(sheet, {})));
 
     const prompt = planPrompt(chat);
-    assert.match(prompt, /Scene 1: a man scratches his head/);
-    assert.match(prompt, /Scene 6: f. Caption: \\"Yuk, Pesan Sekarang!\\"/);
     // No titles to reuse, and no talk of panels.
     assert.doesNotMatch(prompt, /Opening|Perkenalan Produk|Detail Produk|Menikmati|Keunggulan|Closing|panel/i);
     // The direction is the story in plain words, with the caption words as they were written; nothing about how the text looks.
@@ -803,7 +777,7 @@ describe("texture that stays tasteful", () => {
   async function finished(videoPlan: Parameters<typeof fakeChatModel>[0]["videoPlan"]) {
     const app = createTestApp(fakeChatModel({ chunks: ["x"], videoPlan }));
     const sheet = await uploadSheet(app);
-    const events = await readEvents(await app.chat(videoRequest("Buat video dari storyboard ini.", sheet, { video: true, confirmedUsd: 1 })));
+    const events = await readEvents(await app.chat(videoRequest("", sheet, { confirmedUsd: 1 })));
     const ready = finishedVideo(events);
     assert.ok(ready && ready.type === "asset_ready");
     return { events, bytes: new Uint8Array((await app.store.read(ready.assetId, "original"))!.bytes) };
@@ -828,7 +802,7 @@ describe("confirming an expensive video", () => {
     const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 20 }));
     const sheet = await uploadSheet(app);
 
-    const events = await readEvents(await app.chat(videoRequest("video 20 detik", sheet)));
+    const events = await readEvents(await app.chat(videoRequest("video 20 detik", sheet, { confirmedUsd: undefined })));
 
     const ask = confirmationOf(events);
     assert.ok(ask && ask.type === "confirmation_requested");
@@ -868,21 +842,12 @@ describe("confirming an expensive video", () => {
     assert.equal((await usageOf(app)).monthUsd, 0);
   });
 
-  it("starts straight away at US$1 or less, with no question", async () => {
-    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10 }));
-    const sheet = await uploadSheet(app);
-
-    const events = await readEvents(await app.chat(videoRequest("video 10 detik", sheet)));
-
-    assert.equal(confirmationOf(events), undefined);
-    assert.ok(finishedVideo(events));
-  });
 });
 
 /** The "Generate" button has no options: the planner decides the length, the voice-over and the music, and the seller says yes to the price. */
 describe("a video whose length, voice-over and music the AI chooses", () => {
   const button = (sheet: string, extra: object = {}) =>
-    videoRequest("Buat video dari storyboard ini.", sheet, { video: true, scenes: ["a", "b", "c", "d", "e", "f"], ...extra });
+    videoRequest("", sheet, { confirmedUsd: undefined, ...extra });
   const askOf = (events: ChatEvent[]) => {
     const ask = events.find((event) => event.type === "confirmation_requested");
     assert.ok(ask && ask.type === "confirmation_requested");
@@ -997,7 +962,7 @@ describe("a video whose length, voice-over and music the AI chooses", () => {
   it("tells the planner that it chooses the length, the voice-over and the music, and passes on what a typed request says", async () => {
     const typedChat = fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 20 });
     const typedApp = createTestApp(typedChat);
-    const typed = await readEvents(await typedApp.chat(videoRequest("buat video yang santai dong pakai suara", await uploadSheet(typedApp))));
+    const typed = await readEvents(await typedApp.chat(videoRequest("buat video yang santai dong pakai suara", await uploadSheet(typedApp), { confirmedUsd: undefined })));
 
     const buttonChat = fakeChatModel({ chunks: ["x"] });
     const pressed = createTestApp(buttonChat);
@@ -1007,55 +972,10 @@ describe("a video whose length, voice-over and music the AI chooses", () => {
     for (const need of [/buat video yang santai dong pakai suara/, /choose \\+"seconds/, /voiceOver/, /choose \\+"use/, /10 seconds/, /20 seconds/, /30 seconds/]) {
       assert.match(prompt, need);
     }
-    // A typed request that costs more than US$1 asks, like the button.
+    // The price is asked first, whatever is typed.
     assert.equal(askOf(typed).estimatedUsd, 2);
-    // The button has no words to pass on.
+    // Nothing typed, nothing to pass on.
     assert.doesNotMatch(JSON.stringify(planCalls(buttonChat)[0].prompt), /The seller wrote/);
-  });
-
-  it("gives the video planner the brief of the first request, with whatever is typed with the video request", async () => {
-    const BRIEF_TEXT = "A calm, premium ad video of about 10 seconds with soft music.";
-    const briefChat = fakeChatModel({ chunks: ["x"], videoSeconds: 10 });
-    const app = createTestApp(briefChat);
-    await readEvents(await app.chat(button(await uploadSheet(app), { brief: BRIEF_TEXT })));
-
-    const both = fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10 });
-    const bothApp = createTestApp(both);
-    await readEvents(await bothApp.chat(videoRequest("pakai suara ya", await uploadSheet(bothApp), { brief: BRIEF_TEXT })));
-
-    const prompt = JSON.stringify(planCalls(briefChat)[0].prompt);
-    assert.ok(prompt.includes(BRIEF_TEXT));
-    assert.match(prompt, /first request/i);
-    // The button has no typed words, so the brief is all the seller has said.
-    assert.doesNotMatch(prompt, /The seller wrote/);
-    const typedPrompt = JSON.stringify(planCalls(both)[0].prompt);
-    assert.ok(typedPrompt.includes(BRIEF_TEXT));
-    assert.ok(typedPrompt.includes("pakai suara ya"));
-  });
-
-  it("adds nothing about a brief when there is none, and rejects a brief that is not a short text", async () => {
-    const chat = fakeChatModel({ chunks: ["x"], videoSeconds: 10 });
-    const app = createTestApp(chat);
-    const sheet = await uploadSheet(app);
-    await readEvents(await app.chat(button(sheet)));
-    assert.doesNotMatch(JSON.stringify(planCalls(chat)[0].prompt), /first request/i);
-
-    for (const bad of [42, ["a"], "x".repeat(MAX_BRIEF_CHARS + 1)]) {
-      assert.equal((await app.chat(button(sheet, { brief: bad }))).status, 400, JSON.stringify(bad).slice(0, 30));
-    }
-    assert.equal(app.videoModel.calls.length, 0);
-  });
-
-  it("does not ask the planner again on the yes, so the brief cannot change what was priced", async () => {
-    const chat = fakeChatModel({ chunks: ["x"], videoSeconds: 10 });
-    const app = createTestApp(chat);
-    const sheet = await uploadSheet(app);
-    const ask = askOf(await readEvents(await app.chat(button(sheet, { brief: "About 10 seconds." }))));
-
-    await readEvents(await app.chat(button(sheet, { brief: "About 30 seconds.", videoChoice: ask.videoChoice, confirmedUsd: ask.estimatedUsd })));
-
-    assert.equal(planCalls(chat).length, 1);
-    assert.equal(app.videoModel.calls.length, 2);
   });
 
   it("rejects a plan sent back that this server could not have made", async () => {
@@ -1162,7 +1082,7 @@ describe("recovering from a failed clip", () => {
     const sheet = await uploadSheet(app);
     const resume = { seconds: 12, clips: [4, 4, 4], finished: {}, directions: ["a", "b", "c"] };
 
-    const events = await readEvents(await app.chat(videoRequest("Coba ulang bagian yang gagal.", sheet, { resume })));
+    const events = await readEvents(await app.chat(videoRequest("Coba ulang bagian yang gagal.", sheet, { resume, confirmedUsd: undefined })));
 
     const ask = events.find((event) => event.type === "confirmation_requested");
     assert.ok(ask && ask.type === "confirmation_requested");
@@ -1186,7 +1106,7 @@ describe("recovering from a failed clip", () => {
     const chat = fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10, voiceOver: true });
     const app = createTestApp(chat, undefined, { videoModel: model });
     const sheet = await uploadSheet(app);
-    const first = await readEvents(await app.chat(videoRequest("video 10 detik pakai voice over", sheet, { scenes: ["A", "B"] })));
+    const first = await readEvents(await app.chat(videoRequest("video 10 detik pakai voice over", sheet, {})));
     const partial = partialOf(first);
     assert.ok(partial && partial.type === "video_partial");
     assert.equal(partial.voiceOver, true);
@@ -1194,7 +1114,6 @@ describe("recovering from a failed clip", () => {
     const resumed = await readEvents(
       await app.chat(
         videoRequest("Coba ulang bagian yang gagal.", sheet, {
-          scenes: ["A", "B"],
           resume: {
             seconds: partial.seconds,
             clips: partial.clips,
@@ -1258,7 +1177,6 @@ describe("recovering from a failed clip", () => {
 });
 
 describe("voice-over", () => {
-  const SCENES = ["Scene A", "Scene B", "Scene C", "Scene D"];
   const voiceOverOf = (events: ChatEvent[]) => events.find((event) => event.type === "voice_over");
 
   it("lays the narration over the whole video, one line for each moment, and shows the lines", async () => {
@@ -1268,12 +1186,10 @@ describe("voice-over", () => {
     const sheet = await uploadSheet(app);
 
     const events = await readEvents(
-      await app.chat(videoRequest("video 10 detik pakai voice over", sheet, { scenes: SCENES })),
+      await app.chat(videoRequest("video 10 detik pakai voice over", sheet)),
     );
 
-    // The planner writes the lines, from the scenes and with the picture in front of it; each is read aloud once.
-    const planned = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: video-plan]"));
-    assert.match(JSON.stringify(planned?.prompt), /Scene A/);
+    // The planner writes the lines with the picture in front of it; each is read aloud once.
     assert.deepEqual(app.speechModel.calls.map((call) => call.text), LINES.map((line) => line.line));
     const ready = finishedVideo(events);
     assert.ok(ready && ready.type === "asset_ready");
@@ -1492,11 +1408,11 @@ describe("video spending", () => {
   });
 });
 
-/** What the seller wrote in the first request is kept as it was written, and a length they named is the length of the video. */
+/** What the seller types with the video request reaches the planner as written, and a length they named is the length of the video. */
 describe("a video of the length the seller asked for", () => {
   const FIRST = "buatkan storyboard dan video 10 detik";
-  const button = (sheet: string, extra: object = {}) =>
-    videoRequest("Buat video dari storyboard ini.", sheet, { video: true, scenes: ["a", "b", "c", "d", "e", "f"], ...extra });
+  /** The video request with the words the seller typed, asking the price first. */
+  const typed = (sheet: string, said: string, extra: object = {}) => videoRequest(said, sheet, { confirmedUsd: undefined, ...extra });
   const askOf = (events: ChatEvent[]) => {
     const ask = events.find((event) => event.type === "confirmation_requested");
     assert.ok(ask && ask.type === "confirmation_requested");
@@ -1510,7 +1426,7 @@ describe("a video of the length the seller asked for", () => {
     const chat = fakeChatModel({ chunks: ["x"], videoSeconds: 10 });
     const app = createTestApp(chat);
 
-    const ask = askOf(await readEvents(await app.chat(button(await uploadSheet(app), { brief: FIRST }))));
+    const ask = askOf(await readEvents(await app.chat(typed(await uploadSheet(app), FIRST))));
 
     const prompt = promptOf(chat);
     assert.ok(prompt.includes(FIRST));
@@ -1523,7 +1439,7 @@ describe("a video of the length the seller asked for", () => {
     const chat = fakeChatModel({ chunks: ["x"], videoSeconds: [20, 10] });
     const app = createTestApp(chat);
 
-    const ask = askOf(await readEvents(await app.chat(button(await uploadSheet(app), { brief: FIRST }))));
+    const ask = askOf(await readEvents(await app.chat(typed(await uploadSheet(app), FIRST))));
 
     assert.equal(planCalls(chat).length, 2);
     // The second try is told what went wrong.
@@ -1538,7 +1454,7 @@ describe("a video of the length the seller asked for", () => {
     const app = createTestApp(chat);
     const sheet = await uploadSheet(app);
 
-    const ask = askOf(await readEvents(await app.chat(button(sheet, { brief: FIRST }))));
+    const ask = askOf(await readEvents(await app.chat(typed(sheet, FIRST))));
 
     assert.equal(planCalls(chat).length, 2);
     assert.match(ask.message, /10 detik/);
@@ -1546,7 +1462,7 @@ describe("a video of the length the seller asked for", () => {
     assert.equal(ask.videoChoice?.seconds, 10);
     assert.equal(ask.videoChoice?.directions.length, ask.videoChoice?.clips.length);
 
-    const events = await readEvents(await app.chat(button(sheet, { brief: FIRST, videoChoice: ask.videoChoice, confirmedUsd: ask.estimatedUsd })));
+    const events = await readEvents(await app.chat(typed(sheet, FIRST, { videoChoice: ask.videoChoice, confirmedUsd: ask.estimatedUsd })));
     assert.equal(planCalls(chat).length, 2);
     assert.equal(app.videoModel.calls.length, ask.videoChoice?.clips.length);
     assert.ok(finishedVideo(events));
@@ -1562,13 +1478,13 @@ describe("a video of the length the seller asked for", () => {
     ] as const) {
       const chat = fakeChatModel({ chunks: ["x"], videoSeconds: pinned });
       const app = createTestApp(chat);
-      await readEvents(await app.chat(button(await uploadSheet(app), { brief: said })));
+      await readEvents(await app.chat(typed(await uploadSheet(app), said)));
       assert.match(promptOf(chat), new RegExp(`must be exactly ${pinned}\\b`), said);
     }
     for (const said of ["teks muncul 3 detik", "video yang santai", "pakai 20 gambar"]) {
       const chat = fakeChatModel({ chunks: ["x"], videoSeconds: 20 });
       const app = createTestApp(chat);
-      const ask = askOf(await readEvents(await app.chat(button(await uploadSheet(app), { brief: said }))));
+      const ask = askOf(await readEvents(await app.chat(typed(await uploadSheet(app), said))));
       assert.doesNotMatch(promptOf(chat), /must be exactly/, said);
       assert.equal(planCalls(chat).length, 1, said);
       // The planner is free: what it chose stands.
@@ -1576,27 +1492,15 @@ describe("a video of the length the seller asked for", () => {
     }
   });
 
-  it("leaves the planner free when the first request says nothing about a length or any extra", async () => {
+  it("leaves the planner free when the seller types nothing about a length or any extra", async () => {
     const chat = fakeChatModel({ chunks: ["x"], videoSeconds: 20 });
     const app = createTestApp(chat);
 
-    await readEvents(await app.chat(button(await uploadSheet(app))));
+    await readEvents(await app.chat(typed(await uploadSheet(app), "")));
 
     assert.doesNotMatch(promptOf(chat), /must be exactly/);
-    assert.doesNotMatch(promptOf(chat), /first request/i);
+    assert.doesNotMatch(promptOf(chat), /The seller wrote/);
     assert.match(promptOf(chat), /everything is yours to decide/);
   });
 
-  it("follows what is typed with the video request over the first request", async () => {
-    const chat = fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 30 });
-    const app = createTestApp(chat);
-
-    const ask = askOf(
-      await readEvents(await app.chat(videoRequest("bikin 30 detik ya", await uploadSheet(app), { brief: FIRST, scenes: ["a", "b", "c", "d", "e", "f"] }))),
-    );
-
-    assert.match(promptOf(chat), /must be exactly 30/);
-    assert.doesNotMatch(promptOf(chat), /must be exactly 10/);
-    assert.match(ask.message, /30 detik/);
-  });
 });

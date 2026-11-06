@@ -16,7 +16,6 @@ import {
   selectSession,
   setActiveItems,
   startSession,
-  storyboardFor,
   type Workspace,
 } from "./saved-conversation";
 import { Sidebar } from "./Sidebar";
@@ -198,13 +197,13 @@ export default function ChatApp() {
             redraw = redrawRequest(event);
             if (cardId) {
               patchItem(cardId, (item) =>
-                item.kind === "scenes" ? { ...item, scenes: event.scenes, artDirection: event.artDirection ?? item.artDirection, brief: event.brief ?? item.brief } : item,
+                item.kind === "scenes" ? { ...item, scenes: event.scenes, artDirection: event.artDirection ?? item.artDirection } : item,
               );
             } else {
               const id = (cardId = newId());
               setItems((current) => [
                 ...current,
-                { id, kind: "scenes", sourceAssetId: event.sourceAssetId, scenes: event.scenes, artDirection: event.artDirection, brief: event.brief },
+                { id, kind: "scenes", sourceAssetId: event.sourceAssetId, scenes: event.scenes, artDirection: event.artDirection },
               ]);
             }
             break;
@@ -314,15 +313,8 @@ export default function ChatApp() {
       ...history.slice(-(HISTORY_LENGTH - 1)),
       { role: "user", ...lastMessage },
     ];
-    // The storyboard may come from another chat, so a video chat can use a storyboard made elsewhere.
-    const { sheet, scenes, artDirection, brief } = storyboardFor(workspaceRef.current);
     return {
       messages,
-      // The finished storyboard picture, so a typed "video 10 detik" can be made from it.
-      sheet,
-      scenes: sheet ? scenes : undefined,
-      artDirection: sheet ? artDirection : undefined,
-      brief: sheet ? brief : undefined,
       // The video with a narration, so "ganti narasinya..." or "pakai suara cowok" can change it without new clips.
       revise: narratedVideo(itemsRef.current),
       // The newest result, or else the photo sent earlier, so "bikin foto studio" works on a later turn.
@@ -336,10 +328,8 @@ export default function ChatApp() {
     if (busy || (!message && !photo) || photo?.uploading) return;
     if (!inThread) flipFrom.current = cardRef.current?.getBoundingClientRect() ?? null;
 
-    // In the Video feature the attached picture is the storyboard, so the one borrowed from another chat (and its scenes) is left out.
-    const ownStoryboard = intent === "video" && photo?.assetId ? { sheet: undefined, scenes: undefined, artDirection: undefined, brief: undefined } : {};
     const body = conversationBody(
-      { intent, style: styleOf(preset), ...ownStoryboard },
+      { intent, style: styleOf(preset) },
       { text: message, photoAssetId: photo?.assetId },
     );
     setItems((current) => [...current, { id: newId(), kind: "user", text: message, photoAssetId: photo?.assetId }]);
@@ -401,9 +391,6 @@ export default function ChatApp() {
         {
           messages: [{ role: "user", text: "Coba ulang bagian yang gagal." }],
           sheet: item.sheet,
-          // The scenes tell the server which storyboard this is.
-          scenes: item.voiceOver ? storyboardFor(workspaceRef.current).scenes : undefined,
-          artDirection: storyboardFor(workspaceRef.current).artDirection,
           resume: {
             seconds: item.seconds,
             clips: item.clips,

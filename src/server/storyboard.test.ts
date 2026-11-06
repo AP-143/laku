@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ChatEvent } from "../shared/chat-events";
-import { MAX_BRIEF_CHARS, PANEL_SHOTS, PANEL_TITLES } from "../shared/storyboard";
+import { PANEL_SHOTS, PANEL_TITLES } from "../shared/storyboard";
 import { fakeChatModel } from "./testing/fake-models";
 import { fakeImageModel } from "./testing/fake-image-model";
 import { readEvents } from "./testing/events";
 import { chatRequest, createTestApp } from "./testing/harness";
 import { makePhoto, uploadRequest } from "./testing/photos";
 
-/** Feature 2 through the chat API: a storyboard request goes straight to its one picture; the video is made from that picture. */
+/** Feature 2 through the chat API: a storyboard request goes straight to its one picture, and the storyboard stops there. */
 
 /** The art direction a planner might pick for a gadget: nothing like the warm, appetizing look of food. */
 const ART = "Night-time neon palette of electric blue and magenta, glossy highlights, glitchy speed-ramp transitions and HUD-style graphic accents.";
@@ -59,7 +59,7 @@ describe("storyboard", () => {
     assert.equal(app.imageModel.calls.length, 1);
     assert.equal(sheets(events).length, 1);
     assert.equal(sheets(events)[0].sourceAssetId, photoAssetId);
-    // The data for the video comes first, then the picture, then the words that say what to do next.
+    // The scenes come first (a retry draws from them), then the picture, then the words that say what to do next.
     assert.deepEqual(
       events.map((e) => e.type),
       ["storyboard_scenes", "job_started", "asset_ready", "usage_updated", "assistant_text", "done"],
@@ -209,7 +209,7 @@ describe("storyboard", () => {
     assert.match(prompt, /professional/i);
   });
 
-  it("reads the first request from the start: the planner sees all of it, and the seller's own words reach the browser for the video", async () => {
+  it("reads the first request from the start: the planner sees all of it, and nothing of it is kept for a video", async () => {
     const WISH = "buatkan storyboard dan video 10 detik, santai tapi bikin lapar";
     const chat = fakeChatModel({ chunks: ["unused"], scenes: SCENES, intent: "STORYBOARD" });
     const app = createTestApp(chat);
@@ -219,24 +219,12 @@ describe("storyboard", () => {
 
     const plan = proposed(events);
     assert.ok(plan?.type === "storyboard_scenes");
-    // Not a summary written by a model: the words themselves, so nothing the seller asked for can be lost on the way.
-    assert.equal(plan.brief, WISH);
+    // The storyboard stops at its picture: the seller's words are not carried on to anything else.
+    assert.equal("brief" in plan, false);
     const planned = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: plan-scenes]"));
     const prompt = JSON.stringify(planned?.prompt);
     assert.ok(prompt.includes(WISH));
     assert.doesNotMatch(prompt, /\\+"brief/);
-  });
-
-  it("has no brief when the seller typed nothing, and keeps only a short text of what was typed", async () => {
-    const app = newApp();
-    const photoAssetId = await uploadPhoto(app);
-    const none = proposed(await makeStoryboard(app, photoAssetId, "   "));
-    assert.ok(none?.type === "storyboard_scenes");
-    assert.equal(none.brief, undefined);
-
-    const plan = proposed(await makeStoryboard(app, photoAssetId, " " + "x".repeat(MAX_BRIEF_CHARS * 3)));
-    assert.ok(plan?.type === "storyboard_scenes");
-    assert.equal(plan.brief?.length, MAX_BRIEF_CHARS);
   });
 
   it("reports a failed picture once, books nothing and does not retry by itself", async () => {
@@ -265,6 +253,7 @@ describe("storyboard", () => {
       await app.chat(
         chatRequest({
           messages: [{ role: "user", text: "Coba lagi" }],
+          // A page that was open before the brief went away may still send it: it is ignored.
           redraw: { photoAssetId, scenes: SCENES, artDirection: ART, brief: "video 10 detik" },
         }),
       ),
@@ -278,18 +267,16 @@ describe("storyboard", () => {
     // The browser gets the same data again, so a card that is gone after a reload is made again with it.
     const plan = proposed(events);
     assert.ok(plan?.type === "storyboard_scenes");
-    assert.equal(plan.brief, "video 10 detik");
+    assert.equal("brief" in plan, false);
     assert.deepEqual(events.at(-1), { type: "done" });
   });
 
-  it("rejects a retry whose scenes are not exactly six, or whose art direction or brief is not a short text", async () => {
+  it("rejects a retry whose scenes are not exactly six, or whose art direction is not a short text", async () => {
     const app = newApp();
     const photoAssetId = await uploadPhoto(app);
     const bad = [
       { photoAssetId, scenes: SCENES.slice(0, 4) },
       { photoAssetId, scenes: SCENES, artDirection: 42 },
-      { photoAssetId, scenes: SCENES, brief: 42 },
-      { photoAssetId, scenes: SCENES, brief: "x".repeat(MAX_BRIEF_CHARS + 1) },
     ];
     for (const redraw of bad) {
       const response = await app.chat(chatRequest({ messages: [{ role: "user", text: "Coba lagi" }], redraw }));
@@ -298,7 +285,7 @@ describe("storyboard", () => {
     assert.equal(app.imageModel.calls.length, 0);
   });
 
-  it("accepts a retry of a storyboard made before there was a brief or an art direction", async () => {
+  it("accepts a retry of a storyboard made before there was an art direction", async () => {
     const app = newApp();
     const photoAssetId = await uploadPhoto(app);
 
@@ -310,41 +297,6 @@ describe("storyboard", () => {
     assert.equal(response.status, 200);
     assert.equal(sheets(events).length, 1);
     assert.equal(app.imageModel.calls.length, 1);
-  });
-
-  it("makes the video from the picture the request just drew, with the scenes, the art direction and the seller's words it sent", async () => {
-    const WISH = "buatkan storyboard dan video 10 detik";
-    const chat = fakeChatModel({ chunks: ["unused"], scenes: SCENES, artDirection: ART, intent: "STORYBOARD" });
-    const app = createTestApp(chat);
-    const photoAssetId = await uploadPhoto(app);
-
-    const made = await readEvents(await app.chat(chatRequest({ messages: [{ role: "user", text: WISH, photoAssetId }] })));
-    const plan = proposed(made);
-    const sheet = sheets(made)[0];
-    assert.ok(plan?.type === "storyboard_scenes" && sheet);
-
-    // What the browser keeps from that answer is what it sends when the seller presses Generate.
-    const video = await readEvents(
-      await app.chat(
-        chatRequest({
-          messages: [{ role: "user", text: "Buatkan video iklan dari storyboard ini." }],
-          sheet: sheet.assetId,
-          scenes: plan.scenes,
-          artDirection: plan.artDirection,
-          brief: plan.brief,
-          video: true,
-        }),
-      ),
-    );
-
-    const question = video.find((e) => e.type === "confirmation_requested");
-    assert.ok(question?.type === "confirmation_requested");
-    assert.equal(video.some((e) => e.type === "job_started"), false);
-    const planned = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: video-plan]"));
-    const prompt = JSON.stringify(planned?.prompt);
-    assert.ok(prompt.includes(WISH));
-    assert.ok(prompt.includes(ART));
-    SCENES.forEach((scene) => assert.ok(prompt.includes(scene)));
   });
 
   it("ignores the approve flow of a page that was open before the text step went away: nothing is generated for it", async () => {

@@ -15,10 +15,8 @@ export type ThreadItem =
       kind: "scenes";
       sourceAssetId: string;
       scenes: string[];
-      /** The look the planner picked for this product, kept so the picture and the video share it. Not shown. */
+      /** The look the planner picked for this product, kept so a retry draws the picture in the same look. Not shown. */
       artDirection?: string;
-      /** What the first request asked of the final video, kept so the video planner reads it. Not shown. */
-      brief?: string;
       /** The finished storyboard picture: all the panels in one image. */
       sheet?: string;
       /** The picture is being generated right now (not saved). */
@@ -71,10 +69,10 @@ export type ThreadItem =
  * The request that draws the picture of a storyboard again from the scenes it was planned with, for the retry of a picture
  * that failed or that the seller wants drawn again. The scenes are not planned again.
  */
-export function redrawRequest(storyboard: { sourceAssetId: string; scenes: string[]; artDirection?: string; brief?: string }): RetryRequest {
+export function redrawRequest(storyboard: { sourceAssetId: string; scenes: string[]; artDirection?: string }): RetryRequest {
   return {
     messages: [{ role: "user", text: "Coba lagi." }],
-    redraw: { photoAssetId: storyboard.sourceAssetId, scenes: storyboard.scenes, artDirection: storyboard.artDirection, brief: storyboard.brief },
+    redraw: { photoAssetId: storyboard.sourceAssetId, scenes: storyboard.scenes, artDirection: storyboard.artDirection },
   };
 }
 
@@ -109,24 +107,4 @@ export function narratedVideo(items: ThreadItem[]) {
   if (!latest || latest.kind !== "video") return undefined;
   const { script, silentAssetId, voice, seconds, lines } = latest;
   return script && silentAssetId && voice && seconds ? { silentAssetId, seconds, script, voice, lines } : undefined;
-}
-
-/** The text of the newest storyboard's scenes, which the video is planned from. */
-export function storyboardScenes(items: ThreadItem[]): string[] {
-  return items.findLast((item) => item.kind === "scenes")?.scenes ?? [];
-}
-
-/** The art direction of the newest storyboard, which the video planner shares. */
-export function storyboardArtDirection(items: ThreadItem[]): string | undefined {
-  return items.findLast((item) => item.kind === "scenes")?.artDirection;
-}
-
-/** What the first request asked of the final video, from the newest storyboard. */
-export function storyboardBrief(items: ThreadItem[]): string | undefined {
-  return items.findLast((item) => item.kind === "scenes")?.brief;
-}
-
-/** The finished picture of the newest storyboard, which a video is made from. */
-export function storyboardSheet(items: ThreadItem[]): string | undefined {
-  return items.findLast((item) => item.kind === "scenes")?.sheet;
 }

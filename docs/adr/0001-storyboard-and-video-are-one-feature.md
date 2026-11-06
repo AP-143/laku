@@ -1,5 +1,7 @@
 # Storyboard and video are one feature
 
+Superseded by [0009](0009-storyboard-and-video-are-two-features-again.md).
+
 An Ad video is only ever made from the picture of a Storyboard, so offering them as two separate Features (and a Video shortcut that cannot work without a Storyboard) made the Seller guess what to press first. They are one Feature, **Storyboard & Video**, with steps: the Storyboard picture (made straight from the Seller's request), then a video panel under it with a Generate button.
 
 ## Considered options

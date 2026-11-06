@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { COSTS, VOICES } from "../config/models";
 import type { ChatIntent, StudioStyle } from "../shared/chat-events";
-import { MAX_ART_DIRECTION_CHARS, MAX_BRIEF_CHARS, SCENE_COUNT } from "../shared/storyboard";
+import { MAX_ART_DIRECTION_CHARS, SCENE_COUNT } from "../shared/storyboard";
 import { STORYBOARD_READY_MESSAGE } from "../shared/chat-messages";
 import {
   CLIP_SECONDS,
@@ -35,7 +35,7 @@ const NOT_A_PRODUCT_MESSAGE =
   "Maaf, saat ini aku hanya bisa memproses foto produk. Coba kirim foto barang yang mau kamu jual ya.";
 const NEED_PHOTO_MESSAGE = "Kirim dulu foto produknya ya (klik ikon penjepit kertas), nanti aku bantu.";
 const NEED_ATTACHED_STORYBOARD_MESSAGE = "Lampirkan dulu gambar storyboard-nya ya, baru aku buatkan videonya.";
-const NEED_SHEET_MESSAGE ="Buat dulu storyboard dan gambarnya ya, baru aku buatkan videonya.";
+const PICK_VIDEO_FEATURE_MESSAGE = "Untuk membuat video, pilih fitur Video di sidebar, lalu lampirkan gambar storyboard-nya ya.";
 const NEED_NARRATED_VIDEO_MESSAGE = "Buat dulu video dengan voice over ya, baru narasi atau suaranya bisa kuubah.";
 const WHAT_TO_CHANGE_MESSAGE =
   "Mau diubah apanya? Kamu bisa minta narasi dengan kata-kata lain, atau ganti suaranya jadi suara cewek atau cowok.";
@@ -61,14 +61,12 @@ const MAX_TOTAL_CHARS = 20_000;
 const MAX_SCENE_CHARS = 600;
 const MAX_DIRECTION_CHARS = 1500;
 
-/** The storyboard whose picture is to be drawn: the photo it is made from, its six scenes and what goes on to the video. */
+/** The storyboard whose picture is to be drawn: the photo it is made from, its six scenes and the look they are drawn in. */
 interface Storyboard {
   photoAssetId: string;
   scenes: string[];
-  /** The look the planner picked for this product, kept with the scenes so the picture and the video share it. */
+  /** The look the planner picked for this product, kept with the scenes so a retry draws the picture in the same look. */
   artDirection?: string;
-  /** What the seller's first request asked of the final video, kept with the scenes so the video planner reads it. */
-  brief?: string;
 }
 
 interface Conversation {
@@ -82,18 +80,10 @@ interface Conversation {
   style?: StudioStyle;
   /** A retry of the storyboard picture: draw it again from these scenes, without planning them again. */
   redraw?: Storyboard;
-  /** The finished storyboard picture, which a video is made from. */
+  /** The picture a stopped video was made from, which its missing clips are made from again. */
   sheet?: string;
-  /** The text of the storyboard scenes, which a voice-over script is written from (can be empty). */
-  scenes: string[];
-  /** The art direction of the storyboard, which the video is edited in. */
-  artDirection?: string;
-  /** What the seller's first request asked of the final video, which the video planner reads. */
-  brief?: string;
-  /** The price in US dollars the seller said yes to for an expensive video, quoted back to the server. */
+  /** The price in US dollars the seller said yes to for a video, quoted back to the server. */
   confirmedUsd?: number;
-  /** The seller pressed "Generate" in the video panel. It has no options: the planner decides everything. */
-  video?: true;
   /** The plan the seller was asked about and said yes to, sent back as it was so what is made is what was priced. */
   videoChoice?: VideoChoice;
   /** Remake only the missing clips of a video that stopped part way. */
@@ -139,32 +129,19 @@ function readStyle(value: unknown): StudioStyle | undefined {
 /** `null` means the field was sent but is not a valid storyboard; `undefined` means it was not sent. */
 function readRedraw(value: unknown): Storyboard | null | undefined {
   if (value === undefined) return undefined;
-  const { photoAssetId, scenes, artDirection, brief } = (value ?? {}) as { photoAssetId?: unknown; scenes?: unknown; artDirection?: unknown; brief?: unknown };
+  const { photoAssetId, scenes, artDirection } = (value ?? {}) as { photoAssetId?: unknown; scenes?: unknown; artDirection?: unknown };
   if (typeof photoAssetId !== "string" || !isAssetId(photoAssetId)) return null;
   const direction = readArtDirection(artDirection);
-  const wish = readBrief(brief);
-  if (direction === null || wish === null) return null;
+  if (direction === null) return null;
   if (!Array.isArray(scenes) || scenes.length !== SCENE_COUNT) return null;
   if (!scenes.every((scene) => typeof scene === "string" && scene.trim() !== "" && scene.length <= MAX_SCENE_CHARS)) return null;
-  return { photoAssetId, scenes: scenes.map((scene: string) => scene.trim()), artDirection: direction, brief: wish };
+  return { photoAssetId, scenes: scenes.map((scene: string) => scene.trim()), artDirection: direction };
 }
 
 /** `null` means the field was sent but is not a short text; no field means no art direction. */
 function readArtDirection(value: unknown): string | null | undefined {
   if (value === undefined) return undefined;
   return typeof value === "string" && value.length <= MAX_ART_DIRECTION_CHARS ? value.trim() || undefined : null;
-}
-
-/** `null` means the field was sent but is not a short text; no field means the first request said nothing about the video. */
-function readBrief(value: unknown): string | null | undefined {
-  if (value === undefined) return undefined;
-  return typeof value === "string" && value.length <= MAX_BRIEF_CHARS ? value.trim() || undefined : null;
-}
-
-/** The button sends a flag and no options; anything it carries besides is ignored, so a request never picks the length or the extras. */
-function readVideo(value: unknown): Conversation["video"] | null | undefined {
-  if (value === undefined) return undefined;
-  return value === true || (typeof value === "object" && value !== null) ? true : null;
 }
 
 /** A null result means the field was sent but is not a plan this server could have made; no field means no plan. */
@@ -252,14 +229,6 @@ function readRevise(value: unknown): VoiceRevise | null | undefined {
   return valid ? { silentAssetId, script, voice, lines: lines ? sanitizeNarration(lines, 60) : undefined } : null;
 }
 
-/** `null` means the field was sent but is not up to four short texts; no field means no scenes. */
-function readScenes(value: unknown): string[] | null {
-  if (value === undefined) return [];
-  if (!Array.isArray(value) || value.length > SCENE_COUNT) return null;
-  if (!value.every((scene) => typeof scene === "string" && scene.length <= MAX_SCENE_CHARS)) return null;
-  return (value as string[]).map((scene) => scene.trim()).filter(Boolean);
-}
-
 /** `null` means the field was sent but is not an asset id; no field means no storyboard picture. */
 function readSheet(value: unknown): string | null | undefined {
   if (value === undefined) return undefined;
@@ -305,39 +274,26 @@ async function readConversation(request: Request): Promise<Conversation | undefi
     style?: unknown;
     lastImageAssetId?: unknown;
     redraw?: unknown;
-    video?: unknown;
     videoChoice?: unknown;
     sheet?: unknown;
     confirmedUsd?: unknown;
     resume?: unknown;
-    scenes?: unknown;
     revise?: unknown;
-    artDirection?: unknown;
-    brief?: unknown;
   };
   if (fields.lastImageAssetId !== undefined && (typeof fields.lastImageAssetId !== "string" || !isAssetId(fields.lastImageAssetId))) {
     return undefined;
   }
   const redraw = readRedraw(fields.redraw);
-  const video = readVideo(fields.video);
   const videoChoice = readChoice(fields.videoChoice);
   const sheet = readSheet(fields.sheet);
   const resume = readResume(fields.resume);
-  const scenes = readScenes(fields.scenes);
   const revise = readRevise(fields.revise);
-  const artDirection = readArtDirection(fields.artDirection);
-  const brief = readBrief(fields.brief);
-  const invalid =
-    redraw === null || video === null || videoChoice === null || sheet === null || resume === null || scenes === null || revise === null || artDirection === null || brief === null;
+  const invalid = redraw === null || videoChoice === null || sheet === null || resume === null || revise === null;
   if (invalid) return undefined;
 
   return {
-    video,
     videoChoice,
     sheet,
-    scenes,
-    artDirection: artDirection ?? undefined,
-    brief: brief ?? undefined,
     resume,
     revise,
     confirmedUsd: typeof fields.confirmedUsd === "number" && Number.isFinite(fields.confirmedUsd) ? fields.confirmedUsd : undefined,
@@ -403,17 +359,11 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
        * rest; it is only told what the app adds afterwards: a narrator, and music.
        */
       async function planVideoChoice(picture: AssetFile, wish: string | undefined): Promise<VideoChoice> {
-        const ask = {
-          scenes: conversation!.scenes,
-          artDirection: conversation!.artDirection,
-          brief: conversation!.brief,
-          wish: wish || undefined,
-          sheet: picture,
-        };
-        // A length the seller wrote is the length of the video, whatever the planner thinks suits the story better: what
-        // they typed now wins over their first request. The planner is told, asked once more if it still chose another,
-        // and then its plan is fitted to the length asked for. A text model only: never a second video.
-        const length = requestedLength(wish) ?? requestedLength(conversation!.brief);
+        const ask = { wish: wish || undefined, sheet: picture };
+        // A length the seller wrote is the length of the video, whatever the planner thinks suits the story better. The
+        // planner is told, asked once more if it still chose another, and then its plan is fitted to the length asked for.
+        // A text model only: never a second video.
+        const length = requestedLength(wish);
         let planned = await models.planVideo({ ...ask, length });
         if (length && planned.seconds !== length) planned = await models.planVideo({ ...ask, length, wrong: planned.seconds });
         if (length && planned.seconds !== length) planned = fitPlanToLength(planned, length);
@@ -447,12 +397,12 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
       }
 
       /**
-       * Makes the one picture of a storyboard: all its panels in a single image. The scenes, the art direction and the
-       * seller's words are sent first, as data for the browser (nothing of them is shown): the video is planned from them,
-       * and a retry of a picture that failed needs no new plan. The words that say what comes next are sent last.
+       * Makes the one picture of a storyboard: all its panels in a single image. The scenes and the art direction are sent
+       * first, as data for the browser (nothing of them is shown): a retry of a picture that failed needs no new plan. The
+       * words that say what comes next are sent last.
        */
       async function makeSheet(storyboard: Storyboard, source: AssetFile) {
-        send({ type: "storyboard_scenes", sourceAssetId: storyboard.photoAssetId, scenes: storyboard.scenes, artDirection: storyboard.artDirection, brief: storyboard.brief });
+        send({ type: "storyboard_scenes", sourceAssetId: storyboard.photoAssetId, scenes: storyboard.scenes, artDirection: storyboard.artDirection });
         await jobs.generate({
           prompt: sheetPrompt(storyboard.scenes, storyboard.artDirection),
           source,
@@ -471,7 +421,7 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         // Remaking the missing clips of a video that stopped part way is an explicit action of the seller.
         if (conversation.resume) {
           const { seconds, clips, finished, directions } = conversation.resume;
-          if (!sheet) return reply(NEED_SHEET_MESSAGE);
+          if (!sheet) return reply(NEED_ATTACHED_STORYBOARD_MESSAGE);
           // The same voice-over as the first try: its lines were planned then and are read once the clips are made.
           const { narration, voice } = conversation.resume;
 
@@ -515,13 +465,12 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         if (photo && conversation.intent !== "video" && !(await isProduct(photo))) return reply(NOT_A_PRODUCT_MESSAGE);
 
         const lastText = conversation.messages.at(-1)!.text.trim();
-        // The video button is an explicit request, so the router is not asked what it means.
-        let intent: Intent | undefined = conversation.video || conversation.videoChoice ? "video" : conversation.intent;
-        if (!intent && lastText && (photo || previous || sheet || conversation.revise)) {
+        // A yes to a priced video is an explicit request, so the router is not asked what it means.
+        let intent: Intent | undefined = conversation.videoChoice ? "video" : conversation.intent;
+        if (!intent && lastText && (photo || previous || conversation.revise)) {
           intent = await models.classifyIntent(lastText, {
             hasPhoto: Boolean(photo),
             hasPreviousResult: Boolean(previous),
-            hasSheet: Boolean(sheet),
             hasNarration: Boolean(conversation.revise),
           });
         }
@@ -557,21 +506,19 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         }
 
         if (intent === "video") {
-          // In the Video feature the storyboard picture is the one attached to the message, whatever else the browser holds;
-          // elsewhere it is the one made earlier.
-          const attached = conversation.intent === "video" && photo && conversation.photoAssetId ? { assetId: conversation.photoAssetId, file: photo } : undefined;
-          const picture = attached ?? sheet;
-          if (!picture) return reply(conversation.intent === "video" ? NEED_ATTACHED_STORYBOARD_MESSAGE : NEED_SHEET_MESSAGE);
+          // Only the Video feature makes a video: a router that guesses one from a typed message is sent there.
+          if (conversation.intent !== "video") return reply(PICK_VIDEO_FEATURE_MESSAGE);
+          // The storyboard picture is the one attached to the message, and nothing else.
+          const picture = photo && conversation.photoAssetId ? { assetId: conversation.photoAssetId, file: photo } : undefined;
+          if (!picture) return reply(NEED_ATTACHED_STORYBOARD_MESSAGE);
           // The planner (a text model, which costs next to nothing) decides the whole video first, so the seller is asked
           // about the exact price of what will be made. The plan that was priced comes back with the yes and is made as it is.
-          const choice = conversation.videoChoice ?? (await planVideoChoice(picture.file, conversation.video ? undefined : lastText));
+          const choice = conversation.videoChoice ?? (await planVideoChoice(picture.file, lastText));
           const estimatedUsd = choiceCostUsd(choice);
-          // The yes is for this price: a plan that now costs more is asked about again.
+          // The yes is for this price: a plan that now costs more is asked about again. The price is always asked first,
+          // whatever the length.
           const agreed = conversation.confirmedUsd !== undefined && estimatedUsd <= conversation.confirmedUsd;
-          // The Video feature (and the old button) always shows the price first; a typed request elsewhere only asks when the
-          // picture is expensive, so a few thousandths of a dollar of narration do not turn a US$1.00 video into one that needs a question.
-          const mustAsk = conversation.video !== undefined || conversation.intent === "video" || videoCostUsd(choice.clips) > COSTS.videoConfirmAboveUsd;
-          if (mustAsk && !agreed) {
+          if (!agreed) {
             send({
               type: "confirmation_requested",
               confirmationId: randomUUID(),
@@ -632,9 +579,7 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
           // The planner reads the seller's request and writes the scenes (text, next to no cost); the picture is made in the
           // same request, since asking for a storyboard is asking for its picture.
           const { scenes, artDirection } = await models.planScenes(source, lastText);
-          // The seller's own words go on with the storyboard to plan the video, as they wrote them and not as a model put them.
-          const brief = lastText.slice(0, MAX_BRIEF_CHARS).trim() || undefined;
-          return await makeSheet({ photoAssetId: sourceAssetId, scenes, artDirection, brief }, source);
+          return await makeSheet({ photoAssetId: sourceAssetId, scenes, artDirection }, source);
         }
 
         const messages = conversation.messages.map((message, index) =>
