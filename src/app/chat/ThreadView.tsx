@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { assetUrl, downloadUrl } from "./chat-client";
 import type { RetryRequest, ThreadItem } from "./thread";
 
@@ -16,8 +16,6 @@ interface ThreadViewProps {
   onRetry: (request: RetryRequest) => void;
   /** The retry button of the storyboard picture, which draws it again from the same scenes. */
   onRedraw: (itemId: string) => void;
-  /** The "Generate" button of the video panel under a storyboard picture. */
-  onMakeVideo: (itemId: string) => void;
   onAnswerConfirm: (itemId: string, yes: boolean) => void;
   onResumeVideo: (itemId: string) => void;
   photoUrl: (assetId: string) => string;
@@ -27,68 +25,12 @@ function Spinner({ label }: { label: string }) {
   return <span className="spinner" role="status" aria-label={label} />;
 }
 
-/** The AI sparkle shown on the buttons that generate something. */
-function SparkleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M10 2.5c.3 0 .6.2.7.5l1.3 4.4a6 6 0 0 0 4.1 4.1l4.4 1.3a.75.75 0 0 1 0 1.4l-4.4 1.3a6 6 0 0 0-4.1 4.1l-1.3 4.4a.75.75 0 0 1-1.4 0l-1.3-4.4a6 6 0 0 0-4.1-4.1L2.5 14.2a.75.75 0 0 1 0-1.4l4.4-1.3a6 6 0 0 0 4.1-4.1L9.3 3c.1-.3.4-.5.7-.5Zm9.5-1c.3 0 .5.2.6.4l.5 1.6c.2.6.6 1 1.2 1.2l1.6.5a.65.65 0 0 1 0 1.2l-1.6.5c-.6.2-1 .6-1.2 1.2l-.5 1.6a.65.65 0 0 1-1.2 0l-.5-1.6a1.8 1.8 0 0 0-1.2-1.2l-1.6-.5a.65.65 0 0 1 0-1.2l1.6-.5c.6-.2 1-.6 1.2-1.2l.5-1.6c.1-.2.3-.4.6-.4Z"
-      />
-    </svg>
-  );
-}
-
-/**
- * The "Generate" button of a storyboard picture, with no options: the AI decides the length, the voice-over and the music.
- * Once a video exists, the panel folds into one button, so a second video is a deliberate choice and not a stray click.
- */
-function VideoPanel({
-  busy,
-  hasVideo,
-  onMake,
-}: {
-  busy: boolean;
-  hasVideo: boolean;
-  onMake: () => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-
-  if (hasVideo && !expanded) {
-    return (
-      <div className="video-again">
-        <button type="button" className="btn btn-ai" disabled={busy} onClick={() => setExpanded(true)}>
-          <SparkleIcon />
-          Buat versi video lain
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <section className="video-panel" aria-label="Buat video iklan">
-      <h3>Buat video iklan</h3>
-      <p className="video-note">AI yang menentukan durasi, suara, dan musiknya dari storyboard. Kamu tinggal setuju dengan harganya.</p>
-      <div className="actions">
-        <button type="button" className="btn btn-primary btn-ai" disabled={busy} onClick={() => {
-            setExpanded(false);
-            onMake();
-          }}>
-          <SparkleIcon />
-          Generate
-        </button>
-      </div>
-    </section>
-  );
-}
-
 export function ThreadView({
   items,
   progress,
   busy,
   onRetry,
   onRedraw,
-  onMakeVideo,
   onAnswerConfirm,
   onResumeVideo,
   photoUrl,
@@ -102,7 +44,7 @@ export function ThreadView({
 
   return (
     <section className="thread" aria-label="Percakapan" aria-live="polite">
-      {items.map((item, position) => {
+      {items.map((item) => {
         switch (item.kind) {
           case "user":
             return (
@@ -223,14 +165,6 @@ export function ThreadView({
                       Unduh
                     </a>
                   </div>
-                )}
-                {/* The next step once the picture is made: the video. */}
-                {item.sheet && !item.busy && (
-                  <VideoPanel
-                    busy={busy}
-                    hasVideo={items.slice(position + 1).some((later) => later.kind === "video")}
-                    onMake={() => onMakeVideo(item.id)}
-                  />
                 )}
               </div>
             );

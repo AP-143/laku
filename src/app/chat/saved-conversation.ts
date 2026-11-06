@@ -105,8 +105,8 @@ export function describeSession(session: ChatSession): { title: string; feature?
 function featureOf(items: ThreadItem[]): ChatIntent | undefined {
   for (const item of items) {
     if (item.kind === "studio") return "studio_photo";
-    // Storyboard and video are one feature: the video is made from the storyboard.
-    if (item.kind === "scenes" || item.kind === "video" || item.kind === "partial") return "storyboard";
+    if (item.kind === "scenes") return "storyboard";
+    if (item.kind === "video" || item.kind === "partial") return "video";
   }
   return undefined;
 }

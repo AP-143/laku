@@ -75,9 +75,8 @@ export type AssetKind = "image" | "video";
 /** A `storyboard_sheet` is the whole storyboard as one picture: all its panels, with titles and captions. */
 export type AssetRole = "studio_photo" | "storyboard_sheet" | "video";
 
-/** The shortcut chips in the composer. */
-/** The shortcut chips under the composer. A video is made from a storyboard, so it is not a chip of its own. */
-export type ChatIntent = "studio_photo" | "storyboard";
+/** The Features the seller can pick before typing: a studio photo, a storyboard, or a video from a storyboard picture they attach. */
+export type ChatIntent = "studio_photo" | "storyboard" | "video";
 
 export type StylePreset = "clean_white" | "solid_color" | "lifestyle";
 /** A look for the studio photo: one of the presets, or the seller's own words. */

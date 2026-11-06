@@ -165,7 +165,7 @@ describe("chat sessions", () => {
     assert.equal(titleOf([{ id: "a", kind: "user", text: "", photoAssetId: "p" }]), "Foto produk");
   });
 
-  it("labels a session with the feature of its first result, where storyboard and video are one feature", () => {
+  it("labels a session with the feature of its first result, where video is a feature of its own", () => {
     const user: ThreadItem = { id: "u", kind: "user", text: "tolong" };
     const studio: ThreadItem = { id: "s", kind: "studio", assetId: "x", sourceAssetId: "p", retry: {} };
     const scenes: ThreadItem = { id: "c", kind: "scenes", sourceAssetId: "p", scenes: ["a", "b", "c", "d", "e", "f"] };
@@ -176,9 +176,11 @@ describe("chat sessions", () => {
     assert.equal(featureOf([user]), undefined);
     assert.equal(featureOf([user, studio]), "studio_photo");
     assert.equal(featureOf([user, scenes]), "storyboard");
-    // A video typed for in an old chat, or one that stopped part way, belongs to the same feature as its storyboard.
-    assert.equal(featureOf([user, video]), "storyboard");
-    assert.equal(featureOf([user, partial]), "storyboard");
+    // A chat whose first result is a video, or one that stopped part way, is a video chat.
+    assert.equal(featureOf([user, video]), "video");
+    assert.equal(featureOf([user, partial]), "video");
+    // A video made under its own storyboard keeps the label of the first result.
+    assert.equal(featureOf([user, scenes, video]), "storyboard");
     assert.equal(featureOf([user, studio, scenes, video]), "studio_photo");
   });
 

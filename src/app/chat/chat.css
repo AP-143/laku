@@ -642,55 +642,6 @@
   margin-bottom: 10px;
 }
 
-/* The next step of a storyboard picture: the video. */
-.chat .video-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 14px;
-  padding: 14px;
-  border-radius: 14px;
-  background: linear-gradient(180deg, rgba(120, 100, 190, 0.1), rgba(120, 100, 190, 0.05));
-  box-shadow: inset 0 0 0 1px rgba(120, 100, 190, 0.2);
-}
-
-.chat .video-panel h3 {
-  font-size: 14.5px;
-  font-weight: 650;
-}
-
-.chat .video-note {
-  font-size: 13px;
-  line-height: 1.45;
-  color: #6d6d6a;
-}
-
-.chat .video-panel .actions {
-  margin-top: 0;
-}
-
-/* The Generate button: an AI sparkle in front of the label. */
-.chat .btn-ai {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.chat .btn-ai svg {
-  flex: none;
-}
-
-/* On the dark button the sparkle is warm; on the light one it keeps the text colour. */
-.chat .btn-primary.btn-ai svg {
-  color: #f4c9a8;
-}
-
-/* After a video exists, the panel is just this one button. */
-.chat .video-again {
-  margin-top: 14px;
-  display: flex;
-}
-
 .chat .pair {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1353,6 +1304,11 @@
   background: rgba(70, 130, 190, 0.16);
 }
 
+.chat .side-feature.f-video .side-feature-icon {
+  color: #7a3f8f;
+  background: rgba(160, 100, 190, 0.16);
+}
+
 .chat .side-feature-text {
   min-width: 0;
   display: flex;
@@ -1451,6 +1407,11 @@
 .chat .session-feature.f-storyboard {
   color: #2f5d8a;
   background: rgba(70, 130, 190, 0.14);
+}
+
+.chat .session-feature.f-video {
+  color: #7a3f8f;
+  background: rgba(160, 100, 190, 0.14);
 }
 
 .chat .session-delete {

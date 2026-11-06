@@ -34,7 +34,8 @@ const PHOTO_NOT_FOUND_MESSAGE = "Fotonya tidak ketemu. Coba unggah lagi ya.";
 const NOT_A_PRODUCT_MESSAGE =
   "Maaf, saat ini aku hanya bisa memproses foto produk. Coba kirim foto barang yang mau kamu jual ya.";
 const NEED_PHOTO_MESSAGE = "Kirim dulu foto produknya ya (klik ikon penjepit kertas), nanti aku bantu.";
-const NEED_SHEET_MESSAGE = "Buat dulu storyboard dan gambarnya ya, baru aku buatkan videonya.";
+const NEED_ATTACHED_STORYBOARD_MESSAGE = "Lampirkan dulu gambar storyboard-nya ya, baru aku buatkan videonya.";
+const NEED_SHEET_MESSAGE ="Buat dulu storyboard dan gambarnya ya, baru aku buatkan videonya.";
 const NEED_NARRATED_VIDEO_MESSAGE = "Buat dulu video dengan voice over ya, baru narasi atau suaranya bisa kuubah.";
 const WHAT_TO_CHANGE_MESSAGE =
   "Mau diubah apanya? Kamu bisa minta narasi dengan kata-kata lain, atau ganti suaranya jadi suara cewek atau cowok.";
@@ -121,7 +122,7 @@ interface VideoResume extends VideoChoice {
   voiceOver: boolean;
 }
 
-const INTENTS: readonly string[] = ["studio_photo", "storyboard"];
+const INTENTS: readonly string[] = ["studio_photo", "storyboard", "video"];
 const PRESETS: readonly string[] = ["clean_white", "solid_color", "lifestyle"];
 
 function readIntent(value: unknown): ChatIntent | undefined {
@@ -510,7 +511,8 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         }
 
         // The cheap check comes first, so nothing costly ever runs for a photo that is not a product.
-        if (photo && !(await isProduct(photo))) return reply(NOT_A_PRODUCT_MESSAGE);
+        // A photo attached in the Video feature is a storyboard picture, which the video job asks the looser question about.
+        if (photo && conversation.intent !== "video" && !(await isProduct(photo))) return reply(NOT_A_PRODUCT_MESSAGE);
 
         const lastText = conversation.messages.at(-1)!.text.trim();
         // The video button is an explicit request, so the router is not asked what it means.
@@ -555,16 +557,20 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         }
 
         if (intent === "video") {
-          if (!sheet) return reply(NEED_SHEET_MESSAGE);
+          // In the Video feature the storyboard picture is the one attached to the message, whatever else the browser holds;
+          // elsewhere it is the one made earlier.
+          const attached = conversation.intent === "video" && photo && conversation.photoAssetId ? { assetId: conversation.photoAssetId, file: photo } : undefined;
+          const picture = attached ?? sheet;
+          if (!picture) return reply(conversation.intent === "video" ? NEED_ATTACHED_STORYBOARD_MESSAGE : NEED_SHEET_MESSAGE);
           // The planner (a text model, which costs next to nothing) decides the whole video first, so the seller is asked
           // about the exact price of what will be made. The plan that was priced comes back with the yes and is made as it is.
-          const choice = conversation.videoChoice ?? (await planVideoChoice(sheet.file, conversation.video ? undefined : lastText));
+          const choice = conversation.videoChoice ?? (await planVideoChoice(picture.file, conversation.video ? undefined : lastText));
           const estimatedUsd = choiceCostUsd(choice);
           // The yes is for this price: a plan that now costs more is asked about again.
           const agreed = conversation.confirmedUsd !== undefined && estimatedUsd <= conversation.confirmedUsd;
-          // Pressing the button always shows the price first; a typed request only asks when the picture is expensive,
-          // so a few thousandths of a dollar of narration do not turn a US$1.00 video into one that needs a question.
-          const mustAsk = conversation.video !== undefined || videoCostUsd(choice.clips) > COSTS.videoConfirmAboveUsd;
+          // The Video feature (and the old button) always shows the price first; a typed request elsewhere only asks when the
+          // picture is expensive, so a few thousandths of a dollar of narration do not turn a US$1.00 video into one that needs a question.
+          const mustAsk = conversation.video !== undefined || conversation.intent === "video" || videoCostUsd(choice.clips) > COSTS.videoConfirmAboveUsd;
           if (mustAsk && !agreed) {
             send({
               type: "confirmation_requested",
@@ -577,7 +583,7 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
             return;
           }
           await videos.generate({
-            sheet,
+            sheet: picture,
             directions: choice.directions,
             narration: choice.narration,
             voice: choice.voice,
