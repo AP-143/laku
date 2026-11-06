@@ -1,6 +1,6 @@
 # The Storyboard is one picture, and the story is paced to the Length
 
-A Storyboard is made as **one picture** with six panels (each with a numbered title and the caption of its Scene), like the sheet a Seller would draw by hand or get from Google Flow. The Ad video is made from that one picture: every Clip starts from the same picture and is told which part of the story to play. The Seller still picks 10, 20 or 30 seconds, and a text model shares **all six Scenes** over the Clips of that Length, so a short video moves fast and a long one lingers. This replaces ADR 0002.
+A Storyboard is made as **one picture** with six panels (each with a numbered title and the caption of its Scene), like the sheet a Seller would draw by hand or get from Google Flow. The Ad video is made from that one picture: every Clip starts from the same picture and is told which part of the story to play. The planner chooses 10, 20 or 30 seconds (or follows what the Seller wrote), and a text model shares **all six Scenes** over the Clips of that Length, so a short video moves fast and a long one lingers. A request for a Storyboard goes straight to this picture: the Scenes are planned and the picture is drawn in the same request, with no step where the Seller reads and approves the Scenes as text first. The Scenes are kept as data for the video planner and for drawing the picture again, and are not shown. This replaces ADR 0002.
 
 ## Considered options
 

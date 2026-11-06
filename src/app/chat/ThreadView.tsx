@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { PANEL_TITLES } from "../../shared/storyboard";
+import { useEffect, useRef, useState } from "react";
 import { assetUrl, downloadUrl } from "./chat-client";
 import type { RetryRequest, ThreadItem } from "./thread";
 
@@ -15,10 +14,9 @@ interface ThreadViewProps {
   progress?: Progress;
   busy: boolean;
   onRetry: (request: RetryRequest) => void;
-  onEditScene: (itemId: string, index: number, value: string) => void;
-  /** The approve button, and the retry button of the storyboard picture. */
-  onMakeSheet: (itemId: string) => void;
-  /** The "Generate" button of the video panel under an approved storyboard. */
+  /** The retry button of the storyboard picture, which draws it again from the same scenes. */
+  onRedraw: (itemId: string) => void;
+  /** The "Generate" button of the video panel under a storyboard picture. */
   onMakeVideo: (itemId: string) => void;
   onAnswerConfirm: (itemId: string, yes: boolean) => void;
   onResumeVideo: (itemId: string) => void;
@@ -42,7 +40,7 @@ function SparkleIcon() {
 }
 
 /**
- * The "Generate" button of an approved storyboard, with no options: the AI decides the length, the voice-over and the music.
+ * The "Generate" button of a storyboard picture, with no options: the AI decides the length, the voice-over and the music.
  * Once a video exists, the panel folds into one button, so a second video is a deliberate choice and not a stray click.
  */
 function VideoPanel({
@@ -84,38 +82,12 @@ function VideoPanel({
   );
 }
 
-/** The text of one scene. The box grows with its text, so a long scene is never cut off behind a scrollbar. */
-function SceneText({ value, readOnly, onChange }: { value: string; readOnly: boolean; onChange: (value: string) => void }) {
-  const field = useRef<HTMLTextAreaElement>(null);
-
-  const fit = useCallback(() => {
-    const element = field.current;
-    if (!element) return;
-    element.style.height = "auto";
-    element.style.height = `${element.scrollHeight}px`;
-  }, []);
-
-  useLayoutEffect(() => fit(), [value, fit]);
-
-  // A narrower or wider column wraps the text differently, so the height is worked out again.
-  useEffect(() => {
-    const column = field.current?.parentElement;
-    if (!column) return;
-    const observer = new ResizeObserver(fit);
-    observer.observe(column);
-    return () => observer.disconnect();
-  }, [fit]);
-
-  return <textarea ref={field} value={value} rows={2} maxLength={600} readOnly={readOnly} onChange={(event) => onChange(event.target.value)} />;
-}
-
 export function ThreadView({
   items,
   progress,
   busy,
   onRetry,
-  onEditScene,
-  onMakeSheet,
+  onRedraw,
   onMakeVideo,
   onAnswerConfirm,
   onResumeVideo,
@@ -227,65 +199,33 @@ export function ThreadView({
               </figure>
             );
 
-          case "scenes": {
-            const approved = item.approved;
-            const changed = Boolean(item.sheet) && item.madeFrom !== undefined && item.scenes.some((scene, index) => item.madeFrom![index]?.trim() !== scene.trim());
+          case "scenes":
+            // The scenes are data for the video and are not shown: the card is the picture made from them.
+            // A card without a picture and not being drawn has nothing to show; its error message has the retry.
+            if (!item.sheet && !item.busy) return null;
             return (
               <div key={item.id} className="board">
-                <h2>
-                  Storyboard {item.scenes.length} panel
-                  {approved && <span className="board-badge">Disetujui</span>}
-                </h2>
-                <ol>
-                  {item.scenes.map((scene, index) => (
-                    <li key={index} className="scene">
-                      <label>
-                        <span className="scene-num">
-                          {index + 1}. {PANEL_TITLES[index]}
-                        </span>
-                        <SceneText
-                          value={scene}
-                          readOnly={approved && busy}
-                          onChange={(value) => onEditScene(item.id, index, value)}
-                        />
-                      </label>
-                    </li>
-                  ))}
-                </ol>
-                {approved && (
-                  <div className="sheet-box">
-                    {item.sheet ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- served by our own asset endpoint
-                      <img src={assetUrl(item.sheet)} alt="Gambar storyboard dengan semua panel" />
-                    ) : item.busy ? (
-                      <Spinner label="Membuat gambar storyboard" />
-                    ) : (
-                      <span className="frame-empty">Belum dibuat</span>
-                    )}
-                  </div>
-                )}
-                {changed && <p className="scene-note">Teks diubah. Tekan “Coba lagi” untuk memperbarui gambar.</p>}
-                {approved && !item.busy && (
+                <h2>Storyboard {item.scenes.length} panel</h2>
+                <div className="sheet-box">
+                  {item.sheet ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- served by our own asset endpoint
+                    <img src={assetUrl(item.sheet)} alt="Gambar storyboard dengan semua panel" />
+                  ) : (
+                    <Spinner label="Membuat gambar storyboard" />
+                  )}
+                </div>
+                {item.sheet && !item.busy && (
                   <div className="actions">
-                    <button type="button" className="btn" disabled={busy} onClick={() => onMakeSheet(item.id)}>
-                      {item.sheet ? "Coba lagi" : "Buat gambar"}
+                    <button type="button" className="btn" disabled={busy} onClick={() => onRedraw(item.id)}>
+                      Coba lagi
                     </button>
-                    {item.sheet && (
-                      <a className="btn btn-primary" href={downloadUrl(item.sheet)} download>
-                        Unduh
-                      </a>
-                    )}
+                    <a className="btn btn-primary" href={downloadUrl(item.sheet)} download>
+                      Unduh
+                    </a>
                   </div>
                 )}
-                {!approved && (
-                  <div className="actions">
-                    <button type="button" className="btn btn-primary" disabled={busy} onClick={() => onMakeSheet(item.id)}>
-                      Setujui &amp; buat gambar
-                    </button>
-                  </div>
-                )}
-                {/* The approve button is gone once the picture is made: the next step is the video. */}
-                {approved && !busy && item.sheet && (
+                {/* The next step once the picture is made: the video. */}
+                {item.sheet && !item.busy && (
                   <VideoPanel
                     busy={busy}
                     hasVideo={items.slice(position + 1).some((later) => later.kind === "video")}
@@ -294,7 +234,6 @@ export function ThreadView({
                 )}
               </div>
             );
-          }
 
           case "error":
             return (

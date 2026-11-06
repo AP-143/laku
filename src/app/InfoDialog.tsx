@@ -19,7 +19,7 @@ const TOPICS: Record<Topic, { title: string; body: ReactNode }> = {
         <li>
           <strong>Storyboard &amp; Video</strong>
           <span>
-            Storyboard 6 panel dari satu foto produk, jadi satu gambar lengkap dengan judul dan caption. Kamu setujui teksnya dulu, baru gambarnya dibuat. Setelah itu, tekan Generate
+            Storyboard 6 panel dari satu foto produk, langsung jadi satu gambar lengkap dengan judul dan caption. Setelah itu, tekan Generate
             pada panel “Buat video iklan”: AI yang menentukan durasi, voice over, dan musiknya, lalu kamu setuju dengan harganya.
           </span>
         </li>

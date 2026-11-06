@@ -25,7 +25,7 @@ import {
   lastPhotoAssetId,
   lastStudioAssetId,
   narratedVideo,
-  openStoryboard,
+  redrawRequest,
   styleOf,
   type Preset,
   type RetryRequest,
@@ -39,8 +39,7 @@ const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const WIDE_SCREEN = "(min-width: 1000px)";
 /** How long the chat must stay unchanged before it is saved. */
 const SAVE_DELAY_MS = 400;
-const VIDEO_TEXT ="Buatkan video iklan dari storyboard ini.";
-const APPROVE_TEXT = "Setuju, buatkan gambarnya ya.";
+const VIDEO_TEXT = "Buatkan video iklan dari storyboard ini.";
 const HISTORY_LENGTH = 12;
 
 const newId = () => crypto.randomUUID();
@@ -53,7 +52,7 @@ interface Usage {
 
 /** How the events of one request are folded into the thread. */
 interface RunContext {
-  /** Set when the request continues an open storyboard instead of starting a new one. */
+  /** Set when the request draws the picture of a storyboard that is already in the chat again, instead of starting a new one. */
   scenesItemId?: string;
 }
 
@@ -169,6 +168,10 @@ export default function ChatApp() {
       // After a video stopped part way, only the "remake this part" button may continue it, never a full retry.
       let videoStopped = false;
       const retry: RetryRequest = body;
+      // The storyboard card this request draws the picture for: the one it was started from, or the one its scenes created.
+      let cardId = context.scenesItemId;
+      // Once the scenes are known, a picture that fails is retried from them, without planning them again.
+      let redraw: RetryRequest | undefined;
 
       const handle = (event: ChatEvent) => {
         switch (event.type) {
@@ -182,9 +185,8 @@ export default function ChatApp() {
             break;
           }
           case "job_started": {
-            if (event.kind === "storyboard_sheet" && context.scenesItemId) {
-              // `approved` shows the picture area, which also covers a storyboard approved by typing.
-              patchItem(context.scenesItemId, (item) => (item.kind === "scenes" ? { ...item, approved: true, busy: true } : item));
+            if (event.kind === "storyboard_sheet" && cardId) {
+              patchItem(cardId, (item) => (item.kind === "scenes" ? { ...item, busy: true } : item));
             }
             setProgress((current) => current ?? { message: event.kind === "video" ? "Sedang membuat video…" : "Sedang membuat gambar…" });
             break;
@@ -193,14 +195,17 @@ export default function ChatApp() {
             setProgress({ message: event.message, percent: event.percent });
             break;
           case "storyboard_scenes": {
-            if (context.scenesItemId) {
-              patchItem(context.scenesItemId, (item) =>
+            // Data for the video, not something to read: the card shows the picture once it is made.
+            redraw = redrawRequest(event);
+            if (cardId) {
+              patchItem(cardId, (item) =>
                 item.kind === "scenes" ? { ...item, scenes: event.scenes, artDirection: event.artDirection ?? item.artDirection, brief: event.brief ?? item.brief } : item,
               );
             } else {
+              const id = (cardId = newId());
               setItems((current) => [
                 ...current,
-                { id: newId(), kind: "scenes", sourceAssetId: event.sourceAssetId, scenes: event.scenes, artDirection: event.artDirection, brief: event.brief, approved: false },
+                { id, kind: "scenes", sourceAssetId: event.sourceAssetId, scenes: event.scenes, artDirection: event.artDirection, brief: event.brief },
               ]);
             }
             break;
@@ -215,10 +220,8 @@ export default function ChatApp() {
             } else if (event.role === "video" && event.sourceAssetId) {
               const sourceAssetId = event.sourceAssetId;
               setItems((current) => [...current, { id: newId(), kind: "video", assetId: event.assetId, sourceAssetId }]);
-            } else if (event.role === "storyboard_sheet" && context.scenesItemId) {
-              patchItem(context.scenesItemId, (item) =>
-                item.kind === "scenes" ? { ...item, sheet: event.assetId, madeFrom: item.scenes, busy: undefined } : item,
-              );
+            } else if (event.role === "storyboard_sheet" && cardId) {
+              patchItem(cardId, (item) => (item.kind === "scenes" ? { ...item, sheet: event.assetId, busy: undefined } : item));
             }
             break;
           }
@@ -279,7 +282,7 @@ export default function ChatApp() {
                 message: event.message,
                 code: event.code,
                 retryable: event.retryable,
-                retry: videoStopped ? undefined : retry,
+                retry: videoStopped ? undefined : (redraw ?? retry),
               },
             ]);
             break;
@@ -291,8 +294,8 @@ export default function ChatApp() {
       await sendChat(body, handle);
 
       // Whatever happened, nothing is left spinning.
-      if (context.scenesItemId) {
-        patchItem(context.scenesItemId, (item) => (item.kind === "scenes" ? { ...item, busy: undefined } : item));
+      if (cardId) {
+        patchItem(cardId, (item) => (item.kind === "scenes" ? { ...item, busy: undefined } : item));
       }
       setProgress(undefined);
       setBusy(false);
@@ -312,7 +315,6 @@ export default function ChatApp() {
       ...history.slice(-(HISTORY_LENGTH - 1)),
       { role: "user", ...lastMessage },
     ];
-    const open = openStoryboard(itemsRef.current);
     // The storyboard may come from another chat, so a video chat can use a storyboard made elsewhere.
     const { sheet, scenes, artDirection, brief } = storyboardFor(workspaceRef.current);
     return {
@@ -326,7 +328,6 @@ export default function ChatApp() {
       revise: narratedVideo(itemsRef.current),
       // The newest result, or else the photo sent earlier, so "bikin foto studio" works on a later turn.
       lastImageAssetId: lastStudioAssetId(itemsRef.current) ?? lastPhotoAssetId(itemsRef.current),
-      storyboard: open ? { photoAssetId: open.sourceAssetId, scenes: open.scenes, artDirection: open.artDirection, brief: open.brief } : undefined,
       ...extra,
     };
   }
@@ -340,14 +341,11 @@ export default function ChatApp() {
       { intent, style: styleOf(preset) },
       { text: message, photoAssetId: photo?.assetId },
     );
-    // A new photo starts a new storyboard instead of editing the open one (the picture follows the photo it was planned from).
-    if (photo) body.storyboard = undefined;
     setItems((current) => [...current, { id: newId(), kind: "user", text: message, photoAssetId: photo?.assetId }]);
     setText("");
     setPhoto(undefined);
     setIntent(undefined);
-    // A typed message may approve the open storyboard, which makes its one picture.
-    void run(body, { scenesItemId: body.storyboard ? openStoryboard(itemsRef.current)?.id : undefined });
+    void run(body);
   }, [text, photo, busy, inThread, intent, preset, run, setItems]);
 
   const attach = useCallback(async (file: File) => {
@@ -370,37 +368,17 @@ export default function ChatApp() {
     }
   }, []);
 
-  const editScene = useCallback(
-    (itemId: string, index: number, value: string) => {
-      patchItem(itemId, (item) =>
-        item.kind === "scenes" ? { ...item, scenes: item.scenes.map((scene, i) => (i === index ? value : scene)) } : item,
-      );
-    },
-    [patchItem],
-  );
-
-  /** Makes the one picture of an approved storyboard, or makes it again. */
-  const makeSheet = useCallback(
+  /** Draws the picture of a storyboard again from its scenes, which are not planned again. */
+  const redrawSheet = useCallback(
     (itemId: string) => {
       const item = itemsRef.current.find((candidate) => candidate.id === itemId);
-      if (busy || !item || item.kind !== "scenes" || item.scenes.some((scene) => !scene.trim())) return;
-      patchItem(itemId, (current) => (current.kind === "scenes" ? { ...current, approved: true } : current));
-      const body = {
-        messages: [{ role: "user", text: APPROVE_TEXT }],
-        storyboard: {
-          photoAssetId: item.sourceAssetId,
-          scenes: item.scenes.map((scene) => scene.trim()),
-          artDirection: item.artDirection,
-          brief: item.brief,
-        },
-        approve: {},
-      };
-      void run(body, { scenesItemId: itemId });
+      if (busy || !item || item.kind !== "scenes") return;
+      void run(redrawRequest(item), { scenesItemId: itemId });
     },
-    [busy, patchItem, run],
+    [busy, run],
   );
 
-  /** Makes the video of an approved storyboard from its picture; the AI decides the length, the voice-over and the music. */
+  /** Makes the video of a storyboard from its picture; the AI decides the length, the voice-over and the music. */
   const makeVideo = useCallback(
     (itemId: string) => {
       const card = itemsRef.current.find((candidate) => candidate.id === itemId);
@@ -426,17 +404,12 @@ export default function ChatApp() {
   const retryRequest = useCallback(
     (request: RetryRequest) => {
       if (busy) return;
-      if (!request.approve) {
-        // A retried scene replacement must patch the open storyboard, not add a second one.
-        void run(request, { scenesItemId: request.storyboard ? openStoryboard(itemsRef.current)?.id : undefined });
-        return;
-      }
-      // A storyboard retry makes its picture again.
-      const scenes = itemsRef.current.findLast((item) => item.kind === "scenes");
-      if (!scenes || scenes.kind !== "scenes") return;
-      makeSheet(scenes.id);
+      // A retried picture goes on the card of its storyboard, when that card is still in the chat, and not on a second one.
+      const photo = (request.redraw as { photoAssetId?: string } | undefined)?.photoAssetId;
+      const card = photo ? itemsRef.current.findLast((item) => item.kind === "scenes" && item.sourceAssetId === photo) : undefined;
+      void run(request, { scenesItemId: card?.id });
     },
-    [busy, run, makeSheet],
+    [busy, run],
   );
 
   /** Remakes only the clips of a stopped video that are still missing; the finished ones are reused. */
@@ -598,8 +571,7 @@ export default function ChatApp() {
                   progress={progress}
                   busy={busy}
                   onRetry={retryRequest}
-                  onEditScene={editScene}
-                  onMakeSheet={makeSheet}
+                  onRedraw={redrawSheet}
                   onMakeVideo={makeVideo}
                   onAnswerConfirm={answerConfirmation}
                   onResumeVideo={resumeVideo}

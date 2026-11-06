@@ -1,6 +1,6 @@
 # Storyboard and video are one feature
 
-An Ad video is only ever made from the Frames of an approved Storyboard, so offering them as two separate Features (and a Video shortcut that cannot work without a Storyboard) made the Seller guess what to press first. They are one Feature, **Storyboard & Video**, with steps: Scenes, Approval, the Storyboard picture, then a video panel under the Frames with a Length and a Generate button.
+An Ad video is only ever made from the picture of a Storyboard, so offering them as two separate Features (and a Video shortcut that cannot work without a Storyboard) made the Seller guess what to press first. They are one Feature, **Storyboard & Video**, with steps: the Storyboard picture (made straight from the Seller's request), then a video panel under it with a Generate button.
 
 ## Considered options
 

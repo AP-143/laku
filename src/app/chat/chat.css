@@ -642,22 +642,7 @@
   margin-bottom: 10px;
 }
 
-.chat .board h2 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.chat .board-badge {
-  padding: 2px 9px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 650;
-  color: #2d6a3f;
-  background: rgba(60, 160, 100, 0.15);
-}
-
-/* The next step of an approved storyboard: the video. */
+/* The next step of a storyboard picture: the video. */
 .chat .video-panel {
   display: flex;
   flex-direction: column;
@@ -704,22 +689,6 @@
 .chat .video-again {
   margin-top: 14px;
   display: flex;
-}
-
-/* Where the storyboard stands now that the approve button is gone. */
-.chat .board-status {
-  margin-top: 12px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  font-size: 13px;
-  line-height: 1.5;
-  color: #3a3a3a;
-  background: rgba(29, 29, 29, 0.04);
-}
-
-.chat .board-status[data-done="false"] {
-  color: #7a4a14;
-  background: rgba(232, 160, 60, 0.14);
 }
 
 .chat .pair {
@@ -812,74 +781,6 @@
   background: #000;
 }
 
-.chat .board ol {
-  list-style: none;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.chat .scene {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-
-.chat .scene-num {
-  display: inline-block;
-  margin-bottom: 8px;
-  padding: 2px 9px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #a24f1f;
-  background: rgba(232, 134, 84, 0.16);
-}
-
-/* The height is set from the text (see SceneText), so there is no scrollbar and no resize handle. */
-.chat .scene textarea {
-  display: block;
-  width: 100%;
-  min-height: 3.6em;
-  resize: none;
-  overflow: hidden;
-  padding: 11px 13px;
-  border-radius: 12px;
-  font-size: 14px;
-  line-height: 1.55;
-  letter-spacing: 0.005em;
-  color: #2a2a2a;
-  background: #faf9f7;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.09);
-  transition: box-shadow 0.18s ease, background 0.18s ease;
-}
-
-.chat .scene textarea:hover:not(:read-only) {
-  background: #fff;
-}
-
-.chat .scene textarea:focus {
-  outline: none;
-  background: #fff;
-  box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px rgba(232, 134, 84, 0.18);
-}
-
-.chat .scene textarea:read-only {
-  color: #5a5a57;
-}
-
-.chat .scene-note {
-  padding: 6px 10px;
-  border-radius: 8px;
-  font-size: 12px;
-  line-height: 1.4;
-  color: #7a4a14;
-  background: rgba(232, 160, 60, 0.14);
-}
-
 /* The storyboard picture: all the panels in one vertical image, shown whole so the titles and captions can be read. */
 .chat .sheet-box {
   display: grid;
@@ -901,11 +802,6 @@
 
 .chat .board > .actions {
   justify-content: center;
-}
-
-.chat .frame-empty {
-  font-size: 12.5px;
-  color: #8b8b88;
 }
 
 @keyframes chat-spin {
@@ -1290,10 +1186,6 @@
   .chat .msg {
     max-width: 92%;
     font-size: 14.5px;
-  }
-
-  .chat .board ol {
-    grid-template-columns: 1fr;
   }
 
   .chat .sheet-box {
