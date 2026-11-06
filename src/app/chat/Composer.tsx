@@ -55,7 +55,7 @@ const CHIPS: Array<{ intent: ChatIntent; label: string; style: Record<string, nu
   },
   {
     intent: "storyboard",
-    // One feature: a storyboard that, once approved, can be made into a video.
+    // One feature: a storyboard whose picture can be made into a video.
     label: "Storyboard & Video",
     style: { "--cw": 136, "--pl": 14, "--ig": 4 },
     icon: (

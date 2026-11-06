@@ -21,11 +21,8 @@ export type ThreadItem =
       brief?: string;
       /** The finished storyboard picture: all the panels in one image. */
       sheet?: string;
-      /** The scene texts the picture was made from, so a text changed afterwards can be pointed out. */
-      madeFrom?: string[];
       /** The picture is being generated right now (not saved). */
       busy?: boolean;
-      approved: boolean;
     }
   | {
       id: string;
@@ -70,6 +67,17 @@ export type ThreadItem =
   | { id: string; kind: "confirm"; message: string; estimatedUsd?: number; videoChoice?: VideoChoice; retry: RetryRequest; answer?: "yes" | "no" }
   | { id: string; kind: "error"; message: string; code?: ErrorCode; retryable: boolean; retry?: RetryRequest };
 
+/**
+ * The request that draws the picture of a storyboard again from the scenes it was planned with, for the retry of a picture
+ * that failed or that the seller wants drawn again. The scenes are not planned again.
+ */
+export function redrawRequest(storyboard: { sourceAssetId: string; scenes: string[]; artDirection?: string; brief?: string }): RetryRequest {
+  return {
+    messages: [{ role: "user", text: "Coba lagi." }],
+    redraw: { photoAssetId: storyboard.sourceAssetId, scenes: storyboard.scenes, artDirection: storyboard.artDirection, brief: storyboard.brief },
+  };
+}
+
 export const PRESET_LABELS = {
   clean_white: "Putih bersih",
   solid_color: "Backdrop warna",
@@ -103,12 +111,12 @@ export function narratedVideo(items: ThreadItem[]) {
   return script && silentAssetId && voice && seconds ? { silentAssetId, seconds, script, voice, lines } : undefined;
 }
 
-/** The text of the newest storyboard's scenes, which a voice-over script is written from. */
+/** The text of the newest storyboard's scenes, which the video is planned from. */
 export function storyboardScenes(items: ThreadItem[]): string[] {
   return items.findLast((item) => item.kind === "scenes")?.scenes ?? [];
 }
 
-/** The art direction of the newest storyboard, which a video is edited in. */
+/** The art direction of the newest storyboard, which the video planner shares. */
 export function storyboardArtDirection(items: ThreadItem[]): string | undefined {
   return items.findLast((item) => item.kind === "scenes")?.artDirection;
 }
@@ -121,13 +129,4 @@ export function storyboardBrief(items: ThreadItem[]): string | undefined {
 /** The finished picture of the newest storyboard, which a video is made from. */
 export function storyboardSheet(items: ThreadItem[]): string | undefined {
   return items.findLast((item) => item.kind === "scenes")?.sheet;
-}
-
-/**
- * The storyboard scenes can still be edited in chat: the newest one, until its picture exists.
- * (A failed approval leaves it open, so the seller can still change a scene.)
- */
-export function openStoryboard(items: ThreadItem[]) {
-  const latest = items.findLast((item) => item.kind === "scenes");
-  return latest && !latest.sheet ? latest : undefined;
 }

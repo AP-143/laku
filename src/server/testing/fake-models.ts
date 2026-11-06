@@ -24,7 +24,7 @@ interface FakeChatModelOptions {
    * ("mainly a person") while the frame check, which only asks that the product is clearly there, says YES.
    */
   peopleInPictures?: boolean;
-  /** What the intent router answers for any message (STUDIO, REVISE, STORYBOARD, EDIT_SCENE or CHAT). */
+  /** What the intent router answers for any message (STUDIO, REVISE, STORYBOARD or CHAT). */
   intent?: string;
   /** The scenes the planner proposes (one per storyboard panel). */
   scenes?: string[];
@@ -46,8 +46,6 @@ interface FakeChatModelOptions {
     /** The colour grade of the whole video; keys that are left out take the app's default. */
     grade?: { contrast?: number; saturation?: number; brightness?: number; warmth?: number; grain?: number; vignette?: boolean };
   };
-  /** The scene the editor rewrites (scene is 1 to 4). */
-  replacement?: { scene: number; text: string };
   /** The length the video planner chooses, in seconds (10, 20 or 30); 10 when left out. A list is one answer for each planner call, the last one repeating. */
   videoSeconds?: number | number[];
   /** Whether the video planner chooses a voice-over (the lines of `videoPlan.narration`); none when left out. */
@@ -110,14 +108,12 @@ export function fakeChatModel(options: FakeChatModelOptions) {
               ? (options.intent ?? "CHAT")
               : task === "plan-scenes"
                 ? JSON.stringify({ scenes: options.scenes, artDirection: options.artDirection})
-                : task === "replace-scene"
-                  ? JSON.stringify(options.replacement)
-                  : task === "voice-revision"
-                    ? JSON.stringify({
-                        script: options.voiceRevision?.script ?? null,
-                        voice: options.voiceRevision?.voice ?? null,
-                      })
-                    : yesNo(options.isProduct !== false);
+                : task === "voice-revision"
+                  ? JSON.stringify({
+                      script: options.voiceRevision?.script ?? null,
+                      voice: options.voiceRevision?.voice ?? null,
+                    })
+                  : yesNo(options.isProduct !== false);
       return {
         content: [{ type: "text" as const, text: answer }],
         finishReason: { unified: "stop" as const, raw: undefined },

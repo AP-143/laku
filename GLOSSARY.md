@@ -33,7 +33,7 @@ The look the Seller asks for in a Studio photo: a preset (clean white, solid col
 _Avoid_: Filter, theme, template
 
 **Storyboard & Video**:
-The Feature that turns a Product photo into an Ad video in steps: a Storyboard is planned, the Seller gives Approval, its Storyboard picture is made, and then the Ad video is made from it.
+The Feature that turns a Product photo into an Ad video in steps: asking for a Storyboard makes its Storyboard picture straight away, and then the Ad video is made from that picture.
 _Avoid_: Storyboard (for the Feature as a whole), Video (as a Feature of its own)
 
 ### Storyboard and video
@@ -43,7 +43,7 @@ Six Scenes that together tell one short ad for the product (opening, product, de
 _Avoid_: Script, plan, shot list
 
 **Scene**:
-The text of one of the six moments of a Storyboard: what is seen, and the Caption written on its panel. The Seller can change it before Approval.
+The text of one of the six moments of a Storyboard: what is seen, and the Caption written on its panel. The planner writes it and the Storyboard picture is drawn from it; the Seller does not read or edit it, and the video planner uses it to share the story over the Clips.
 _Avoid_: Shot, slide (a panel is the Scene as drawn in the Storyboard picture)
 
 **Art direction**:
@@ -54,16 +54,12 @@ _Avoid_: Style (that is the Studio photo Style), theme, template
 The Seller's first request, kept as they wrote it (at most 400 characters, never a summary written by a model). Everything the Seller said in it also shapes the Scenes and the Art direction. The brief travels with the Storyboard to the video planner, which reads it together with any words typed with the video request (the newer words win). What the Seller asked of the Length, a Voice-over or Music is done as asked, and only what they did not mention is the planner's choice. A Length written as "10 detik", "30s" or "20 sec" is found by a fixed pattern and is the Length of the video (a number between the options is the nearest one that is not longer): the planner is told so, asked once more if it still chooses another, and then its plan is fitted to that Length. A request that names nothing leaves the planner free. The Seller does not edit it.
 _Avoid_: Prompt, instructions, requirements
 
-**Approval**:
-The Seller's yes to the Scenes of a Storyboard. Nothing is drawn before it, so no image is paid for on a plan the Seller does not want.
-_Avoid_: Confirmation (that is the Price question), sign-off
-
 **Storyboard picture**:
-The whole Storyboard as one vertical image: a grid of six panels, each with its numbered title and the Caption of its Scene, made from the Product photo so the product stays the same in every panel. It costs one image and can be made again.
+The whole Storyboard as one vertical image: a grid of six panels, each with its numbered title and the Caption of its Scene, made from the Product photo so the product stays the same in every panel. It is made in the same request as the Seller asks for the Storyboard (no approval of the Scenes in between), costs one image and can be made again from the same Scenes.
 _Avoid_: Frame, sheet (in the UI), scene image, thumbnail
 
 **Ad video**:
-A vertical video made from the Storyboard picture of an approved Storyboard, 10, 20 or 30 seconds long, with or without a Voice-over and a Music bed. The Seller only presses Generate: the planner decides the Length, the Voice-over and the Music bed. Its style, the text it shows (the Captions of the Scenes), its effects and the emotion of the person follow the Storyboard picture, and the video model decides how they look on screen; the app draws no text of its own.
+A vertical video made from the Storyboard picture of a Storyboard, 10, 20 or 30 seconds long, with or without a Voice-over and a Music bed. The Seller only presses Generate: the planner decides the Length, the Voice-over and the Music bed. Its style, the text it shows (the Captions of the Scenes), its effects and the emotion of the person follow the Storyboard picture, and the video model decides how they look on screen; the app draws no text of its own.
 _Avoid_: Reel, clip (a Clip is only a piece of it)
 
 **Length**:

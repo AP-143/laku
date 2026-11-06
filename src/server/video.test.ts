@@ -121,8 +121,8 @@ describe("video from the storyboard", () => {
   });
 });
 
-/** The "Generate" button under an approved storyboard: a flag with no options, since the planner chooses the length. */
-describe("video from the button of an approved storyboard", () => {
+/** The "Generate" button under a storyboard picture: a flag with no options, since the planner chooses the length. */
+describe("video from the button of a storyboard picture", () => {
   const buttonRequest = (sheet: string | undefined, extra: object = {}) =>
     videoRequest("Buat video dari storyboard ini.", sheet, { video: true, ...extra });
 

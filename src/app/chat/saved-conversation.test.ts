@@ -12,8 +12,7 @@ import {
   type ChatSession,
   type Workspace,
 } from "./saved-conversation";
-import { SCENE_REPLACED_MESSAGE, SCENES_PROPOSED_MESSAGE } from "../../shared/chat-messages";
-import type { ThreadItem } from "./thread";
+import { redrawRequest, type ThreadItem } from "./thread";
 
 /** The chat sessions the seller sees in the sidebar, kept in the browser's storage across reloads. */
 
@@ -25,6 +24,21 @@ function memoryStorage(initial: Record<string, string> = {}) {
     setItem: (key: string, value: string) => void data.set(key, value),
   };
 }
+
+describe("redrawing a storyboard picture", () => {
+  it("asks for the picture again from the scenes it was planned with, so nothing is planned again", () => {
+    const request = redrawRequest({ sourceAssetId: "photo", scenes: ["a", "b", "c", "d", "e", "f"], artDirection: "neon", brief: "video 10 detik" });
+
+    assert.deepEqual(request.redraw, {
+      photoAssetId: "photo",
+      scenes: ["a", "b", "c", "d", "e", "f"],
+      artDirection: "neon",
+      brief: "video 10 detik",
+    });
+    // It is a request on its own: no intent to guess and no stale storyboard fields of the old approve flow.
+    assert.equal("approve" in request || "storyboard" in request, false);
+  });
+});
 
 describe("chat sessions", () => {
   it("starts with one empty session when nothing was saved", () => {
@@ -154,7 +168,7 @@ describe("chat sessions", () => {
   it("labels a session with the feature of its first result, where storyboard and video are one feature", () => {
     const user: ThreadItem = { id: "u", kind: "user", text: "tolong" };
     const studio: ThreadItem = { id: "s", kind: "studio", assetId: "x", sourceAssetId: "p", retry: {} };
-    const scenes: ThreadItem = { id: "c", kind: "scenes", sourceAssetId: "p", scenes: ["a", "b", "c", "d", "e", "f"], approved: false };
+    const scenes: ThreadItem = { id: "c", kind: "scenes", sourceAssetId: "p", scenes: ["a", "b", "c", "d", "e", "f"] };
     const video: ThreadItem = { id: "v", kind: "video", assetId: "x", sourceAssetId: "p" };
     const partial: ThreadItem = { id: "t", kind: "partial", seconds: 16, clips: [4, 4, 4, 4], finished: {}, failedIndex: 0, voiceOver: false, sheet: "s", directions: [], narration: [], voice: "female", grade: { contrast: 1, saturation: 1, brightness: 0, warmth: 0, grain: 0, vignette: false } };
     const featureOf = (items: ThreadItem[]) => describeSession({ id: "s", items }).feature;
@@ -168,7 +182,7 @@ describe("chat sessions", () => {
     assert.equal(featureOf([user, studio, scenes, video]), "studio_photo");
   });
 
-  it("brings the storyboard replies saved with older wording up to date, and leaves every other message alone", () => {
+  it("leaves out the replies of the old text step, which point at buttons that are gone, and every other message stays", () => {
     const saved: ThreadItem[] = [
       { id: "a", kind: "user", text: "buat storyboard" },
       {
@@ -178,23 +192,28 @@ describe("chat sessions", () => {
       },
       { id: "c", kind: "bot", text: "Sudah kuganti. Kalau sudah cocok, setujui supaya aku buatkan gambarnya ya." },
       { id: "d", kind: "bot", text: "Halo! Ada yang bisa kubantu?" },
-      // The seller's own words are never rewritten, even when they match.
+      // The seller's own words are never touched, even when they match.
       { id: "e", kind: "user", text: "Sudah kuganti. Kalau sudah cocok, setujui supaya aku buatkan gambarnya ya." },
     ];
     const storage = memoryStorage({ "laku:sessions:v1": JSON.stringify({ sessions: [{ id: "s", items: saved }], activeId: "s" }) });
 
     const { items } = loadWorkspace(storage).sessions[0];
 
-    assert.deepEqual(
-      items.map((item) => (item.kind === "user" || item.kind === "bot" ? item.text : "")),
-      [
-        "buat storyboard",
-        SCENES_PROPOSED_MESSAGE,
-        SCENE_REPLACED_MESSAGE,
-        "Halo! Ada yang bisa kubantu?",
-        "Sudah kuganti. Kalau sudah cocok, setujui supaya aku buatkan gambarnya ya.",
-      ],
-    );
+    assert.deepEqual(items.map((item) => item.id), ["a", "d", "e"]);
+  });
+
+  it("loads a chat saved with the text step: a storyboard card with its picture stays, one that was never drawn is left out", () => {
+    const drawn = { id: "c1", kind: "scenes", sourceAssetId: "p", scenes: ["a", "b", "c", "d", "e", "f"], sheet: "sheet", approved: true };
+    const waiting = { id: "c2", kind: "scenes", sourceAssetId: "p", scenes: ["a", "b", "c", "d", "e", "f"], approved: false };
+    const storage = memoryStorage({
+      "laku:sessions:v1": JSON.stringify({ sessions: [{ id: "s", items: [{ id: "u", kind: "user", text: "storyboard" }, waiting, drawn] }], activeId: "s" }),
+    });
+
+    const { items } = loadWorkspace(storage).sessions[0];
+
+    assert.deepEqual(items.map((item) => item.id), ["u", "c1"]);
+    // A video can still be made from the storyboard that kept its picture.
+    assert.equal(storyboardFor(loadWorkspace(storage)).sheet, "sheet");
   });
 
   it("keeps the single conversation saved before sessions existed as the first session", () => {
@@ -257,7 +276,6 @@ describe("chat sessions", () => {
       artDirection,
       brief,
       sheet,
-      approved: true,
     });
     const sessionWith = (id: string, ...items: ThreadItem[]): ChatSession => ({ id, items });
 
@@ -301,7 +319,7 @@ describe("chat sessions", () => {
 
   it("does not save that the picture was still being drawn", () => {
     const storage = memoryStorage();
-    const scenes: ThreadItem = { id: "c", kind: "scenes", sourceAssetId: "p", scenes: ["a", "b", "c", "d", "e", "f"], sheet: "f", busy: true, approved: true };
+    const scenes: ThreadItem = { id: "c", kind: "scenes", sourceAssetId: "p", scenes: ["a", "b", "c", "d", "e", "f"], sheet: "f", busy: true };
 
     saveWorkspace(storage, setActiveItems(loadWorkspace(storage), [scenes]));
 

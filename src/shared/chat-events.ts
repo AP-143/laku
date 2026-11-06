@@ -54,7 +54,11 @@ export type ChatEvent =
       /** The music the video was to get, made after the clips, so a remade video still gets it. */
       music?: MusicPlan;
     }
-  /** The proposed scenes of a storyboard (one per panel). Nothing is generated until the user approves them. */
+  /**
+   * The scenes of a storyboard (one per panel), its art direction and the seller's words, sent just before its picture is
+   * drawn. They are data for the browser to keep (the video is planned from them and a retry draws the picture from them),
+   * not something to show.
+   */
   | { type: "storyboard_scenes"; sourceAssetId: string; scenes: string[]; artDirection?: string; brief?: string }
   /** Something went wrong. `message` is shown to the user as is, so it is Indonesian. */
   | { type: "error"; message: string; retryable: boolean; code?: ErrorCode }

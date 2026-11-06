@@ -8,7 +8,7 @@ import { readEvents } from "./testing/events";
 import { chatRequest, createTestApp } from "./testing/harness";
 import { makePhoto, uploadRequest } from "./testing/photos";
 
-/** Feature 2 through the chat API: six scenes as text first, the storyboard picture only after the seller approves. */
+/** Feature 2 through the chat API: a storyboard request goes straight to its one picture; the video is made from that picture. */
 
 /** The art direction a planner might pick for a gadget: nothing like the warm, appetizing look of food. */
 const ART = "Night-time neon palette of electric blue and magenta, glossy highlights, glitchy speed-ramp transitions and HUD-style graphic accents.";
@@ -36,132 +36,42 @@ function newApp(extra: Partial<Parameters<typeof fakeChatModel>[0]> = {}) {
 }
 
 describe("storyboard", () => {
-  it("proposes exactly six scenes and generates no image before approval", async () => {
-    const app = newApp();
+  /** A typed request for a storyboard: the picture is made in the same request, with no text step in between. */
+  async function makeStoryboard(app: ReturnType<typeof createTestApp>, photoAssetId: string, text = "") {
+    return readEvents(await app.chat(chatRequest({ messages: [{ role: "user", text, photoAssetId }], intent: "storyboard" })));
+  }
+
+  it("goes straight to the one picture: the planner plans once, one image is made and nothing waits for an approval", async () => {
+    const chat = fakeChatModel({ chunks: ["unused"], scenes: SCENES, artDirection: ART, intent: "STORYBOARD" });
+    const app = createTestApp(chat);
     const photoAssetId = await uploadPhoto(app);
 
     const events = await readEvents(
-      await app.chat(chatRequest({ messages: [{ role: "user", text: "", photoAssetId }], intent: "storyboard" })),
+      await app.chat(chatRequest({ messages: [{ role: "user", text: "buatkan storyboard dan video 10 detik", photoAssetId }] })),
     );
 
     const plan = proposed(events);
     assert.ok(plan?.type === "storyboard_scenes");
     assert.deepEqual(plan.scenes, SCENES);
     assert.equal(plan.sourceAssetId, photoAssetId);
-    assert.equal(app.imageModel.calls.length, 0);
-    assert.equal(events.some((e) => e.type === "job_started" || e.type === "asset_ready"), false);
-    assert.deepEqual(events.at(-1), { type: "done" });
-  });
-
-  it("proposes an art direction picked for the product, and tells the planner to work like a professional editor", async () => {
-    const chat = fakeChatModel({ chunks: ["unused"], scenes: SCENES, artDirection: ART });
-    const app = createTestApp(chat);
-    const photoAssetId = await uploadPhoto(app);
-
-    const events = await readEvents(
-      await app.chat(chatRequest({ messages: [{ role: "user", text: "", photoAssetId }], intent: "storyboard" })),
-    );
-
-    const plan = proposed(events);
-    assert.ok(plan?.type === "storyboard_scenes");
     assert.equal(plan.artDirection, ART);
-    // The look is not a fixed recipe: the planner is asked to choose it for this product, its buyers and its story.
-    const planned = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: plan-scenes]"));
-    const prompt = JSON.stringify(planned?.prompt);
-    assert.match(prompt, /professional (video )?editor/i);
-    assert.match(prompt, /suits? this product/i);
-  });
-
-  it("says its words before the scene card, so the card with the approve button is the last thing in the chat", async () => {
-    const app = newApp();
-    const photoAssetId = await uploadPhoto(app);
-
-    const events = await readEvents(
-      await app.chat(chatRequest({ messages: [{ role: "user", text: "", photoAssetId }], intent: "storyboard" })),
-    );
-
+    assert.equal(chat.doGenerateCalls.filter((call) => JSON.stringify(call.prompt).includes("[task: plan-scenes]")).length, 1);
+    assert.equal(app.imageModel.calls.length, 1);
+    assert.equal(sheets(events).length, 1);
+    assert.equal(sheets(events)[0].sourceAssetId, photoAssetId);
+    // The data for the video comes first, then the picture, then the words that say what to do next.
     assert.deepEqual(
       events.map((e) => e.type),
-      ["assistant_text", "storyboard_scenes", "done"],
+      ["storyboard_scenes", "job_started", "asset_ready", "usage_updated", "assistant_text", "done"],
     );
   });
 
-  it("explains the steps in its words: approve first, then the video panel with its Generate button follows the images", async () => {
-    const app = newApp({ intent: "EDIT_SCENE", replacement: { scene: 3, text: "Scene tiga baru di pantai" } });
-    const photoAssetId = await uploadPhoto(app);
-    const wordsOf = (events: ChatEvent[]) =>
-      events.flatMap((event) => (event.type === "assistant_text" ? [event.text] : [])).join("");
-
-    const proposal = await readEvents(
-      await app.chat(chatRequest({ messages: [{ role: "user", text: "", photoAssetId }], intent: "storyboard" })),
-    );
-    const replaced = await readEvents(
-      await app.chat(
-        chatRequest({ messages: [{ role: "user", text: "ganti scene 3" }], storyboard: { photoAssetId, scenes: SCENES } }),
-      ),
-    );
-
-    for (const words of [wordsOf(proposal), wordsOf(replaced)]) {
-      assert.match(words, /Setujui & buat gambar/);
-      assert.match(words, /Buat video iklan/);
-      assert.match(words, /Generate/);
-    }
-  });
-
-  it("starts from a typed request and an already finished studio photo", async () => {
-    const app = newApp({ intent: "STORYBOARD" });
-    const studioPhotoId = await uploadPhoto(app);
-
-    const events = await readEvents(
-      await app.chat(
-        chatRequest({ messages: [{ role: "user", text: "bikinin storyboard 4 scene dong", photoAssetId: studioPhotoId }] }),
-      ),
-    );
-
-    const plan = proposed(events);
-    assert.ok(plan?.type === "storyboard_scenes");
-    assert.equal(plan.scenes.length, 6);
-    assert.equal(app.imageModel.calls.length, 0);
-  });
-
-  it("replaces only the scene the seller asks to change", async () => {
-    const app = newApp({ intent: "EDIT_SCENE", replacement: { scene: 3, text: "Scene tiga baru di pantai" } });
+  it("draws the picture from the scenes and the art direction of this request, from the product photo, for the price of one image", async () => {
+    const app = newApp({ artDirection: ART });
     const photoAssetId = await uploadPhoto(app);
 
-    const events = await readEvents(
-      await app.chat(
-        chatRequest({
-          messages: [{ role: "user", text: "ganti scene 3 jadi di pantai" }],
-          storyboard: { photoAssetId, scenes: SCENES, artDirection: ART },
-        }),
-      ),
-    );
+    const events = await makeStoryboard(app, photoAssetId);
 
-    const plan = proposed(events);
-    assert.ok(plan?.type === "storyboard_scenes");
-    assert.deepEqual(plan.scenes, [SCENES[0], SCENES[1], "Scene tiga baru di pantai", ...SCENES.slice(3)]);
-    // Changing one scene does not change the look of the whole storyboard.
-    assert.equal(plan.artDirection, ART);
-    assert.equal(app.imageModel.calls.length, 0);
-  });
-
-  it("makes one storyboard picture of all six scenes after approval, from the product photo, and records it", async () => {
-    const app = newApp();
-    const photoAssetId = await uploadPhoto(app);
-
-    const events = await readEvents(
-      await app.chat(
-        chatRequest({
-          messages: [{ role: "user", text: "Setuju, buatkan gambarnya" }],
-          storyboard: { photoAssetId, scenes: SCENES },
-          approve: {},
-        }),
-      ),
-    );
-
-    const made = sheets(events);
-    assert.equal(made.length, 1);
-    assert.equal(made[0].sourceAssetId, photoAssetId);
     assert.equal(app.imageModel.calls.length, 1);
     // The picture starts from the product photo, which keeps the product the same in every panel.
     const reference = Buffer.from((await app.store.read(photoAssetId, "resized"))!.bytes);
@@ -172,27 +82,71 @@ describe("storyboard", () => {
     SCENES.forEach((scene) => assert.match(prompt, new RegExp(scene)));
     PANEL_TITLES.forEach((title, index) => assert.match(prompt, new RegExp(`${index + 1}\\. ${title}`)));
     assert.ok(prompt.indexOf(SCENES[0]) < prompt.indexOf(SCENES[5]));
-    // One picture costs one image, not six.
+    assert.ok(prompt.includes(ART));
+    // One picture costs one image, not six; vertical (9:16), so the video made from it is vertical too.
     const lastUsage = events.findLast((e) => e.type === "usage_updated");
     assert.equal(lastUsage?.type === "usage_updated" && lastUsage.monthUsd, 0.0336);
-    // Vertical (9:16), so the video made from it is vertical too.
     assert.equal(app.imageModel.calls[0].aspectRatio, "9:16");
-    assert.deepEqual(events.at(-1), { type: "done" });
+  });
+
+  it("says in Indonesian that the storyboard is ready and that the video panel is below, and no longer asks for an approval", async () => {
+    const app = newApp();
+    const photoAssetId = await uploadPhoto(app);
+
+    const events = await makeStoryboard(app, photoAssetId);
+
+    const words = events.flatMap((event) => (event.type === "assistant_text" ? [event.text] : [])).join("");
+    assert.match(words, /storyboard/i);
+    assert.match(words, /Buat video iklan/);
+    assert.match(words, /Generate/);
+    assert.doesNotMatch(words, /Setujui|setuju|usulan/i);
+  });
+
+  it("uses the studio photo of an earlier turn when the request is typed without a new photo", async () => {
+    const app = newApp({ intent: "STORYBOARD" });
+    const studioPhotoId = await uploadPhoto(app);
+
+    const events = await readEvents(
+      await app.chat(chatRequest({ messages: [{ role: "user", text: "bikinin storyboard dong" }], lastImageAssetId: studioPhotoId })),
+    );
+
+    assert.equal(sheets(events).length, 1);
+    assert.equal(app.imageModel.calls.length, 1);
+  });
+
+  it("asks the planner for an art direction picked for the product, and to work like a professional editor", async () => {
+    const chat = fakeChatModel({ chunks: ["unused"], scenes: SCENES, artDirection: ART });
+    const app = createTestApp(chat);
+    const photoAssetId = await uploadPhoto(app);
+
+    await makeStoryboard(app, photoAssetId);
+
+    // The look is not a fixed recipe: the planner is asked to choose it for this product, its buyers and its story.
+    const planned = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: plan-scenes]"));
+    const prompt = JSON.stringify(planned?.prompt);
+    assert.match(prompt, /professional (video )?editor/i);
+    assert.match(prompt, /suits? this product/i);
+  });
+
+  it("asks the planner for a different shot in each panel, and for the closing caption to end with the call to buy", async () => {
+    const chat = fakeChatModel({ chunks: ["unused"], scenes: SCENES });
+    const app = createTestApp(chat);
+    const photoAssetId = await uploadPhoto(app);
+
+    await makeStoryboard(app, photoAssetId);
+
+    const planned = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: plan-scenes]"));
+    const prompt = JSON.stringify(planned?.prompt);
+    for (const shot of PANEL_SHOTS) assert.ok(prompt.includes(shot), shot);
+    assert.match(prompt, /call to buy/i);
+    assert.match(prompt, /three short benefits/i);
   });
 
   it("asks for the panel titles and the captions of the scenes to be written on the picture, and nothing else", async () => {
     const app = newApp();
     const photoAssetId = await uploadPhoto(app);
 
-    await readEvents(
-      await app.chat(
-        chatRequest({
-          messages: [{ role: "user", text: "Setuju, buatkan gambarnya" }],
-          storyboard: { photoAssetId, scenes: SCENES },
-          approve: {},
-        }),
-      ),
-    );
+    await makeStoryboard(app, photoAssetId);
 
     // A real run once drew "SCENE 3 - CLOSE ON ..." inside a frame: camera notes are not part of an ad picture.
     const prompt = app.imageModel.calls[0].prompt ?? "";
@@ -203,18 +157,10 @@ describe("storyboard", () => {
 
   it("asks for a professionally designed ad sheet, with a different kind of shot in each panel", async () => {
     // A plain grid with white captions looked flat next to a hand-finished ad storyboard.
-    const app = newApp();
+    const app = newApp({ artDirection: ART });
     const photoAssetId = await uploadPhoto(app);
 
-    await readEvents(
-      await app.chat(
-        chatRequest({
-          messages: [{ role: "user", text: "Setuju, buatkan gambarnya" }],
-          storyboard: { photoAssetId, scenes: SCENES, artDirection: ART },
-          approve: {},
-        }),
-      ),
-    );
+    await makeStoryboard(app, photoAssetId);
 
     const prompt = app.imageModel.calls[0].prompt ?? "";
     // The layout is the same for every product: slanted gutters, a pill label and a caption bubble per panel, a call to action.
@@ -236,39 +182,15 @@ describe("storyboard", () => {
     }
   });
 
-  it("makes the sheet with a neutral professional look when no art direction was given, and says nothing odd about it", async () => {
+  it("makes the sheet with a neutral professional look when the planner gave no art direction, and says nothing odd about it", async () => {
     const app = newApp();
     const photoAssetId = await uploadPhoto(app);
 
-    await readEvents(
-      await app.chat(
-        chatRequest({
-          messages: [{ role: "user", text: "Setuju" }],
-          storyboard: { photoAssetId, scenes: SCENES },
-          approve: {},
-        }),
-      ),
-    );
+    await makeStoryboard(app, photoAssetId);
 
     const prompt = app.imageModel.calls[0].prompt ?? "";
     assert.doesNotMatch(prompt, /undefined/);
     assert.match(prompt, /professional/i);
-  });
-
-  it("rejects an art direction that is not text", async () => {
-    const app = newApp();
-    const photoAssetId = await uploadPhoto(app);
-
-    const response = await app.chat(
-      chatRequest({
-        messages: [{ role: "user", text: "Setuju" }],
-        storyboard: { photoAssetId, scenes: SCENES, artDirection: 42 },
-        approve: {},
-      }),
-    );
-
-    assert.equal(response.status, 400);
-    assert.equal(app.imageModel.calls.length, 0);
   });
 
   it("reads the first request from the start: the planner sees all of it, and the seller's own words reach the browser for the video", async () => {
@@ -292,127 +214,13 @@ describe("storyboard", () => {
   it("has no brief when the seller typed nothing, and keeps only a short text of what was typed", async () => {
     const app = newApp();
     const photoAssetId = await uploadPhoto(app);
-    const empty = await readEvents(
-      await app.chat(chatRequest({ messages: [{ role: "user", text: "   ", photoAssetId }], intent: "storyboard" })),
-    );
-    const none = proposed(empty);
+    const none = proposed(await makeStoryboard(app, photoAssetId, "   "));
     assert.ok(none?.type === "storyboard_scenes");
     assert.equal(none.brief, undefined);
 
-    const long = await readEvents(
-      await app.chat(chatRequest({ messages: [{ role: "user", text: " " + "x".repeat(MAX_BRIEF_CHARS * 3), photoAssetId }], intent: "storyboard" })),
-    );
-    const plan = proposed(long);
+    const plan = proposed(await makeStoryboard(app, photoAssetId, " " + "x".repeat(MAX_BRIEF_CHARS * 3)));
     assert.ok(plan?.type === "storyboard_scenes");
     assert.equal(plan.brief?.length, MAX_BRIEF_CHARS);
-  });
-
-  it("keeps the brief when one scene is replaced", async () => {
-    const app = newApp({ intent: "EDIT_SCENE", replacement: { scene: 2, text: "Scene dua baru" } });
-    const photoAssetId = await uploadPhoto(app);
-
-    const events = await readEvents(
-      await app.chat(
-        chatRequest({
-          messages: [{ role: "user", text: "ganti scene 2" }],
-          storyboard: { photoAssetId, scenes: SCENES, artDirection: ART, brief: "About 10 seconds, with a voice-over." },
-        }),
-      ),
-    );
-
-    const plan = proposed(events);
-    assert.ok(plan?.type === "storyboard_scenes");
-    assert.equal(plan.brief, "About 10 seconds, with a voice-over.");
-  });
-
-  it("rejects a brief that is not a short text, and still accepts a storyboard from before there was a brief", async () => {
-    for (const bad of [42, "x".repeat(MAX_BRIEF_CHARS + 1)]) {
-      const app = newApp();
-      const photoAssetId = await uploadPhoto(app);
-      const response = await app.chat(
-        chatRequest({
-          messages: [{ role: "user", text: "Setuju" }],
-          storyboard: { photoAssetId, scenes: SCENES, brief: bad },
-          approve: {},
-        }),
-      );
-      assert.equal(response.status, 400);
-      assert.equal(app.imageModel.calls.length, 0);
-    }
-
-    const app = newApp();
-    const photoAssetId = await uploadPhoto(app);
-    const old = await app.chat(
-      chatRequest({ messages: [{ role: "user", text: "Setuju" }], storyboard: { photoAssetId, scenes: SCENES }, approve: {} }),
-    );
-    assert.equal(old.status, 200);
-  });
-
-  it("asks the planner for a different shot in each panel, and for the closing caption to end with the call to buy", async () => {
-    const chat = fakeChatModel({ chunks: ["unused"], scenes: SCENES });
-    const app = createTestApp(chat);
-    const photoAssetId = await uploadPhoto(app);
-
-    await readEvents(
-      await app.chat(chatRequest({ messages: [{ role: "user", text: "", photoAssetId }], intent: "storyboard" })),
-    );
-
-    const planned = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: plan-scenes]"));
-    const prompt = JSON.stringify(planned?.prompt);
-    for (const shot of PANEL_SHOTS) assert.ok(prompt.includes(shot), shot);
-    assert.match(prompt, /call to buy/i);
-    assert.match(prompt, /three short benefits/i);
-  });
-
-  it("makes the one picture when the seller types their approval while the storyboard is open", async () => {
-    const app = newApp({ intent: "APPROVE" });
-    const photoAssetId = await uploadPhoto(app);
-
-    const events = await readEvents(
-      await app.chat(
-        chatRequest({
-          messages: [{ role: "user", text: "oke setuju" }],
-          storyboard: { photoAssetId, scenes: SCENES },
-        }),
-      ),
-    );
-
-    assert.equal(sheets(events).length, 1);
-    assert.equal(app.imageModel.calls.length, 1);
-    SCENES.forEach((scene) => assert.match(app.imageModel.calls[0].prompt ?? "", new RegExp(scene)));
-    assert.equal(events.some((e) => e.type === "assistant_text"), false);
-    assert.deepEqual(events.at(-1), { type: "done" });
-  });
-
-  it("does not generate anything for an approval when there is no storyboard to approve", async () => {
-    const app = newApp({ intent: "APPROVE" });
-    const photoAssetId = await uploadPhoto(app);
-
-    const events = await readEvents(
-      await app.chat(chatRequest({ messages: [{ role: "user", text: "oke setuju" }], lastImageAssetId: photoAssetId })),
-    );
-
-    assert.equal(app.imageModel.calls.length, 0);
-    assert.equal(sheets(events).length, 0);
-    assert.deepEqual(events.at(-1), { type: "done" });
-  });
-
-  it("uses the scene text the seller edited before approving", async () => {
-    const app = newApp();
-    const photoAssetId = await uploadPhoto(app);
-    const edited = [...SCENES.slice(0, 5), "Scene enam yang kuedit sendiri"];
-
-    await readEvents(
-      await app.chat(
-        chatRequest({
-          messages: [{ role: "user", text: "Setuju" }],
-          storyboard: { photoAssetId, scenes: edited },
-          approve: {},
-        }),
-      ),
-    );
-
-    assert.match(app.imageModel.calls[0].prompt ?? "", /kuedit sendiri/);
   });
 
   it("reports a failed picture once, books nothing and does not retry by itself", async () => {
@@ -420,37 +228,127 @@ describe("storyboard", () => {
     const app = createTestApp(fakeChatModel({ chunks: ["unused"], scenes: SCENES }), failing);
     const photoAssetId = await uploadPhoto(app);
 
+    const events = await makeStoryboard(app, photoAssetId);
+
+    assert.equal(sheets(events).length, 0);
+    assert.equal(app.imageModel.calls.length, 1);
+    // The scenes still reached the browser, so a retry does not have to plan them again.
+    assert.ok(proposed(events));
+    const last = events.at(-1);
+    assert.equal(last?.type === "error" && last.code, "rate_limited");
+    assert.equal(events.some((e) => e.type === "assistant_text"), false);
+    assert.equal((await (await app.usage(new Request("http://localhost/api/usage"))).json()).monthUsd, 0);
+  });
+
+  it("draws the picture again from the same scenes on a retry, without planning again", async () => {
+    const chat = fakeChatModel({ chunks: ["unused"], scenes: SCENES, artDirection: ART });
+    const app = createTestApp(chat);
+    const photoAssetId = await uploadPhoto(app);
+
     const events = await readEvents(
       await app.chat(
         chatRequest({
-          messages: [{ role: "user", text: "Setuju" }],
-          storyboard: { photoAssetId, scenes: SCENES },
-          approve: {},
+          messages: [{ role: "user", text: "Coba lagi" }],
+          redraw: { photoAssetId, scenes: SCENES, artDirection: ART, brief: "video 10 detik" },
         }),
       ),
     );
 
-    assert.equal(sheets(events).length, 0);
+    assert.equal(chat.doGenerateCalls.filter((call) => JSON.stringify(call.prompt).includes("[task: plan-scenes]")).length, 0);
+    assert.equal(sheets(events).length, 1);
     assert.equal(app.imageModel.calls.length, 1);
-    const last = events.at(-1);
-    assert.equal(last?.type === "error" && last.code, "rate_limited");
-    assert.equal((await (await app.usage(new Request("http://localhost/api/usage"))).json()).monthUsd, 0);
+    SCENES.forEach((scene) => assert.match(app.imageModel.calls[0].prompt ?? "", new RegExp(scene)));
+    assert.ok((app.imageModel.calls[0].prompt ?? "").includes(ART));
+    // The browser gets the same data again, so a card that is gone after a reload is made again with it.
+    const plan = proposed(events);
+    assert.ok(plan?.type === "storyboard_scenes");
+    assert.equal(plan.brief, "video 10 detik");
+    assert.deepEqual(events.at(-1), { type: "done" });
   });
 
-  it("rejects an approval whose scenes are not exactly six", async () => {
+  it("rejects a retry whose scenes are not exactly six, or whose art direction or brief is not a short text", async () => {
+    const app = newApp();
+    const photoAssetId = await uploadPhoto(app);
+    const bad = [
+      { photoAssetId, scenes: SCENES.slice(0, 4) },
+      { photoAssetId, scenes: SCENES, artDirection: 42 },
+      { photoAssetId, scenes: SCENES, brief: 42 },
+      { photoAssetId, scenes: SCENES, brief: "x".repeat(MAX_BRIEF_CHARS + 1) },
+    ];
+    for (const redraw of bad) {
+      const response = await app.chat(chatRequest({ messages: [{ role: "user", text: "Coba lagi" }], redraw }));
+      assert.equal(response.status, 400);
+    }
+    assert.equal(app.imageModel.calls.length, 0);
+  });
+
+  it("accepts a retry of a storyboard made before there was a brief or an art direction", async () => {
+    const app = newApp();
+    const photoAssetId = await uploadPhoto(app);
+
+    const response = await app.chat(
+      chatRequest({ messages: [{ role: "user", text: "Coba lagi" }], redraw: { photoAssetId, scenes: SCENES } }),
+    );
+    const events = await readEvents(response);
+
+    assert.equal(response.status, 200);
+    assert.equal(sheets(events).length, 1);
+    assert.equal(app.imageModel.calls.length, 1);
+  });
+
+  it("makes the video from the picture the request just drew, with the scenes, the art direction and the seller's words it sent", async () => {
+    const WISH = "buatkan storyboard dan video 10 detik";
+    const chat = fakeChatModel({ chunks: ["unused"], scenes: SCENES, artDirection: ART, intent: "STORYBOARD" });
+    const app = createTestApp(chat);
+    const photoAssetId = await uploadPhoto(app);
+
+    const made = await readEvents(await app.chat(chatRequest({ messages: [{ role: "user", text: WISH, photoAssetId }] })));
+    const plan = proposed(made);
+    const sheet = sheets(made)[0];
+    assert.ok(plan?.type === "storyboard_scenes" && sheet);
+
+    // What the browser keeps from that answer is what it sends when the seller presses Generate.
+    const video = await readEvents(
+      await app.chat(
+        chatRequest({
+          messages: [{ role: "user", text: "Buatkan video iklan dari storyboard ini." }],
+          sheet: sheet.assetId,
+          scenes: plan.scenes,
+          artDirection: plan.artDirection,
+          brief: plan.brief,
+          video: true,
+        }),
+      ),
+    );
+
+    const question = video.find((e) => e.type === "confirmation_requested");
+    assert.ok(question?.type === "confirmation_requested");
+    assert.equal(video.some((e) => e.type === "job_started"), false);
+    const planned = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: video-plan]"));
+    const prompt = JSON.stringify(planned?.prompt);
+    assert.ok(prompt.includes(WISH));
+    assert.ok(prompt.includes(ART));
+    SCENES.forEach((scene) => assert.ok(prompt.includes(scene)));
+  });
+
+  it("ignores the approve flow of a page that was open before the text step went away: nothing is generated for it", async () => {
     const app = newApp();
     const photoAssetId = await uploadPhoto(app);
 
     const response = await app.chat(
       chatRequest({
-        messages: [{ role: "user", text: "Setuju" }],
-        storyboard: { photoAssetId, scenes: SCENES.slice(0, 4) },
+        messages: [{ role: "user", text: "Setuju, buatkan gambarnya" }],
+        storyboard: { photoAssetId, scenes: SCENES, artDirection: ART },
         approve: {},
       }),
     );
+    const events = await readEvents(response);
 
-    assert.equal(response.status, 400);
+    assert.equal(response.status, 200);
+    assert.equal(events.some((e) => e.type === "job_started" || e.type === "asset_ready" || e.type === "storyboard_scenes"), false);
+    assert.deepEqual(events.at(-1), { type: "done" });
     assert.equal(app.imageModel.calls.length, 0);
+    assert.equal((await (await app.usage(new Request("http://localhost/api/usage"))).json()).monthUsd, 0);
   });
 });
 
@@ -462,9 +360,8 @@ describe("product gate on every paid path", () => {
     const events = await readEvents(
       await app.chat(
         chatRequest({
-          messages: [{ role: "user", text: "Setuju" }],
-          storyboard: { photoAssetId, scenes: SCENES },
-          approve: {},
+          messages: [{ role: "user", text: "Coba lagi" }],
+          redraw: { photoAssetId, scenes: SCENES },
         }),
       ),
     );
@@ -472,6 +369,20 @@ describe("product gate on every paid path", () => {
     assert.equal(app.imageModel.calls.length, 0);
     assert.equal(events.some((e) => e.type === "job_started" || e.type === "asset_ready"), false);
     assert.match(events.flatMap((e) => (e.type === "assistant_text" ? [e.text] : [])).join(""), /foto produk/i);
+  });
+
+  it("refuses a storyboard request for a photo that is not a product, before anything is planned or drawn", async () => {
+    const chat = fakeChatModel({ chunks: ["x"], scenes: SCENES, isProduct: false });
+    const app = createTestApp(chat);
+    const photoAssetId = await uploadPhoto(app);
+
+    const events = await readEvents(
+      await app.chat(chatRequest({ messages: [{ role: "user", text: "", photoAssetId }], intent: "storyboard" })),
+    );
+
+    assert.equal(app.imageModel.calls.length, 0);
+    assert.equal(chat.doGenerateCalls.some((call) => JSON.stringify(call.prompt).includes("[task: plan-scenes]")), false);
+    assert.equal(events.some((e) => e.type === "storyboard_scenes" || e.type === "asset_ready"), false);
   });
 
   it("refuses to revise an image that is not a product", async () => {

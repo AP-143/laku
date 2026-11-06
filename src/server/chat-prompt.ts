@@ -2,8 +2,8 @@
 export const CHAT_SYSTEM_PROMPT = `
 You are LAKU, a friendly assistant for small online sellers in Indonesia.
 You help turn an amateur product photo into a studio photo and a storyboard: one picture with six panels of an ad.
-Storyboard and video are one feature: a video ad of 10, 20 or 30 seconds is made from the picture of an approved storyboard. If asked for a video, tell them to make a storyboard and its picture first; once the picture is done, a "Buat video iklan" panel appears under it, where the seller presses "Generate": the AI then decides the length, whether there is a voice-over and whether there is music, and the seller only says yes to the price.
-Never say you are making an image or a video yourself; the app does that when the seller asks for it or approves a storyboard.
+Storyboard and video are one feature: a video ad of 10, 20 or 30 seconds is made from the picture of a storyboard. If asked for a video, tell them to ask for a storyboard first; the storyboard picture is made straight away from their request, and once it is done a "Buat video iklan" panel appears under it, where the seller presses "Generate": the AI then decides the length, whether there is a voice-over and whether there is music, and the seller only says yes to the price.
+Never say you are making an image or a video yourself; the app does that when the seller asks for it.
 
 Always reply in casual, simple Bahasa Indonesia. Keep replies short and concrete.
 If the user asks for something unrelated to product photos, politely steer back to what you can do.
@@ -64,18 +64,6 @@ Reply with JSON only, in this shape: {"artDirection": "<the art direction>", "sc
 `.trim();
 }
 
-export function replaceScenePrompt(scenes: string[], instruction: string): string {
-  const numbered = scenes.map((scene, index) => `${index + 1}. ${PANEL_TITLES[index]}: ${scene}`).join("\n");
-  return `
-[task: replace-scene]
-A seller is editing a ${SCENE_COUNT}-panel ad storyboard:
-${numbered}
-They said: ${JSON.stringify(instruction)}
-Rewrite only the one scene they mean, in casual Bahasa Indonesia, one or two sentences, ending with ${CAPTION_MARK} "<at most 8 words>".
-Reply with JSON only, in this shape: {"scene": <number from 1 to ${SCENE_COUNT}>, "text": "<the new scene>"}
-`.trim();
-}
-
 /** Pulls the first JSON object out of a model answer, which may be wrapped in a code fence or chatter. */
 function parseJsonObject(answer: string): Record<string, unknown> {
   const start = answer.indexOf("{");
@@ -97,16 +85,6 @@ export function parseScenes(answer: string): PlannedStoryboard {
   }
   const direction = typeof artDirection === "string" ? artDirection.trim().slice(0, MAX_ART_DIRECTION_CHARS) : "";
   return { scenes: scenes.map((scene) => (scene as string).trim()), artDirection: direction || undefined };
-}
-
-/** The index (0 to 3) and new text of the one scene to replace. */
-export function parseReplacement(answer: string): { index: number; text: string } {
-  const { scene, text } = parseJsonObject(answer);
-  const valid = Number.isInteger(scene) && (scene as number) >= 1 && (scene as number) <= SCENE_COUNT;
-  if (!valid || typeof text !== "string" || !text.trim()) {
-    throw new Error("The model did not return a valid scene replacement.");
-  }
-  return { index: (scene as number) - 1, text: text.trim() };
 }
 
 /**
@@ -335,13 +313,12 @@ export function withoutTags(script: string): string {
 /** Used for a line that has no delivery of its own: the voice still has to move. */
 export const DEFAULT_DELIVERY = "Natural, warm and expressive, with lively intonation that follows the meaning of each sentence; never flat.";
 
-export type Intent = "studio_photo" | "revise_photo" | "storyboard" | "edit_scene" | "approve_scenes" | "video" | "revise_voice" | "chat";
+export type Intent = "studio_photo" | "revise_photo" | "storyboard" | "video" | "revise_voice" | "chat";
 
 /** What the router can offer for this turn; it must not answer with something that is not available. */
 export interface IntentContext {
   hasPhoto: boolean;
   hasPreviousResult: boolean;
-  hasStoryboard: boolean;
   /** The storyboard already has its picture, which a video is made from. */
   hasSheet: boolean;
   /** A video with a voice-over was just made, whose narration can still be changed. */
@@ -357,12 +334,10 @@ You route one chat message from a seller of an online shop. Answer with exactly 
 STUDIO: they want a studio photo made from a product photo.
 REVISE: they want a change to the studio photo that was just made (only if a previous result exists).
 STORYBOARD: they want a storyboard or ad scenes made from a product photo.
-EDIT_SCENE: they want to change or replace a scene of the storyboard in progress (only if one exists).
-APPROVE: they agree with the storyboard in progress and want its picture made now, e.g. "oke setuju" or "lanjut" (only if one exists).
 VIDEO: they want a video ad made from the storyboard picture (only if it exists).
 REVISE_VOICE: they want to change the narration or the voice of the video that was just made (only if it has one).
 CHAT: anything else, including questions and greetings.
-Product photo attached: ${yesNo(context.hasPhoto)}. Previous result exists: ${yesNo(context.hasPreviousResult)}. Storyboard in progress: ${yesNo(context.hasStoryboard)}. Storyboard picture exists: ${yesNo(context.hasSheet)}. Video with narration exists: ${yesNo(context.hasNarration)}.
+Product photo attached: ${yesNo(context.hasPhoto)}. Previous result exists: ${yesNo(context.hasPreviousResult)}. Storyboard picture exists: ${yesNo(context.hasSheet)}. Video with narration exists: ${yesNo(context.hasNarration)}.
 Message: ${JSON.stringify(text)}
 `.trim();
 }
@@ -371,8 +346,6 @@ const INTENT_WORDS: Record<string, Intent> = {
   STUDIO: "studio_photo",
   REVISE: "revise_photo",
   STORYBOARD: "storyboard",
-  EDIT_SCENE: "edit_scene",
-  APPROVE: "approve_scenes",
   VIDEO: "video",
   REVISE_VOICE: "revise_voice",
 };

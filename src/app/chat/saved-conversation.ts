@@ -1,5 +1,5 @@
 import type { ChatIntent } from "../../shared/chat-events";
-import { OUTDATED_REPLIES } from "../../shared/chat-messages";
+import { OBSOLETE_REPLIES } from "../../shared/chat-messages";
 import { storyboardArtDirection, storyboardBrief, storyboardScenes, storyboardSheet, type ThreadItem } from "./thread";
 
 /** The chats live in this browser only. Every access is guarded: storage can be blocked or full. */
@@ -43,20 +43,20 @@ function readJson(storage: KeyValueStorage | undefined, key: string): unknown {
 const isSession = (value: unknown): value is ChatSession =>
   typeof value === "object" && value !== null && typeof (value as ChatSession).id === "string" && Array.isArray((value as ChatSession).items);
 
-/** A reply of the bot saved with older wording reads as the current one; the seller's own words are never touched. */
-function withCurrentWording(item: ThreadItem): ThreadItem {
-  if (item.kind !== "bot") return item;
-  const current = Object.hasOwn(OUTDATED_REPLIES, item.text) ? OUTDATED_REPLIES[item.text] : undefined;
-  return current ? { ...item, text: current } : item;
-}
-
 /**
- * A storyboard saved before it became one picture has four scenes and one frame each, which the server no longer
- * accepts (a storyboard has six scenes and one picture), and a stopped video made from such frames cannot be remade.
- * Those cards are left out; everything else in the chat stays.
+ * Cards and replies of an older storyboard flow are left out; everything else in the chat stays.
+ * - A storyboard saved before it became one picture has four scenes and one frame each, which the server no longer
+ *   accepts, and a stopped video made from such frames cannot be remade.
+ * - A storyboard card without its picture is one that was never drawn (an old card that waited for an approval, or a
+ *   picture that failed): the card shows nothing and a video cannot be made from it. The retry button of a picture that
+ *   failed is in its error message and carries the scenes itself.
+ * - The replies of the old text step ("tekan Setujui & buat gambar") point at buttons that are gone. The seller's own
+ *   words are never touched.
  */
-function isLegacyCard(item: ThreadItem): boolean {
-  return (item.kind === "scenes" || item.kind === "partial") && "frames" in item;
+function isObsolete(item: ThreadItem): boolean {
+  if (item.kind === "partial") return "frames" in item;
+  if (item.kind === "scenes") return "frames" in item || !item.sheet;
+  return item.kind === "bot" && OBSOLETE_REPLIES.has(item.text);
 }
 
 export function loadWorkspace(storage: KeyValueStorage | undefined): Workspace {
@@ -65,13 +65,13 @@ export function loadWorkspace(storage: KeyValueStorage | undefined): Workspace {
     const activeId = saved.sessions.some((session) => session.id === saved.activeId) ? saved.activeId! : saved.sessions[0].id;
     const sessions = saved.sessions.map((session) => ({
       ...session,
-      items: session.items.filter((item) => !isLegacyCard(item)).map(withCurrentWording),
+      items: session.items.filter((item) => !isObsolete(item)),
     }));
     return { sessions, activeId };
   }
   // Before sessions existed the whole app kept one conversation under another key; it becomes the first session.
   const legacy = readJson(storage, KEY);
-  const session = { ...emptySession(), items: Array.isArray(legacy) ? (legacy as ThreadItem[]).filter((item) => !isLegacyCard(item)).map(withCurrentWording) : [] };
+  const session = { ...emptySession(), items: Array.isArray(legacy) ? (legacy as ThreadItem[]).filter((item) => !isObsolete(item)) : [] };
   return { sessions: [session], activeId: session.id };
 }
 

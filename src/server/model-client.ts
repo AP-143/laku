@@ -19,11 +19,9 @@ import {
   PRODUCT_CHECK_PROMPT,
   intentPrompt,
   parseIntent,
-  parseReplacement,
   parseScenes,
   parseVideoPlan,
   planScenesPrompt,
-  replaceScenePrompt,
   videoPlanPrompt,
   parseVoiceRevision,
   voiceRevisionPrompt,
@@ -70,8 +68,6 @@ export interface ModelClient {
   classifyIntent(text: string, context: IntentContext): Promise<Intent>;
   /** Proposes one scene per storyboard panel (six) and the art direction for this product. Throws if the model fails or answers badly. */
   planScenes(photo: AssetFile, request: string): Promise<PlannedStoryboard>;
-  /** Rewrites the one scene the instruction is about. Throws if the model fails or answers badly. */
-  replaceScene(scenes: string[], instruction: string): Promise<{ index: number; text: string }>;
   /** Makes one image from a reference photo and an instruction. Throws if the model fails. Never retries. */
   generateImage(request: { prompt: string; reference: AssetFile; aspectRatio: ImageAspectRatio }): Promise<AssetFile>;
   /**
@@ -190,16 +186,6 @@ export function createModelClient(models: {
         maxRetries: 0,
       });
       return parseScenes(text);
-    },
-
-    async replaceScene(scenes, instruction) {
-      const { text } = await generateText({
-        model: models.chatModel,
-        messages: [{ role: "user", content: replaceScenePrompt(scenes, instruction) }],
-        maxOutputTokens: MAX_SCENE_TOKENS,
-        maxRetries: 0,
-      });
-      return parseReplacement(text);
     },
 
     async generateImage({ prompt, reference, aspectRatio }) {

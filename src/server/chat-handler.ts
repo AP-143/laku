@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { COSTS, VOICES } from "../config/models";
 import type { ChatIntent, StudioStyle } from "../shared/chat-events";
 import { MAX_ART_DIRECTION_CHARS, MAX_BRIEF_CHARS, SCENE_COUNT } from "../shared/storyboard";
-import { SCENE_REPLACED_MESSAGE, SCENES_PROPOSED_MESSAGE } from "../shared/chat-messages";
+import { STORYBOARD_READY_MESSAGE } from "../shared/chat-messages";
 import {
   CLIP_SECONDS,
   MAX_CLIPS,
@@ -60,7 +60,7 @@ const MAX_TOTAL_CHARS = 20_000;
 const MAX_SCENE_CHARS = 600;
 const MAX_DIRECTION_CHARS = 1500;
 
-/** A storyboard in progress: the photo it is made from and the four scene texts so far. */
+/** The storyboard whose picture is to be drawn: the photo it is made from, its six scenes and what goes on to the video. */
 interface Storyboard {
   photoAssetId: string;
   scenes: string[];
@@ -79,9 +79,8 @@ interface Conversation {
   /** The shortcut chip the user picked, if any. */
   intent?: ChatIntent;
   style?: StudioStyle;
-  storyboard?: Storyboard;
-  /** The user approved the storyboard: make its one picture (again, when it is pressed for a retry). */
-  approve?: boolean;
+  /** A retry of the storyboard picture: draw it again from these scenes, without planning them again. */
+  redraw?: Storyboard;
   /** The finished storyboard picture, which a video is made from. */
   sheet?: string;
   /** The text of the storyboard scenes, which a voice-over script is written from (can be empty). */
@@ -137,7 +136,7 @@ function readStyle(value: unknown): StudioStyle | undefined {
 }
 
 /** `null` means the field was sent but is not a valid storyboard; `undefined` means it was not sent. */
-function readStoryboard(value: unknown): Storyboard | null | undefined {
+function readRedraw(value: unknown): Storyboard | null | undefined {
   if (value === undefined) return undefined;
   const { photoAssetId, scenes, artDirection, brief } = (value ?? {}) as { photoAssetId?: unknown; scenes?: unknown; artDirection?: unknown; brief?: unknown };
   if (typeof photoAssetId !== "string" || !isAssetId(photoAssetId)) return null;
@@ -159,12 +158,6 @@ function readArtDirection(value: unknown): string | null | undefined {
 function readBrief(value: unknown): string | null | undefined {
   if (value === undefined) return undefined;
   return typeof value === "string" && value.length <= MAX_BRIEF_CHARS ? value.trim() || undefined : null;
-}
-
-/** `null` means the field was sent but is not an object; `undefined` means it was not sent. */
-function readApproval(value: unknown): Conversation["approve"] | null | undefined {
-  if (value === undefined) return undefined;
-  return typeof value === "object" && value !== null ? true : null;
 }
 
 /** The button sends a flag and no options; anything it carries besides is ignored, so a request never picks the length or the extras. */
@@ -310,8 +303,7 @@ async function readConversation(request: Request): Promise<Conversation | undefi
     intent?: unknown;
     style?: unknown;
     lastImageAssetId?: unknown;
-    storyboard?: unknown;
-    approve?: unknown;
+    redraw?: unknown;
     video?: unknown;
     videoChoice?: unknown;
     sheet?: unknown;
@@ -325,8 +317,7 @@ async function readConversation(request: Request): Promise<Conversation | undefi
   if (fields.lastImageAssetId !== undefined && (typeof fields.lastImageAssetId !== "string" || !isAssetId(fields.lastImageAssetId))) {
     return undefined;
   }
-  const storyboard = readStoryboard(fields.storyboard);
-  const approve = readApproval(fields.approve);
+  const redraw = readRedraw(fields.redraw);
   const video = readVideo(fields.video);
   const videoChoice = readChoice(fields.videoChoice);
   const sheet = readSheet(fields.sheet);
@@ -335,9 +326,8 @@ async function readConversation(request: Request): Promise<Conversation | undefi
   const revise = readRevise(fields.revise);
   const artDirection = readArtDirection(fields.artDirection);
   const brief = readBrief(fields.brief);
-  // Approving needs the plan it approves.
   const invalid =
-    storyboard === null || approve === null || (approve && !storyboard) || video === null || videoChoice === null || sheet === null || resume === null || scenes === null || revise === null || artDirection === null || brief === null;
+    redraw === null || video === null || videoChoice === null || sheet === null || resume === null || scenes === null || revise === null || artDirection === null || brief === null;
   if (invalid) return undefined;
 
   return {
@@ -355,8 +345,7 @@ async function readConversation(request: Request): Promise<Conversation | undefi
     lastImageAssetId: fields.lastImageAssetId as string | undefined,
     intent: readIntent(fields.intent),
     style: readStyle(fields.style),
-    storyboard,
-    approve,
+    redraw,
   };
 }
 
@@ -376,10 +365,10 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
 
     const photo = await readAsset(conversation.photoAssetId);
     const previous = await readAsset(conversation.lastImageAssetId);
-    const storyboardPhoto = await readAsset(conversation.storyboard?.photoAssetId);
+    const redrawPhoto = await readAsset(conversation.redraw?.photoAssetId);
     const sheetFile = await readAsset(conversation.sheet);
     const sheet = conversation.sheet && sheetFile ? { assetId: conversation.sheet, file: sheetFile } : undefined;
-    if ((conversation.photoAssetId && !photo) || (conversation.storyboard && !storyboardPhoto) || (conversation.sheet && !sheet)) {
+    if ((conversation.photoAssetId && !photo) || (conversation.redraw && !redrawPhoto) || (conversation.sheet && !sheet)) {
       return eventResponse(async (send) => send({ type: "error", message: PHOTO_NOT_FOUND_MESSAGE, retryable: true }), {
         status: 400,
       });
@@ -403,13 +392,6 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
 
       function reply(text: string) {
         send({ type: "assistant_text", text });
-        send({ type: "done" });
-      }
-
-      // The words come first: the chat scrolls to its last item, and the card holds the approve button the words point to.
-      function proposeScenes(sourceAssetId: string, scenes: string[], text: string, artDirection?: string, brief?: string) {
-        send({ type: "assistant_text", text });
-        send({ type: "storyboard_scenes", sourceAssetId, scenes, artDirection, brief });
         send({ type: "done" });
       }
 
@@ -463,8 +445,13 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         };
       }
 
-      /** Makes the one picture of an approved storyboard: all its panels in a single image. */
+      /**
+       * Makes the one picture of a storyboard: all its panels in a single image. The scenes, the art direction and the
+       * seller's words are sent first, as data for the browser (nothing of them is shown): the video is planned from them,
+       * and a retry of a picture that failed needs no new plan. The words that say what comes next are sent last.
+       */
       async function makeSheet(storyboard: Storyboard, source: AssetFile) {
+        send({ type: "storyboard_scenes", sourceAssetId: storyboard.photoAssetId, scenes: storyboard.scenes, artDirection: storyboard.artDirection, brief: storyboard.brief });
         await jobs.generate({
           prompt: sheetPrompt(storyboard.scenes, storyboard.artDirection),
           source,
@@ -472,14 +459,13 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
           kind: "storyboard_sheet",
           role: "storyboard_sheet",
         });
+        send({ type: "assistant_text", text: STORYBOARD_READY_MESSAGE });
         send({ type: "done" });
       }
 
       try {
-        const { storyboard, approve } = conversation;
-
-        // The approve button is an explicit action, so the picture is never generated by guesswork.
-        if (approve && storyboard && storyboardPhoto) return await makeSheet(storyboard, storyboardPhoto);
+        // The retry button of a picture that failed, or of one the seller wants drawn again, is an explicit action.
+        if (conversation.redraw && redrawPhoto) return await makeSheet(conversation.redraw, redrawPhoto);
 
         // Remaking the missing clips of a video that stopped part way is an explicit action of the seller.
         if (conversation.resume) {
@@ -529,11 +515,10 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         const lastText = conversation.messages.at(-1)!.text.trim();
         // The video button is an explicit request, so the router is not asked what it means.
         let intent: Intent | undefined = conversation.video || conversation.videoChoice ? "video" : conversation.intent;
-        if (!intent && lastText && (photo || previous || storyboard || sheet || conversation.revise)) {
+        if (!intent && lastText && (photo || previous || sheet || conversation.revise)) {
           intent = await models.classifyIntent(lastText, {
             hasPhoto: Boolean(photo),
             hasPreviousResult: Boolean(previous),
-            hasStoryboard: Boolean(storyboard),
             hasSheet: Boolean(sheet),
             hasNarration: Boolean(conversation.revise),
           });
@@ -638,19 +623,12 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
 
         if (intent === "storyboard") {
           if (!source || !sourceAssetId) return reply(NEED_PHOTO_MESSAGE);
-          // Only the text is planned here (no image, no cost); the picture waits for approval.
+          // The planner reads the seller's request and writes the scenes (text, next to no cost); the picture is made in the
+          // same request, since asking for a storyboard is asking for its picture.
           const { scenes, artDirection } = await models.planScenes(source, lastText);
           // The seller's own words go on with the storyboard to plan the video, as they wrote them and not as a model put them.
-          return proposeScenes(sourceAssetId, scenes, SCENES_PROPOSED_MESSAGE, artDirection, lastText.slice(0, MAX_BRIEF_CHARS).trim() || undefined);
-        }
-
-        // Typing "oke setuju" approves the open storyboard like the button does.
-        if (intent === "approve_scenes" && storyboard && storyboardPhoto) return await makeSheet(storyboard, storyboardPhoto);
-
-        if (intent === "edit_scene" && storyboard) {
-          const { index, text } = await models.replaceScene(storyboard.scenes, lastText);
-          const scenes = storyboard.scenes.map((scene, position) => (position === index ? text : scene));
-          return proposeScenes(storyboard.photoAssetId, scenes, SCENE_REPLACED_MESSAGE, storyboard.artDirection, storyboard.brief);
+          const brief = lastText.slice(0, MAX_BRIEF_CHARS).trim() || undefined;
+          return await makeSheet({ photoAssetId: sourceAssetId, scenes, artDirection, brief }, source);
         }
 
         const messages = conversation.messages.map((message, index) =>
