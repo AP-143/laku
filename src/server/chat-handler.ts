@@ -5,27 +5,21 @@ import { MAX_ART_DIRECTION_CHARS, SCENE_COUNT } from "../shared/storyboard";
 import { SCENE_REPLACED_MESSAGE, SCENES_PROPOSED_MESSAGE } from "../shared/chat-messages";
 import {
   CLIP_SECONDS,
-  DEFAULT_VIDEO_SECONDS,
   MAX_CLIPS,
-  planClips,
-  VIDEO_LENGTH_CHOICES,
-  sanitizeCaptions,
+  MAX_VIDEO_SECONDS,
+  lineMustEndBy,
   sanitizeGrade,
   sanitizeMusicPlan,
-  sanitizePalette,
-  type AudioMode,
-  type ClipCaption,
-  type MusicPlan,
-  type TextPalette,
-  type VideoGrade,
-  type VoiceGender,
+  sanitizeNarration,
+  type NarrationLine,
+  type VideoChoice,
 } from "../shared/video-plan";
 import { isAssetId, type AssetFile, type AssetStore } from "./asset-store";
 import { readBoundedBytes } from "./bounded-body";
 import { DEFAULT_DELIVERY, narrationFits, NARRATION_WORD_SLACK, wordRange, type Intent } from "./chat-prompt";
 import { eventResponse } from "./event-response";
 import { NotAProductError, createImageJobs } from "./image-jobs";
-import { revisionPrompt, sheetPrompt, studioPhotoPrompt, withSpeech } from "./image-prompts";
+import { revisionPrompt, sheetPrompt, silentActor, studioPhotoPrompt, withoutMusic } from "./image-prompts";
 import { describeFailure } from "./model-errors";
 import type { ChatMessage, ModelClient } from "./model-client";
 import type { UsageLedger } from "./usage-ledger";
@@ -46,13 +40,16 @@ const WHAT_TO_CHANGE_MESSAGE =
 const CLIP_NOT_FOUND_MESSAGE = "Klip yang sudah jadi tidak ketemu lagi. Minta videonya dibuat dari awal ya.";
 const priceText = (usd: number) =>
   `US$${usd.toFixed(2)} (sekitar Rp${(Math.round((usd * COSTS.idrPerUsd) / 100) * 100).toLocaleString("id-ID")})`;
-const confirmVideoMessage = (seconds: number, usd: number) => `Video ${seconds} detik, perkiraan biaya ${priceText(usd)}. Lanjut?`;
+/** What the AI chose and what it costs, in the words of the seller: seconds and price, not clips. */
+const confirmVideoMessage = (choice: VideoChoice, usd: number) =>
+  `AI memilih video ${choice.seconds} detik, ${choice.narration.length > 0 ? "dengan voice over" : "tanpa voice over"} dan ${choice.music ? "dengan musik latar" : "tanpa musik latar"}. Perkiraan biaya ${priceText(usd)}. Lanjut?`;
+/** What a video costs: its clips, the narration by the length of the video, and the music. */
+const choiceCostUsd = (choice: VideoChoice) =>
+  videoCostUsd(choice.clips, choice.narration.length > 0 ? choice.seconds : 0, choice.music ? COSTS.musicUsd : 0);
 const resumeVideoMessage = (clipCount: number, usd: number) =>
   `Membuat ulang ${clipCount} klip yang belum jadi, perkiraan ${priceText(usd)}. Lanjut?`;
 const NARRATION_TOO_LONG_MESSAGE = (seconds: number, maxWords: number) =>
   `Narasinya terlalu panjang untuk video ${Math.round(seconds)} detik (maksimal sekitar ${maxWords} kata). Coba yang lebih singkat ya.`;
-const videoTooLongMessage = (maxSeconds: number) =>
-  `Storyboard-mu bisa dijadikan video maksimal ${maxSeconds} detik. Coba minta video yang lebih pendek ya.`;
 
 // Every accepted message costs model quota, so the size of a request is bounded before it reaches the model.
 const MAX_BODY_BYTES = 64 * 1024;
@@ -90,8 +87,10 @@ interface Conversation {
   artDirection?: string;
   /** The price in US dollars the seller said yes to for an expensive video, quoted back to the server. */
   confirmedUsd?: number;
-  /** The seller pressed "Generate" in the video panel: the length and the voice-over are chosen, so nothing is read from the words. */
-  video?: { seconds: number; voiceOver: boolean; music: boolean };
+  /** The seller pressed "Generate" in the video panel. It has no options: the planner decides everything. */
+  video?: true;
+  /** The plan the seller was asked about and said yes to, sent back as it was so what is made is what was priced. */
+  videoChoice?: VideoChoice;
   /** Remake only the missing clips of a video that stopped part way. */
   resume?: VideoResume;
   /** The video with a narration that the seller may want to change, as `voice_over` described it. */
@@ -103,28 +102,19 @@ interface VoiceRevise {
   silentAssetId: string;
   script: string;
   voice: string;
-  /** How the narration was performed; absent for a video made before the delivery was directed. */
-  delivery?: string;
+  /** The lines of the narration with the emotion of each; absent for a video made before the narration had lines. */
+  lines?: NarrationLine[];
 }
 
-/** What `video_partial` told the browser, sent back as it was: the clip plan and the finished clips by position. */
-interface VideoResume {
-  seconds: number;
-  clips: number[];
+/**
+ * What `video_partial` told the browser, sent back as it was: the plan of the first try (what each clip was told to play,
+ * the lines of the voice-over, the grade and the music, which is made after the clips and so still has to be made) and the
+ * finished clips by position.
+ */
+interface VideoResume extends VideoChoice {
   finished: Record<number, string>;
-  /** The seller asked for a voice-over in the first try. */
+  /** The first try had a voice-over. */
   voiceOver: boolean;
-  /** What each clip was told to play and say in the first try, one per clip. */
-  directions: string[];
-  /** How the first try sounded, so the remade video is joined and mixed the same way. */
-  audio?: AudioMode;
-  voice?: VoiceGender;
-  /** The captions of each clip and the colour grade of the first try. */
-  captions: ClipCaption[][];
-  grade: VideoGrade;
-  palette: TextPalette;
-  /** The music of the first try, which is made after the clips and so still has to be made. */
-  music?: MusicPlan;
 }
 
 const INTENTS: readonly string[] = ["studio_photo", "storyboard"];
@@ -165,30 +155,22 @@ function readApproval(value: unknown): Conversation["approve"] | null | undefine
   return typeof value === "object" && value !== null ? true : null;
 }
 
-/** `null` means the field was sent but is not one of the lengths the button offers; no field means a typed request. */
+/** The button sends a flag and no options; anything it carries besides is ignored, so a request never picks the length or the extras. */
 function readVideo(value: unknown): Conversation["video"] | null | undefined {
   if (value === undefined) return undefined;
-  const { seconds, voiceOver, music } = (value ?? {}) as { seconds?: unknown; voiceOver?: unknown; music?: unknown };
-  if (!(VIDEO_LENGTH_CHOICES as readonly unknown[]).includes(seconds)) return null;
-  if (voiceOver !== undefined && typeof voiceOver !== "boolean") return null;
-  if (music !== undefined && typeof music !== "boolean") return null;
-  return { seconds: seconds as number, voiceOver: voiceOver === true, music: music === true };
+  return value === true || (typeof value === "object" && value !== null) ? true : null;
 }
 
-/** `null` means the field was sent but is not a clip plan this server could have made; no field means no resume. */
-function readResume(value: unknown): VideoResume | null | undefined {
+/** A null result means the field was sent but is not a plan this server could have made; no field means no plan. */
+function readChoice(value: unknown): VideoChoice | null | undefined {
   if (value === undefined) return undefined;
-  const { seconds, clips, finished, voiceOver, directions, audio, voice, captions, grade, palette, music } = (value ?? {}) as {
+  const { seconds, clips, directions, narration, voice, grade, music } = (value ?? {}) as {
     seconds?: unknown;
     clips?: unknown;
-    finished?: unknown;
-    voiceOver?: unknown;
     directions?: unknown;
-    audio?: unknown;
+    narration?: unknown;
     voice?: unknown;
-    captions?: unknown;
     grade?: unknown;
-    palette?: unknown;
     music?: unknown;
   };
   const validClips =
@@ -203,21 +185,11 @@ function readResume(value: unknown): VideoResume | null | undefined {
         (length - CLIP_SECONDS.min) % CLIP_SECONDS.step === 0,
     );
   if (!validClips || typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) return null;
+  // Never more than the longest video, whatever the request says, since the price follows the clips.
   const total = (clips as number[]).reduce((sum, length) => sum + length, 0);
-  if (seconds > total) return null;
+  if (seconds > total || total > MAX_VIDEO_SECONDS) return null;
 
-  const entries = Object.entries((finished ?? {}) as Record<string, unknown>);
-  const ok = entries.every(
-    ([position, assetId]) =>
-      Number.isInteger(Number(position)) &&
-      Number(position) >= 0 &&
-      Number(position) < (clips as number[]).length &&
-      typeof assetId === "string" &&
-      isAssetId(assetId),
-  );
-  if (!ok) return null;
-
-  // One direction per clip, as the first try gave them, so the clips that are remade still fit the ones that were kept.
+  // One direction per clip, as the planner gave them, so the clips that are remade still fit the ones that were kept.
   const validDirections =
     Array.isArray(directions) &&
     directions.length === (clips as number[]).length &&
@@ -226,23 +198,41 @@ function readResume(value: unknown): VideoResume | null | undefined {
   return {
     seconds,
     clips: clips as number[],
+    directions: directions as string[],
+    narration: sanitizeNarration(narration, seconds),
+    voice: voice === "male" ? "male" : "female",
+    // Kept inside the same bounds as when the planner wrote it, whatever the request says.
+    grade: sanitizeGrade(grade),
+    music: sanitizeMusicPlan(music),
+  };
+}
+
+/** `null` means the field was sent but is not a clip plan this server could have made; no field means no resume. */
+function readResume(value: unknown): VideoResume | null | undefined {
+  const choice = readChoice(value);
+  if (!choice) return choice;
+  const { finished, voiceOver } = value as { finished?: unknown; voiceOver?: unknown };
+  const entries = Object.entries((finished ?? {}) as Record<string, unknown>);
+  const ok = entries.every(
+    ([position, assetId]) =>
+      Number.isInteger(Number(position)) &&
+      Number(position) >= 0 &&
+      Number(position) < choice.clips.length &&
+      typeof assetId === "string" &&
+      isAssetId(assetId),
+  );
+  if (!ok) return null;
+  return {
+    ...choice,
     finished: Object.fromEntries(entries.map(([position, assetId]) => [Number(position), assetId as string])),
     voiceOver: voiceOver === true,
-    directions: directions as string[],
-    audio: audio === "on_camera" || audio === "narration" || audio === "none" ? audio : undefined,
-    voice: voice === "male" || voice === "female" ? voice : undefined,
-    // Kept inside the same bounds as when the planner wrote them, whatever the request says.
-    captions: (clips as number[]).map((length, index) => sanitizeCaptions(Array.isArray(captions) ? captions[index] : undefined, length)),
-    grade: sanitizeGrade(grade),
-    palette: sanitizePalette(palette),
-    music: sanitizeMusicPlan(music),
   };
 }
 
 /** `null` means the field was sent but is not a narration this server could have made; no field means none. */
 function readRevise(value: unknown): VoiceRevise | null | undefined {
   if (value === undefined) return undefined;
-  const { silentAssetId, script, voice, delivery } = (value ?? {}) as Record<string, unknown>;
+  const { silentAssetId, script, voice, lines } = (value ?? {}) as Record<string, unknown>;
   const voices: readonly string[] = Object.values(VOICES);
   const valid =
     typeof silentAssetId === "string" &&
@@ -252,8 +242,8 @@ function readRevise(value: unknown): VoiceRevise | null | undefined {
     script.length <= MAX_MESSAGE_CHARS &&
     typeof voice === "string" &&
     voices.includes(voice);
-  if (delivery !== undefined && (typeof delivery !== "string" || delivery.length > MAX_DIRECTION_CHARS)) return null;
-  return valid ? { silentAssetId, script, voice, delivery } : null;
+  if (lines !== undefined && !Array.isArray(lines)) return null;
+  return valid ? { silentAssetId, script, voice, lines: lines ? sanitizeNarration(lines, 60) : undefined } : null;
 }
 
 /** `null` means the field was sent but is not up to four short texts; no field means no scenes. */
@@ -311,6 +301,7 @@ async function readConversation(request: Request): Promise<Conversation | undefi
     storyboard?: unknown;
     approve?: unknown;
     video?: unknown;
+    videoChoice?: unknown;
     sheet?: unknown;
     confirmedUsd?: unknown;
     resume?: unknown;
@@ -324,6 +315,7 @@ async function readConversation(request: Request): Promise<Conversation | undefi
   const storyboard = readStoryboard(fields.storyboard);
   const approve = readApproval(fields.approve);
   const video = readVideo(fields.video);
+  const videoChoice = readChoice(fields.videoChoice);
   const sheet = readSheet(fields.sheet);
   const resume = readResume(fields.resume);
   const scenes = readScenes(fields.scenes);
@@ -331,11 +323,12 @@ async function readConversation(request: Request): Promise<Conversation | undefi
   const artDirection = readArtDirection(fields.artDirection);
   // Approving needs the plan it approves.
   const invalid =
-    storyboard === null || approve === null || (approve && !storyboard) || video === null || sheet === null || resume === null || scenes === null || revise === null || artDirection === null;
+    storyboard === null || approve === null || (approve && !storyboard) || video === null || videoChoice === null || sheet === null || resume === null || scenes === null || revise === null || artDirection === null;
   if (invalid) return undefined;
 
   return {
     video,
+    videoChoice,
     sheet,
     scenes,
     artDirection: artDirection ?? undefined,
@@ -405,6 +398,48 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         send({ type: "done" });
       }
 
+      /**
+       * Has the planner decide the whole video: its length, whether it has a voice-over and music, what each clip plays.
+       * The narrator says what the person feels in each part of the story: one line for each clip, read with the emotion
+       * the planner gave it and in the one voice, starting at the second the planner chose. The video model decides the
+       * rest; it is only told what the app adds afterwards: a narrator, and music.
+       */
+      async function planVideoChoice(picture: AssetFile, wish: string | undefined): Promise<VideoChoice> {
+        const planned = await models.planVideo({
+          scenes: conversation!.scenes,
+          artDirection: conversation!.artDirection,
+          wish: wish || undefined,
+          sheet: picture,
+        });
+        let clipStart = 0;
+        const narration: NarrationLine[] = [];
+        for (const [index, clip] of planned.clips.entries()) {
+          const length = planned.clipSeconds[index];
+          if (clip.narration) {
+            narration.push({
+              text: clip.narration.text,
+              delivery: `${planned.voiceProfile}. ${clip.narration.delivery}`,
+              at: clipStart + clip.narration.from,
+              until: lineMustEndBy(clipStart + length, index === planned.clips.length - 1),
+            });
+          }
+          clipStart += length;
+        }
+        const directions = planned.clips.map((clip) => {
+          const spoken = planned.voiceOver ? silentActor(clip.direction) : clip.direction;
+          return planned.music ? withoutMusic(spoken) : spoken;
+        });
+        return {
+          seconds: planned.seconds,
+          clips: planned.clipSeconds,
+          directions,
+          narration,
+          voice: planned.voice,
+          grade: planned.grade,
+          music: planned.music,
+        };
+      }
+
       /** Makes the one picture of an approved storyboard: all its panels in a single image. */
       async function makeSheet(storyboard: Storyboard, source: AssetFile) {
         await jobs.generate({
@@ -427,14 +462,13 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         if (conversation.resume) {
           const { seconds, clips, finished, directions } = conversation.resume;
           if (!sheet) return reply(NEED_SHEET_MESSAGE);
-          // The same sound as the first try; a resume from before the sound was planned only knew about a narration.
-          const audio: AudioMode = conversation.resume.audio ?? (conversation.resume.voiceOver ? "narration" : "none");
-          const voice: VoiceGender = conversation.resume.voice ?? "female";
+          // The same voice-over as the first try: its lines were planned then and are read once the clips are made.
+          const { narration, voice } = conversation.resume;
 
           // Remaking clips can cost as much as a whole video, so it is asked about the same way.
           const remaining = clips.filter((_, position) => finished[position] === undefined);
           // The question shows the whole price, narration included; only whether to ask is judged by the picture alone.
-          const resumeUsd = videoCostUsd(remaining, audio === "narration" ? seconds : 0, conversation.resume.music ? COSTS.musicUsd : 0);
+          const resumeUsd = videoCostUsd(remaining, narration.length > 0 ? seconds : 0, conversation.resume.music ? COSTS.musicUsd : 0);
           const agreedToResume = conversation.confirmedUsd !== undefined && resumeUsd <= conversation.confirmedUsd;
           if (videoCostUsd(remaining) > COSTS.videoConfirmAboveUsd && !agreedToResume) {
             send({
@@ -455,18 +489,12 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
           await videos.generate({
             sheet,
             directions,
-            audio,
+            narration,
             voice,
-            captions: conversation.resume.captions,
             grade: conversation.resume.grade,
-            palette: conversation.resume.palette,
             music: conversation.resume.music,
-            artDirection: conversation.artDirection,
             plan: { ok: true, seconds, clips },
             finished: kept,
-            voiceOver: audio === "narration"
-              ? { scenes: conversation.scenes, text: conversation.messages.at(-1)!.text.trim() }
-              : undefined,
           });
           send({ type: "done" });
           return;
@@ -477,7 +505,7 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
 
         const lastText = conversation.messages.at(-1)!.text.trim();
         // The video button is an explicit request, so the router is not asked what it means.
-        let intent: Intent | undefined = conversation.video ? "video" : conversation.intent;
+        let intent: Intent | undefined = conversation.video || conversation.videoChoice ? "video" : conversation.intent;
         if (!intent && lastText && (photo || previous || storyboard || sheet || conversation.revise)) {
           intent = await models.classifyIntent(lastText, {
             hasPhoto: Boolean(photo),
@@ -502,13 +530,17 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
           if (!narrationFits(script, seconds)) {
             return reply(NARRATION_TOO_LONG_MESSAGE(seconds, wordRange(seconds).max + NARRATION_WORD_SLACK));
           }
+          // New words are read as one line from the start; only a new voice keeps every line, with its emotion and its moment.
+          const lines: NarrationLine[] =
+            change.script || !revise.lines || revise.lines.length === 0
+              ? [{ text: script, delivery: DEFAULT_DELIVERY, at: 0.3, until: Math.max(1, seconds - 0.7) }]
+              : revise.lines;
           await videos.reviseVoice({
             silentAssetId: revise.silentAssetId,
             silent: silent.bytes,
             seconds,
-            script,
+            lines,
             voice: change.voice ? VOICES[change.voice] : revise.voice,
-            delivery: revise.delivery ?? DEFAULT_DELIVERY,
           });
           send({ type: "done" });
           return;
@@ -516,54 +548,34 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
 
         if (intent === "video") {
           if (!sheet) return reply(NEED_SHEET_MESSAGE);
-          const asked = conversation.video ?? (lastText ? await models.readVideoRequest(lastText) : { seconds: undefined, voiceOver: false });
-          // Music is a choice of the button only: a typed request never spends on it.
-          const wantsMusic = conversation.video?.music === true;
-          const plan = planClips(asked.seconds ?? DEFAULT_VIDEO_SECONDS);
-          if (!plan.ok) return reply(videoTooLongMessage(plan.maxSeconds));
-
-          // An expensive video waits for the seller's yes to this price; nothing is booked or generated until then.
-          // The request is read again on the yes, so a video that now costs more than was agreed is asked about again.
-          // The price shown, and the one a yes must cover, is what is booked: the narration is part of it.
-          const estimatedUsd = videoCostUsd(plan.clips, asked.voiceOver ? plan.seconds : 0, wantsMusic ? COSTS.musicUsd : 0);
+          // The planner (a text model, which costs next to nothing) decides the whole video first, so the seller is asked
+          // about the exact price of what will be made. The plan that was priced comes back with the yes and is made as it is.
+          const choice = conversation.videoChoice ?? (await planVideoChoice(sheet.file, conversation.video ? undefined : lastText));
+          const estimatedUsd = choiceCostUsd(choice);
+          // The yes is for this price: a plan that now costs more is asked about again.
           const agreed = conversation.confirmedUsd !== undefined && estimatedUsd <= conversation.confirmedUsd;
           // Pressing the button always shows the price first; a typed request only asks when the picture is expensive,
           // so a few thousandths of a dollar of narration do not turn a US$1.00 video into one that needs a question.
-          const mustAsk = conversation.video !== undefined || videoCostUsd(plan.clips) > COSTS.videoConfirmAboveUsd;
+          const mustAsk = conversation.video !== undefined || videoCostUsd(choice.clips) > COSTS.videoConfirmAboveUsd;
           if (mustAsk && !agreed) {
             send({
               type: "confirmation_requested",
               confirmationId: randomUUID(),
-              message: confirmVideoMessage(plan.seconds, estimatedUsd),
+              message: confirmVideoMessage(choice, estimatedUsd),
               estimatedUsd,
+              videoChoice: choice,
             });
             send({ type: "done" });
             return;
           }
-          // The text model shares the story over the clips only once the seller has said yes, so a no costs nothing at all.
-          // The planner looks at the picture and decides how this ad sounds: the person speaking, or a narrator.
-          const planned = await models.planVideo({
-            scenes: conversation.scenes,
-            clips: plan.clips,
-            artDirection: conversation.artDirection,
-            wantsVoice: asked.voiceOver,
-            wantsMusic,
-            sheet: sheet.file,
-          });
-          const audio: AudioMode = asked.voiceOver ? planned.audio : "none";
-          const directions = planned.clips.map((clip) => withSpeech(clip, audio, planned.voiceProfile));
           await videos.generate({
             sheet,
-            directions,
-            audio,
-            voice: planned.voice,
-            captions: planned.clips.map((clip) => clip.captions),
-            grade: planned.grade,
-            palette: planned.palette,
-            music: wantsMusic ? planned.music : undefined,
-            artDirection: conversation.artDirection,
-            plan,
-            voiceOver: audio === "narration" ? { scenes: conversation.scenes, text: lastText, voiceProfile: planned.voiceProfile } : undefined,
+            directions: choice.directions,
+            narration: choice.narration,
+            voice: choice.voice,
+            grade: choice.grade,
+            music: choice.music,
+            plan: { ok: true, seconds: choice.seconds, clips: choice.clips },
           });
           send({ type: "done" });
           return;

@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { PANEL_TITLES } from "../../shared/storyboard";
-import { VIDEO_LENGTH_CHOICES } from "../../shared/video-plan";
 import { assetUrl, downloadUrl } from "./chat-client";
 import type { RetryRequest, ThreadItem } from "./thread";
 
@@ -20,7 +19,7 @@ interface ThreadViewProps {
   /** The approve button, and the retry button of the storyboard picture. */
   onMakeSheet: (itemId: string) => void;
   /** The "Generate" button of the video panel under an approved storyboard. */
-  onMakeVideo: (itemId: string, options: { seconds: number; voiceOver: boolean; music: boolean }) => void;
+  onMakeVideo: (itemId: string) => void;
   onAnswerConfirm: (itemId: string, yes: boolean) => void;
   onResumeVideo: (itemId: string) => void;
   photoUrl: (assetId: string) => string;
@@ -43,8 +42,8 @@ function SparkleIcon() {
 }
 
 /**
- * What the seller picks before the video of an approved storyboard is made. Once a video exists, the panel folds into
- * one button, so a second video is a deliberate choice and not a stray click.
+ * The "Generate" button of an approved storyboard, with no options: the AI decides the length, the voice-over and the music.
+ * Once a video exists, the panel folds into one button, so a second video is a deliberate choice and not a stray click.
  */
 function VideoPanel({
   busy,
@@ -53,11 +52,8 @@ function VideoPanel({
 }: {
   busy: boolean;
   hasVideo: boolean;
-  onMake: (options: { seconds: number; voiceOver: boolean; music: boolean }) => void;
+  onMake: () => void;
 }) {
-  const [seconds, setSeconds] = useState<(typeof VIDEO_LENGTH_CHOICES)[number]>(VIDEO_LENGTH_CHOICES[0]);
-  const [voiceOver, setVoiceOver] = useState(false);
-  const [music, setMusic] = useState(true);
   const [expanded, setExpanded] = useState(false);
 
   if (hasVideo && !expanded) {
@@ -74,37 +70,11 @@ function VideoPanel({
   return (
     <section className="video-panel" aria-label="Buat video iklan">
       <h3>Buat video iklan</h3>
-      <div className="video-field">
-        <span className="video-field-label" id="video-length-label">
-          Durasi video
-        </span>
-        <div className="video-lengths" role="group" aria-labelledby="video-length-label">
-          {VIDEO_LENGTH_CHOICES.map((length) => (
-            <button
-              key={length}
-              type="button"
-              className={`video-length${seconds === length ? " is-on" : ""}`}
-              aria-pressed={seconds === length}
-              disabled={busy}
-              onClick={() => setSeconds(length)}
-            >
-              {length} detik
-            </button>
-          ))}
-        </div>
-      </div>
-      <label className="video-voice">
-        <input type="checkbox" checked={voiceOver} disabled={busy} onChange={(event) => setVoiceOver(event.target.checked)} />
-        Tambahkan suara (AI memilih: orang bicara atau narasi)
-      </label>
-      <label className="video-voice">
-        <input type="checkbox" checked={music} disabled={busy} onChange={(event) => setMusic(event.target.checked)} />
-        Tambahkan musik latar (AI memilih yang cocok, +US$0,04)
-      </label>
+      <p className="video-note">AI yang menentukan durasi, suara, dan musiknya dari storyboard. Kamu tinggal setuju dengan harganya.</p>
       <div className="actions">
         <button type="button" className="btn btn-primary btn-ai" disabled={busy} onClick={() => {
             setExpanded(false);
-            onMake({ seconds, voiceOver, music });
+            onMake();
           }}>
           <SparkleIcon />
           Generate
@@ -319,7 +289,7 @@ export function ThreadView({
                   <VideoPanel
                     busy={busy}
                     hasVideo={items.slice(position + 1).some((later) => later.kind === "video")}
-                    onMake={(options) => onMakeVideo(item.id, options)}
+                    onMake={() => onMakeVideo(item.id)}
                   />
                 )}
               </div>

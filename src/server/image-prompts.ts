@@ -1,6 +1,5 @@
 import type { StudioStyle, StylePreset } from "../shared/chat-events";
 import { PANEL_SHOTS, PANEL_TITLES } from "../shared/storyboard";
-import type { AudioMode } from "../shared/video-plan";
 
 /** Internal instructions for the image model. Written in English. */
 
@@ -38,24 +37,12 @@ export function revisionPrompt(instruction: string): string {
 }
 
 /**
- * One video clip made from the storyboard picture. The picture is a grid of panels; the clip plays only the part of
- * the story the direction names, as live action filling the whole vertical frame, never as the grid.
+ * One video clip made from the storyboard picture. The video model is told what the picture is and which part of it this
+ * clip plays, and nothing else: the style, the text, the effects, the camera, the acting and the sound are its own to decide,
+ * because a pile of rules from us made a real video worse.
  */
-export function clipPrompt(direction: string, artDirection?: string): string {
-  return (
-    `The reference image is a storyboard sheet: a grid of numbered panels of one product ad. ` +
-    `Make a vertical video clip that plays out only this part of the story: ${direction} ` +
-    `Edit it as a professional video editor would, as real full-frame footage with smooth camera moves, the effects, transitions and colour grade that suit this ad, and the natural sounds of the scene. ` +
-    `Art direction of this ad: ${artDirection ?? DEFAULT_ART_DIRECTION} ` +
-    `Add only a few small animated accents in that style, never covering the product or a face. ` +
-    `Do not draw any text, subtitles, captions, logos or watermarks anywhere in the picture: the captions are added afterwards in the edit. ` +
-    `Direct the performance like a real shoot: natural micro-expressions, breathing, small head and hand movements, a living gaze and imperfect human timing; never a frozen pose and never a slideshow of stills. The first moment may match the panel, but the person keeps moving naturally. ` +
-    `Sound design like a professional editor: sound effects in sync with every visible action (cloth, footsteps, plates and cutlery, the sizzle, crunch or pour of food, clicks, whooshes on camera moves, pops for graphics) over a natural room tone, mixed at natural levels. No music, and no speech unless the direction says someone speaks. ` +
-    `When the clip plays more than one panel, change between them with hard cuts, as a professional editor would; never morph, dissolve or melt one scene into the next. ` +
-    `Never show the grid, the panel borders, the panel numbers or the title label boxes. ` +
-    `Keep the same person and the same product as in the storyboard sheet: the product keeps its shape, colour, logo and text. ` +
-    `The person speaks or reacts only as the direction says.`
-  );
+export function clipPrompt(direction: string): string {
+  return `The reference image is the storyboard of an ad. Make the ad video from it. This clip plays: ${direction}`;
 }
 
 /**
@@ -82,15 +69,15 @@ export function sheetPrompt(scenes: readonly string[], artDirection?: string): s
 }
 
 /**
- * The direction of one clip with what is said in it. When the person speaks on camera the words and the voice are
- * given, so the model makes lip movement that matches them; otherwise the mouths stay closed, so nothing fights the
- * narration laid over the video, and nobody is left talking without a voice.
+ * The two things the app adds to a clip's sound after the clip is made, so the video model is told to leave them out:
+ * a narrator's voice (the person does not speak) and a music bed. Each is said in one short sentence, and only when it applies.
  */
-export function withSpeech(clip: { direction: string; dialogue: string }, audio: AudioMode, voiceProfile: string): string {
-  if (audio === "on_camera" && clip.dialogue) {
-    return `${clip.direction} On camera the person says in Indonesian, with lip movement that matches the words exactly: "${clip.dialogue}". Voice: ${voiceProfile}.`;
-  }
-  return `${clip.direction} Nobody speaks on camera: the mouths stay closed and the person only reacts with expressions and gestures.`;
+export function silentActor(direction: string): string {
+  return `${direction} The person does not speak (a narrator is added later).`;
+}
+
+export function withoutMusic(direction: string): string {
+  return `${direction} No background music (it is added later).`;
 }
 
 /** What the music model is asked for: the planner's brief, always without vocals. */

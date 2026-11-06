@@ -22,20 +22,14 @@ import {
   parseReplacement,
   parseScenes,
   parseVideoPlan,
-  parseVoiceScript,
-  parseVideoRequest,
   planScenesPrompt,
   replaceScenePrompt,
   videoPlanPrompt,
-  videoRequestPrompt,
   parseVoiceRevision,
   voiceRevisionPrompt,
-  voiceScriptPrompt,
   type PlannedStoryboard,
   type VideoPlan,
-  type VideoRequest,
   type VoiceRevision,
-  type VoiceScript,
   type Intent,
   type IntentContext,
 } from "./chat-prompt";
@@ -81,23 +75,12 @@ export interface ModelClient {
   /** Makes one image from a reference photo and an instruction. Throws if the model fails. Never retries. */
   generateImage(request: { prompt: string; reference: AssetFile; aspectRatio: ImageAspectRatio }): Promise<AssetFile>;
   /**
-   * Looks at the storyboard picture, thinks, and decides how the video sounds and what each clip plays and says.
-   * Throws if the model fails or answers badly.
+   * Looks at the storyboard picture, thinks, and decides the length of the video, whether it has a voice-over and music,
+   * and what each clip plays and says. `wish` is what the seller typed, if they typed. Throws if the model fails or answers badly.
    */
-  planVideo(request: {
-    scenes: string[];
-    clips: number[];
-    artDirection?: string;
-    wantsVoice: boolean;
-    wantsMusic?: boolean;
-    sheet?: AssetFile;
-  }): Promise<VideoPlan>;
+  planVideo(request: { scenes: string[]; artDirection?: string; wish?: string; sheet?: AssetFile }): Promise<VideoPlan>;
   /** Makes 30 seconds of instrumental music from a prompt. Throws if the model fails. Never retries. */
   generateMusic(request: { prompt: string }): Promise<Uint8Array>;
-  /** Reads the video length and the voice-over the seller asked for. Throws if the model fails or answers badly. */
-  readVideoRequest(text: string): Promise<VideoRequest>;
-  /** Writes the narration for a video of `seconds`, from its scenes. Throws if the model fails. */
-  writeVoiceScript(request: { scenes: string[]; seconds: number; text: string; voiceProfile?: string; artDirection?: string }): Promise<VoiceScript>;
   /** Reads what the seller wants changed in a narration. Throws if the model fails or answers badly. */
   readVoiceRevision(text: string, currentScript: string): Promise<VoiceRevision>;
   /**
@@ -245,32 +228,13 @@ export function createModelClient(models: {
         maxOutputTokens: MAX_PLAN_TOKENS,
         maxRetries: 0,
       });
-      return parseVideoPlan(text, request.clips);
+      return parseVideoPlan(text);
     },
 
-    async readVideoRequest(text) {
-      const { text: answer } = await generateText({
-        model: models.chatModel,
-        messages: [{ role: "user", content: videoRequestPrompt(text) }],
-        maxOutputTokens: MAX_CHECK_TOKENS * 2,
-        maxRetries: 0,
-      });
-      return parseVideoRequest(answer);
-    },
 
     generateClip: (request) => models.videoModel.generate(request),
 
     generateMusic: (request) => models.musicModel.generate(request),
-
-    async writeVoiceScript(request) {
-      const { text } = await generateText({
-        model: models.chatModel,
-        messages: [{ role: "user", content: voiceScriptPrompt(request) }],
-        maxOutputTokens: MAX_SCRIPT_TOKENS,
-        maxRetries: 0,
-      });
-      return parseVoiceScript(text);
-    },
 
     async readVoiceRevision(text, currentScript) {
       const { text: answer } = await generateText({
