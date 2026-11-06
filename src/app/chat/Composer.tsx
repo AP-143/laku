@@ -55,15 +55,24 @@ const CHIPS: Array<{ intent: ChatIntent; label: string; style: Record<string, nu
   },
   {
     intent: "storyboard",
-    // One feature: a storyboard whose picture can be made into a video.
-    label: "Storyboard & Video",
-    style: { "--cw": 136, "--pl": 14, "--ig": 4 },
+    label: "Storyboard",
+    style: { "--cw": 108, "--pl": 14, "--ig": 4 },
     icon: (
       <svg viewBox="0 0 14 14" aria-hidden="true" style={{ width: "calc(11.8*var(--u))" }}>
         <path
           fill="currentColor"
           d="M1.8 0h4.4c1 0 1.8.8 1.8 1.8v4.4c0 1-.8 1.8-1.8 1.8H1.8C.8 8 0 7.2 0 6.2V1.8C0 .8.8 0 1.8 0Zm6.2 8h4.2c1 0 1.8.8 1.8 1.8v2.4c0 1-.8 1.8-1.8 1.8H8c-1 0-1.8-.8-1.8-1.8V9.8C6.2 8.8 7 8 8 8Zm-6.2 1h2.6c.9 0 1.6.7 1.6 1.6v1.8c0 .9-.7 1.6-1.6 1.6H1.8C.9 14 .2 13.3.2 12.4v-1.8C.2 9.7.9 9 1.8 9ZM9 0h3.2C13.2 0 14 .8 14 1.8v3c0 1-.8 1.8-1.8 1.8H9c-1 0-1.8-.8-1.8-1.8v-3C7.2.8 8 0 9 0Z"
         />
+      </svg>
+    ),
+  },
+  {
+    intent: "video",
+    label: "Video",
+    style: { "--cw": 84, "--pl": 14, "--ig": 4 },
+    icon: (
+      <svg viewBox="0 0 14 14" aria-hidden="true" style={{ width: "calc(11.8*var(--u))" }}>
+        <path fill="currentColor" d="M1.8 1.5h6.4c.7 0 1.3.6 1.3 1.3v8.4c0 .7-.6 1.3-1.3 1.3H1.8c-.7 0-1.3-.6-1.3-1.3V2.8c0-.7.6-1.3 1.3-1.3Zm8.7 3.2 3-1.9v8.4l-3-1.9V4.7Z" />
       </svg>
     ),
   },
@@ -81,7 +90,9 @@ export function Composer({ ref, ...props }: ComposerProps) {
       ? "Lampirkan foto produk, lalu ceritakan ide iklannya (boleh dikosongkan)…"
       : intent === "studio_photo"
         ? "Lampirkan foto produk, lalu ceritakan gaya fotonya (boleh dikosongkan)…"
-        : "Lampirkan foto produkmu, lalu ceritakan mau dibuat apa, misalnya “bikinin foto studio background putih”…";
+        : intent === "video"
+          ? "Lampirkan gambar storyboard, lalu ceritakan videonya, misalnya “video 20 detik pakai voice over” (boleh dikosongkan)…"
+          : "Lampirkan foto produkmu, lalu ceritakan mau dibuat apa, misalnya “bikinin foto studio background putih”…";
 
   return (
     <div className="card-wrap">

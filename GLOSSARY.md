@@ -21,7 +21,7 @@ _Avoid_: Moderation, validation
 ### Features
 
 **Feature**:
-One of the two things LAKU makes: a Studio photo, or a Storyboard & Video.
+One of the three things LAKU makes, each picked on its own in the sidebar and with its own Sessions: a Studio photo, a Storyboard, or an Ad video.
 _Avoid_: Mode, tool
 
 **Studio photo**:
@@ -32,9 +32,13 @@ _Avoid_: Edited photo, render, mockup
 The look the Seller asks for in a Studio photo: a preset (clean white, solid colour, lifestyle) or their own words.
 _Avoid_: Filter, theme, template
 
-**Storyboard & Video**:
-The Feature that turns a Product photo into an Ad video in steps: asking for a Storyboard makes its Storyboard picture straight away, and then the Ad video is made from that picture.
-_Avoid_: Storyboard (for the Feature as a whole), Video (as a Feature of its own)
+**Storyboard (Feature)**:
+Turns a Product photo into a Storyboard: asking for it makes its Storyboard picture straight away, and it stops there. The reply points the Seller to the Video Feature; there is no button under the picture.
+_Avoid_: Storyboard & Video (the two used to be one Feature)
+
+**Video (Feature)**:
+Turns a Storyboard picture the Seller attaches to the chat into an Ad video, with no Storyboard made in that Session first. The attached picture is the one used, whatever other Storyboard the browser holds. It gets the looser Product check of a Storyboard picture, and the Price question is always asked first, whatever the Length.
+_Avoid_: Reel maker, Storyboard & Video
 
 ### Storyboard and video
 
@@ -59,7 +63,7 @@ The whole Storyboard as one tall vertical image: a grid of six panels, each with
 _Avoid_: Frame, sheet (in the UI), scene image, thumbnail
 
 **Ad video**:
-A vertical video made from the Storyboard picture of a Storyboard, 10, 20 or 30 seconds long, with or without a Voice-over and a Music bed. The Seller only presses Generate: the planner decides the Length, the Voice-over and the Music bed. Its style, the text it shows (the Captions of the Scenes), its effects and the emotion of the person follow the Storyboard picture, and the video model decides how they look on screen; the app draws no text of its own.
+A vertical video made from the Storyboard picture of a Storyboard, 10, 20 or 30 seconds long, with or without a Voice-over and a Music bed. The Seller only attaches the picture in the Video Feature (and may add words): the planner decides the Length, the Voice-over and the Music bed. Its style, the text it shows (the Captions of the Scenes), its effects and the emotion of the person follow the Storyboard picture, and the video model decides how they look on screen; the app draws no text of its own.
 _Avoid_: Reel, clip (a Clip is only a piece of it)
 
 **Length**:
@@ -85,7 +89,7 @@ _Avoid_: Audio, soundtrack
 ### Conversation
 
 **Session**:
-One saved conversation: its own messages and results, listed in the sidebar and labelled with the Feature of its first result. It stays in the browser it was made in.
+One saved conversation: its own messages and results, listed in the sidebar and labelled with the Feature of its first result (a Session whose first result is an Ad video is a Video Session, even when the picture came from a Storyboard Session). It stays in the browser it was made in.
 _Avoid_: Chat, thread, conversation, history (history is the list of Sessions)
 
 ### Money

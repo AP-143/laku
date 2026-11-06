@@ -89,7 +89,7 @@ describe("storyboard", () => {
     assert.equal(app.imageModel.calls[0].aspectRatio, "9:16");
   });
 
-  it("says in Indonesian that the storyboard is ready and that the video panel is below, and no longer asks for an approval", async () => {
+  it("says in Indonesian that the storyboard is ready and that the video is made in the Video feature, with no panel and no approval", async () => {
     const app = newApp();
     const photoAssetId = await uploadPhoto(app);
 
@@ -97,8 +97,8 @@ describe("storyboard", () => {
 
     const words = events.flatMap((event) => (event.type === "assistant_text" ? [event.text] : [])).join("");
     assert.match(words, /storyboard/i);
-    assert.match(words, /Buat video iklan/);
-    assert.match(words, /Generate/);
+    assert.match(words, /fitur Video/);
+    assert.doesNotMatch(words, /Buat video iklan|Generate|panel/);
     assert.doesNotMatch(words, /Setujui|setuju|usulan/i);
   });
 

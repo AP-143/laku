@@ -21,8 +21,8 @@ const FEATURES: Array<{ intent: ChatIntent; label: string; hint: string; icon: R
   },
   {
     intent: "storyboard",
-    label: "Storyboard & Video",
-    hint: "6 panel, lalu jadi video",
+    label: "Storyboard",
+    hint: "6 panel iklan dalam satu gambar",
     icon: (
       <svg viewBox="0 0 14 14" width="14" aria-hidden="true">
         <path
@@ -32,11 +32,22 @@ const FEATURES: Array<{ intent: ChatIntent; label: string; hint: string; icon: R
       </svg>
     ),
   },
+  {
+    intent: "video",
+    label: "Video",
+    hint: "Dari gambar storyboard",
+    icon: (
+      <svg viewBox="0 0 14 14" width="14" aria-hidden="true">
+        <path fill="currentColor" d="M1.8 1.5h6.4c.7 0 1.3.6 1.3 1.3v8.4c0 .7-.6 1.3-1.3 1.3H1.8c-.7 0-1.3-.6-1.3-1.3V2.8c0-.7.6-1.3 1.3-1.3Zm8.7 3.2 3-1.9v8.4l-3-1.9V4.7Z" />
+      </svg>
+    ),
+  },
 ];
 
 const FEATURE_LABELS: Record<ChatIntent, string> = {
   studio_photo: "Foto Studio",
-  storyboard: "Storyboard & Video",
+  storyboard: "Storyboard",
+  video: "Video",
 };
 
 function formatUsd(value: number): string {

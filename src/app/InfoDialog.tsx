@@ -17,10 +17,14 @@ const TOPICS: Record<Topic, { title: string; body: ReactNode }> = {
           <span>Foto produk dari HP jadi foto studio: latar putih bersih, backdrop warna, atau suasana lifestyle.</span>
         </li>
         <li>
-          <strong>Storyboard &amp; Video</strong>
+          <strong>Storyboard</strong>
+          <span>Storyboard 6 panel dari satu foto produk, langsung jadi satu gambar lengkap dengan judul dan caption.</span>
+        </li>
+        <li>
+          <strong>Video</strong>
           <span>
-            Storyboard 6 panel dari satu foto produk, langsung jadi satu gambar lengkap dengan judul dan caption. Setelah itu, tekan Generate
-            pada panel “Buat video iklan”: AI yang menentukan durasi, voice over, dan musiknya, lalu kamu setuju dengan harganya.
+            Lampirkan gambar storyboard, lalu AI yang menentukan durasi, voice over, dan musiknya. Kamu setuju dengan harganya dulu sebelum
+            videonya dibuat.
           </span>
         </li>
       </ul>

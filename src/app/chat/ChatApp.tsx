@@ -39,7 +39,6 @@ const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const WIDE_SCREEN = "(min-width: 1000px)";
 /** How long the chat must stay unchanged before it is saved. */
 const SAVE_DELAY_MS = 400;
-const VIDEO_TEXT = "Buatkan video iklan dari storyboard ini.";
 const HISTORY_LENGTH = 12;
 
 const newId = () => crypto.randomUUID();
@@ -337,8 +336,10 @@ export default function ChatApp() {
     if (busy || (!message && !photo) || photo?.uploading) return;
     if (!inThread) flipFrom.current = cardRef.current?.getBoundingClientRect() ?? null;
 
+    // In the Video feature the attached picture is the storyboard, so the one borrowed from another chat (and its scenes) is left out.
+    const ownStoryboard = intent === "video" && photo?.assetId ? { sheet: undefined, scenes: undefined, artDirection: undefined, brief: undefined } : {};
     const body = conversationBody(
-      { intent, style: styleOf(preset) },
+      { intent, style: styleOf(preset), ...ownStoryboard },
       { text: message, photoAssetId: photo?.assetId },
     );
     setItems((current) => [...current, { id: newId(), kind: "user", text: message, photoAssetId: photo?.assetId }]);
@@ -374,28 +375,6 @@ export default function ChatApp() {
       const item = itemsRef.current.find((candidate) => candidate.id === itemId);
       if (busy || !item || item.kind !== "scenes") return;
       void run(redrawRequest(item), { scenesItemId: itemId });
-    },
-    [busy, run],
-  );
-
-  /** Makes the video of a storyboard from its picture; the AI decides the length, the voice-over and the music. */
-  const makeVideo = useCallback(
-    (itemId: string) => {
-      const card = itemsRef.current.find((candidate) => candidate.id === itemId);
-      if (busy || !card || card.kind !== "scenes" || !card.sheet) return;
-      void run(
-        {
-          messages: [{ role: "user", text: VIDEO_TEXT }],
-          sheet: card.sheet,
-          // The scenes let the planner share the story over the clips.
-          scenes: card.scenes,
-          artDirection: card.artDirection,
-          // What the first request asked of the video, so the planner starts from it.
-          brief: card.brief,
-          video: true,
-        },
-        {},
-      );
     },
     [busy, run],
   );
@@ -572,7 +551,6 @@ export default function ChatApp() {
                   busy={busy}
                   onRetry={retryRequest}
                   onRedraw={redrawSheet}
-                  onMakeVideo={makeVideo}
                   onAnswerConfirm={answerConfirmation}
                   onResumeVideo={resumeVideo}
                   photoUrl={(assetId) => assetUrl(assetId, "resized")}
