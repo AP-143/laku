@@ -1,6 +1,6 @@
 import type { ChatIntent } from "../../shared/chat-events";
 import { OBSOLETE_REPLIES } from "../../shared/chat-messages";
-import { storyboardArtDirection, storyboardBrief, storyboardScenes, storyboardSheet, type ThreadItem } from "./thread";
+import type { ThreadItem } from "./thread";
 
 /** The chats live in this browser only. Every access is guarded: storage can be blocked or full. */
 
@@ -109,23 +109,6 @@ function featureOf(items: ThreadItem[]): ChatIntent | undefined {
     if (item.kind === "video" || item.kind === "partial") return "video";
   }
   return undefined;
-}
-
-/**
- * The storyboard a video is made from. The session on screen comes first; without a picture of its own it borrows
- * the newest storyboard of another session, so a video chat can use a storyboard made in a storyboard chat.
- */
-export function storyboardFor(workspace: Workspace): { sheet?: string; scenes: string[]; artDirection?: string; brief?: string } {
-  const here = activeSession(workspace);
-  const source = storyboardSheet(here.items)
-    ? here
-    : (workspace.sessions.find((session) => storyboardSheet(session.items)) ?? here);
-  return {
-    sheet: storyboardSheet(source.items),
-    scenes: storyboardScenes(source.items),
-    artDirection: storyboardArtDirection(source.items),
-    brief: storyboardBrief(source.items),
-  };
 }
 
 /** The session on screen. */

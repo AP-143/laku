@@ -37,7 +37,7 @@ Turns a Product photo into a Storyboard: asking for it makes its Storyboard pict
 _Avoid_: Storyboard & Video (the two used to be one Feature)
 
 **Video (Feature)**:
-Turns a Storyboard picture the Seller attaches to the chat into an Ad video, with no Storyboard made in that Session first. The attached picture is the one used, whatever other Storyboard the browser holds. It gets the looser Product check of a Storyboard picture, and the Price question is always asked first, whatever the Length.
+Turns a Storyboard picture the Seller attaches to the chat into an Ad video, with no Storyboard made in that Session first. Only the attached picture is used: nothing is carried over from a Storyboard Session, and the planner reads the Scenes and the Art direction from the picture. It gets the looser Product check of a Storyboard picture, and the Price question is always asked first, whatever the Length. What the Seller types with the request reaches the planner as they wrote it: a Length, a Voice-over or Music they ask for is done as asked, and only what they do not mention is the planner's choice. A Length written as "10 detik", "30s" or "20 sec" is found by a fixed pattern and is the Length of the video (a number between the options is the nearest one that is not longer): the planner is told so, asked once more if it still chooses another, and then its plan is fitted to that Length.
 _Avoid_: Reel maker, Storyboard & Video
 
 ### Storyboard and video
@@ -47,16 +47,12 @@ Six Scenes that together tell one short ad for the product (opening, product, de
 _Avoid_: Script, plan, shot list
 
 **Scene**:
-The text of one of the six moments of a Storyboard: what is seen, and the Caption written on its panel. The planner writes it and the Storyboard picture is drawn from it; the Seller does not read or edit it, and the video planner uses it to share the story over the Clips.
+The text of one of the six moments of a Storyboard: what is seen, and the Caption written on its panel. The planner writes it and the Storyboard picture is drawn from it; the Seller does not read or edit it. It is kept only to draw the picture again on a retry.
 _Avoid_: Shot, slide (a panel is the Scene as drawn in the Storyboard picture)
 
 **Art direction**:
-The look of one ad, written by the planner for this product, its buyers and its story: mood, colour grade, light, the graphic style of labels and accents, and the effects, transitions and text animations that fit. It is chosen like a professional editor would, not taken from one fixed recipe, and the Storyboard picture is made in it. The video model is not given it again: it sees the look in the picture and decides the rest itself. The Seller does not see or edit it.
+The look of one ad, written by the planner for this product, its buyers and its story: mood, colour grade, light, the graphic style of labels and accents, and the effects, transitions and text animations that fit. It is chosen like a professional editor would, not taken from one fixed recipe, and the Storyboard picture is made in it. It is kept only to draw the picture again on a retry. The video planner and the video model are not given it: they see the look in the picture and decide the rest themselves. The Seller does not see or edit it.
 _Avoid_: Style (that is the Studio photo Style), theme, template
-
-**Brief**:
-The Seller's first request, kept as they wrote it (at most 400 characters, never a summary written by a model). Everything the Seller said in it also shapes the Scenes and the Art direction. The brief travels with the Storyboard to the video planner, which reads it together with any words typed with the video request (the newer words win). What the Seller asked of the Length, a Voice-over or Music is done as asked, and only what they did not mention is the planner's choice. A Length written as "10 detik", "30s" or "20 sec" is found by a fixed pattern and is the Length of the video (a number between the options is the nearest one that is not longer): the planner is told so, asked once more if it still chooses another, and then its plan is fitted to that Length. A request that names nothing leaves the planner free. The Seller does not edit it.
-_Avoid_: Prompt, instructions, requirements
 
 **Storyboard picture**:
 The whole Storyboard as one tall vertical image: a grid of six panels, each with its numbered title and the Caption of its Scene (those are its only text; it carries no words about itself), made from the Product photo so the product stays the same in every panel. It is made in the same request as the Seller asks for the Storyboard (no approval of the Scenes in between), costs one image and can be made again from the same Scenes.
@@ -67,7 +63,7 @@ A vertical video made from the Storyboard picture of a Storyboard, 10, 20 or 30 
 _Avoid_: Reel, clip (a Clip is only a piece of it)
 
 **Length**:
-How long the Ad video runs: 10, 20 or 30 seconds, chosen by the planner for the story (a typed request may say what the Seller wants). All six Scenes are always in the video; a text model shares them over the Clips, so a short Length moves fast and a long one lingers.
+How long the Ad video runs: 10, 20 or 30 seconds, chosen by the planner for the story (a typed request may say what the Seller wants). All six Scenes of the picture are always in the video; a text model shares them over the Clips, so a short Length moves fast and a long one lingers.
 _Avoid_: Duration, any other number of seconds
 
 **Clip**:

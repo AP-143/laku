@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ChatEvent } from "../shared/chat-events";
 import { fakeChatModel } from "./testing/fake-models";
-import { fakeVideoModel } from "./testing/fake-video-model";
 import { readEvents } from "./testing/events";
 import { chatRequest, createTestApp } from "./testing/harness";
 import { makePhoto, uploadRequest } from "./testing/photos";
@@ -106,6 +105,61 @@ describe("video as a feature of its own", () => {
 
     assert.ok(finishedVideo(agreed));
     assert.deepEqual(app.videoModel.calls.map((call) => call.seconds), [6, 4]);
+  });
+
+  it("plans the video from the attached picture and the words typed now, and from nothing an older page still sends", async () => {
+    const chat = fakeChatModel({ chunks: ["x"], videoSeconds: 10 });
+    const app = createTestApp(chat);
+    const picture = await attachStoryboard(app);
+
+    await readEvents(
+      await app.chat(
+        chatRequest({
+          messages: [{ role: "user", text: "santai dan hangat", photoAssetId: picture }],
+          intent: "video",
+          confirmedUsd: 1,
+          // What the storyboard used to hand over to the video: none of it is read any more.
+          scenes: ["Scene satu di dapur", "b", "c", "d", "e", "f"],
+          artDirection: "Night-time neon palette of electric blue and magenta.",
+          brief: "storyboard dan video 30 detik",
+          video: true,
+        }),
+      ),
+    );
+
+    const planned = chat.doGenerateCalls.filter((call) => JSON.stringify(call.prompt).includes("[task: video-plan]"));
+    assert.equal(planned.length, 1);
+    const prompt = JSON.stringify(planned[0].prompt);
+    assert.ok(prompt.includes("santai dan hangat"));
+    for (const handedOver of ["Scene satu di dapur", "Night-time neon", "30 detik"]) assert.ok(!prompt.includes(handedOver), handedOver);
+    // The 30 seconds of the old first request do not decide the length: the planner does.
+    assert.deepEqual(app.videoModel.calls.map((call) => call.seconds), [6, 4]);
+  });
+
+  it("does not borrow a storyboard picture the browser sends along: with nothing attached it asks for one", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
+    const borrowed = await attachStoryboard(app);
+
+    const events = await readEvents(
+      await app.chat(chatRequest({ messages: [{ role: "user", text: "bikinin video iklan" }], intent: "video", sheet: borrowed })),
+    );
+
+    assert.equal(app.videoModel.calls.length, 0);
+    const text = events.flatMap((event) => (event.type === "assistant_text" ? [event.text] : [])).join("");
+    assert.match(text, /lampirkan/i);
+  });
+
+  it("does not make a video from a photo when the router guesses a video but the Video feature was not picked", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO" }));
+    const photo = await attachStoryboard(app);
+
+    const events = await readEvents(
+      await app.chat(chatRequest({ messages: [{ role: "user", text: "bikinin video dong", photoAssetId: photo }] })),
+    );
+
+    assert.equal(app.videoModel.calls.length, 0);
+    const text = events.flatMap((event) => (event.type === "assistant_text" ? [event.text] : [])).join("");
+    assert.match(text, /fitur Video/);
   });
 
   it("asks the seller to attach a storyboard picture when the video is asked for with nothing attached", async () => {

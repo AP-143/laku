@@ -91,23 +91,12 @@ export function parseScenes(answer: string): PlannedStoryboard {
  * Decides a whole video: how long it is, whether it has a voice-over and whether it has music, how the story is shared over
  * the clips, and the colour grade. The video model is given the storyboard picture and one direction per clip, so a clip
  * plays only its part and the clips together tell the whole story, in order; how it looks, moves and sounds is the video
- * model's own choice. `brief` is the seller's first request as they wrote it (the storyboard was planned from it), and
- * `wish` is what the seller typed with this request, when they typed instead of only pressing the button. `length` is the
- * length their words ask for, which the video must have; `wrong` is the length an earlier try chose instead.
+ * model's own choice. The scenes and the look of the ad are read from the picture itself. `wish` is what the seller typed
+ * with this request, when they typed anything. `length` is the length their words ask for, which the video must have;
+ * `wrong` is the length an earlier try chose instead.
  * Written in English because it is read by models, not by the seller.
  */
-export function videoPlanPrompt(request: {
-  scenes: string[];
-  artDirection?: string;
-  brief?: string;
-  wish?: string;
-  length?: number;
-  wrong?: number;
-}): string {
-  const scenes =
-    request.scenes.length > 0
-      ? request.scenes.map((scene, index) => `Scene ${index + 1}: ${scene}`).join("\n")
-      : "(none given: follow the scenes of the picture itself)";
+export function videoPlanPrompt(request: { wish?: string; length?: number; wrong?: number }): string {
   // For each length: the clips it is made of, the words a narration line may have in each, and where the cuts fall (so the music can sit on a beat).
   const options = VIDEO_LENGTH_CHOICES.flatMap((seconds) => {
     const plan = planClips(seconds);
@@ -119,14 +108,10 @@ export function videoPlanPrompt(request: {
       `- ${seconds} seconds: ${plan.clips.length} clips of ${plan.clips.join(", ")} seconds; a narration line of at most ${words.join(", ")} words in them; ${cuts.length > 0 ? `the cuts fall at ${cuts.join(", ")}` : "no cut inside the video"}`,
     ];
   }).join("\n");
-  const asked = [
-    request.brief ? `In their first request the seller wrote (the storyboard was already planned from it): ${JSON.stringify(request.brief)}.` : "",
-    request.wish ? `The seller wrote: ${JSON.stringify(request.wish)}${request.brief ? " (what they wrote now wins where it differs from the first request)" : ""}.` : "",
-  ].filter(Boolean);
   const wish =
-    asked.length > 0
+    request.wish
       ? [
-          asked.join(" "),
+          `The seller wrote: ${JSON.stringify(request.wish)}.`,
           "Do what they asked of the length, a voice-over and music; only what they did not mention is yours to decide.",
           request.length
             ? `They named a length: "seconds" must be exactly ${request.length}. (A number between the options is the nearest option that is not longer.)`
@@ -135,13 +120,12 @@ export function videoPlanPrompt(request: {
         ]
           .filter(Boolean)
           .join(" ")
-      : "The seller only pressed the Generate button: everything is yours to decide.";
+      : "The seller added no words to the picture: everything is yours to decide.";
   return `
 [task: video-plan]
 You are the producer of a vertical ad video that is made from a storyboard picture (a grid of ${SCENE_COUNT} scenes), in clips one after the other. Look at the picture: it shows the person and the product. You decide how long the video is, whether it has a voice-over and whether it has music.
-The art direction of this ad, chosen for this product: ${request.artDirection ?? "a clean, bright, professional commercial look that suits the product"}
-The scenes of the storyboard, in story order (a scene may end with its caption: the words the storyboard shows on screen):
-${scenes}
+The art direction of this ad (mood, colour, light, graphic style, effects) is the one the picture itself shows: take it from there.
+The scenes of the storyboard are the moments the picture shows, read in story order from the picture (a scene may end with its caption: the words the storyboard shows on screen).
 ${wish}
 ${request.length ? `Length: "seconds" is ${request.length}.` : 'Length: choose "seconds" from these options, the one that tells this story best (a shorter video moves faster, a longer one lets the story linger).'} Write one entry in "clips" for every clip of the option.
 ${options}
@@ -319,8 +303,6 @@ export type Intent = "studio_photo" | "revise_photo" | "storyboard" | "video" | 
 export interface IntentContext {
   hasPhoto: boolean;
   hasPreviousResult: boolean;
-  /** The storyboard already has its picture, which a video is made from. */
-  hasSheet: boolean;
   /** A video with a voice-over was just made, whose narration can still be changed. */
   hasNarration: boolean;
 }
@@ -334,10 +316,10 @@ You route one chat message from a seller of an online shop. Answer with exactly 
 STUDIO: they want a studio photo made from a product photo.
 REVISE: they want a change to the studio photo that was just made (only if a previous result exists).
 STORYBOARD: they want a storyboard or ad scenes made from a product photo.
-VIDEO: they want a video ad made from the storyboard picture (only if it exists).
+VIDEO: they want a video ad made from a storyboard picture.
 REVISE_VOICE: they want to change the narration or the voice of the video that was just made (only if it has one).
 CHAT: anything else, including questions and greetings.
-Product photo attached: ${yesNo(context.hasPhoto)}. Previous result exists: ${yesNo(context.hasPreviousResult)}. Storyboard picture exists: ${yesNo(context.hasSheet)}. Video with narration exists: ${yesNo(context.hasNarration)}.
+Product photo attached: ${yesNo(context.hasPhoto)}. Previous result exists: ${yesNo(context.hasPreviousResult)}. Video with narration exists: ${yesNo(context.hasNarration)}.
 Message: ${JSON.stringify(text)}
 `.trim();
 }
