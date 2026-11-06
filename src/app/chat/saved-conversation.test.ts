@@ -156,7 +156,7 @@ describe("chat sessions", () => {
     const studio: ThreadItem = { id: "s", kind: "studio", assetId: "x", sourceAssetId: "p", retry: {} };
     const scenes: ThreadItem = { id: "c", kind: "scenes", sourceAssetId: "p", scenes: ["a", "b", "c", "d", "e", "f"], approved: false };
     const video: ThreadItem = { id: "v", kind: "video", assetId: "x", sourceAssetId: "p" };
-    const partial: ThreadItem = { id: "t", kind: "partial", seconds: 16, clips: [4, 4, 4, 4], finished: {}, failedIndex: 0, voiceOver: false, sheet: "s", directions: [], audio: "none", voice: "female", captions: [], palette: { bubble: "#ffffff", text: "#000000", accent: "#ff0000" }, grade: { contrast: 1, saturation: 1, brightness: 0, warmth: 0, grain: 0, vignette: false } };
+    const partial: ThreadItem = { id: "t", kind: "partial", seconds: 16, clips: [4, 4, 4, 4], finished: {}, failedIndex: 0, voiceOver: false, sheet: "s", directions: [], narration: [], voice: "female", grade: { contrast: 1, saturation: 1, brightness: 0, warmth: 0, grain: 0, vignette: false } };
     const featureOf = (items: ThreadItem[]) => describeSession({ id: "s", items }).feature;
 
     assert.equal(featureOf([user]), undefined);

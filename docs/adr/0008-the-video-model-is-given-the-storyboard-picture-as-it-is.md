@@ -1,0 +1,23 @@
+# The video model is given the storyboard picture as it is and decides everything else itself
+
+The Seller wants the video made from the storyboard, with the AI thinking for itself: its style, the text it shows, its effects, the camera, the acting and the sound are the video model's own choices. So every clip starts from the storyboard picture the Seller approved, unchanged, and the app gives the model almost no instructions.
+
+Earlier versions did the opposite, in two ways. They drew a clean copy of the picture first (no text, labels or bubbles; about US$0.034) and drew the text in the edit with the app's own font and bubbles. Then they sent a long clip prompt of rules (a professional editor's camera moves, sound design, micro-expressions, something moving in every second, how the text and effects should look, what the sheet's frames are). The last real video made with that pile of rules came out as a mess, and the Seller ordered all of it removed. An even earlier real run had shown that a model that sees a storyboard sheet may copy it (strips of the sheet at the top and bottom, doubled text); that risk is accepted and only a real run shows whether it comes back.
+
+- **The clip prompt is one short sentence of what the picture is and which part to play**: "The reference image is the storyboard of an ad. Make the ad video from it. This clip plays: <direction>". Nothing about style, text, effects, camera, acting, sound, motion, the art direction or the frames of the sheet. The art direction is not repeated either: it is already in the picture.
+- **Two short sentences are added only when they apply, because the app adds that sound afterwards**: "The person does not speak (a narrator is added later)" when a voice-over was asked for (ADR 0005), and "No background music (it is added later)" when music was asked for (ADR 0007). Without them the model's own sound is left alone.
+- **The planner only shares the story.** Each clip's direction is one or two plain sentences: which panels it plays and what happens in them, in order, none skipped. It is told to say nothing about how it is filmed, edited, acted or heard. The planner still chooses what the app itself adds: the voice and the narration lines, the music brief, and the colour grade (ADR 0006).
+- **Nothing is added to the price.** The video costs only its seconds (US$1 for 10 seconds), plus voice and music when asked.
+
+## Considered options
+
+- **Keep the clean copy and the app-drawn text.** Rejected by the Seller: it replaces the style of the storyboard with the app's.
+- **Keep a long prompt of professional-editor rules.** Rejected by the Seller after a real result: the more we dictate, the worse the video.
+- **A clean keyframe per clip.** Not chosen: the clip would see only its first scene.
+- **Ask the video model for the whole video in one clip.** Not tried: a clip of 6 seconds is the longest proven on the real model.
+
+## Consequences
+
+- The tests check that every clip starts from the stored storyboard picture, that no image is drawn or booked for the video, that the clip prompt is short, holds the direction and the storyboard sentence, carries the silent-person and no-music sentences only when they apply, and holds none of the old rule words. Whether the result is good is only visible on a real run; if it is not, the clip prompt and the planner's direction are the first places to look, and the answer is probably to say less, not more.
+- A browser that still sends a clean copy has it ignored.
+- Still open: whether a single longer clip gives a better result (needs real runs).

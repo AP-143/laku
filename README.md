@@ -3,11 +3,11 @@
 A chatbot for small online sellers in Indonesia. From one amateur photo of a product it makes:
 
 - a **studio photo** (clean backdrop, solid colour or lifestyle setting; the product never changes), and
-- a **storyboard and ad video**: six scenes drawn as one picture (numbered titles, caption bubbles, a different shot per panel), then a vertical ad video of 10, 20 or 30 seconds made from that picture, with an optional Indonesian voice-over.
+- a **storyboard and ad video**: six scenes drawn as one picture (numbered titles, caption bubbles, a different shot per panel), then a vertical ad video made from that picture. The seller only presses Generate: the AI decides the length (10, 20 or 30 seconds), whether there is an Indonesian voice-over (the person stays silent and a narrator speaks, with emotion) and whether there is music, and the seller says yes to the exact price. The video model is given the storyboard and decides how the video looks, moves and sounds; the app only shares the story over the clips, joins them, grades them and adds the voice-over and music.
 
 The chat talks to the seller in Bahasa Indonesia. The code, comments and docs are in English.
 
-For each product the planner also writes an art direction (mood, colour grade, effects, graphic style), so a gadget does not get the same look as a plate of food. The storyboard picture and every video clip are made in it.
+For each product the planner also writes an art direction (mood, colour grade, effects, graphic style), so a gadget does not get the same look as a plate of food. The storyboard picture is made in it, and the video model takes the look from that picture.
 
 ## How it works
 

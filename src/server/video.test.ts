@@ -9,10 +9,10 @@ import { fakeVideoModel } from "./testing/fake-video-model";
 import { readEvents } from "./testing/events";
 import { chatRequest, createTestApp } from "./testing/harness";
 import { makePhoto, uploadRequest } from "./testing/photos";
-import { colourfulness, levelAround, lowerThird, meanDifference, probeVideo, wholeFrame } from "./testing/probe-video";
+import { colourfulness, levelAround, levelAroundBetween, probeVideo } from "./testing/probe-video";
 
 /**
- * Feature 3 through the chat API: a video made from the one storyboard picture, with the length the seller asks for.
+ * Feature 3 through the chat API: a video made from the one storyboard picture, with the length the planner chooses.
  * The text model splits the six panels over the clips (a "direction" for each), and every clip starts from the same picture.
  */
 
@@ -28,6 +28,7 @@ async function uploadSheet(app: App): Promise<string> {
   return uploadPhoto(app, "#cc3333");
 }
 
+/** A request with the storyboard picture the video is made from. */
 const videoRequest = (text: string, sheet: string | undefined, extra: object = {}) =>
   chatRequest({ messages: [{ role: "user", text }], sheet, ...extra });
 
@@ -61,7 +62,7 @@ async function usageOf(app: App) {
 }
 
 describe("video from the storyboard", () => {
-  it("makes a silent video of the length asked for, every clip from the one storyboard picture, and books the cost per second", async () => {
+  it("makes a silent video of the length the planner chose, every clip from the one storyboard picture, and books the cost per second", async () => {
     const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10 }));
     const sheet = await uploadSheet(app);
 
@@ -98,36 +99,13 @@ describe("video from the storyboard", () => {
     assert.deepEqual(events.at(-1), { type: "done" });
   });
 
-  it("makes 10 seconds when the seller names no length", async () => {
+  it("makes the length the planner chose, here 10 seconds, when the seller names none", async () => {
     const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO" }));
     const sheet = await uploadSheet(app);
 
     await readEvents(await app.chat(videoRequest("bikinin video dong", sheet)));
 
     assert.deepEqual(app.videoModel.calls.map((call) => call.seconds), [6, 4]);
-  });
-
-  it("raises a length that is shorter than the shortest clip", async () => {
-    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 2 }));
-    const sheet = await uploadSheet(app);
-
-    await readEvents(await app.chat(videoRequest("video 2 detik", sheet)));
-
-    assert.deepEqual(app.videoModel.calls.map((call) => call.seconds), [4]);
-  });
-
-  it("refuses a length the storyboard cannot cover, says the most it can, and spends nothing", async () => {
-    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 40 }));
-    const sheet = await uploadSheet(app);
-
-    const events = await readEvents(await app.chat(videoRequest("video 40 detik", sheet)));
-
-    const text = events.flatMap((event) => (event.type === "assistant_text" ? [event.text] : [])).join("");
-    assert.match(text, /32 detik/);
-    assert.equal(app.videoModel.calls.length, 0);
-    assert.equal(finishedVideo(events), undefined);
-    assert.equal((await usageOf(app)).monthUsd, 0);
-    assert.deepEqual(events.at(-1), { type: "done" });
   });
 
   it("refuses a picture that is not a product, before anything is generated", async () => {
@@ -142,10 +120,10 @@ describe("video from the storyboard", () => {
   });
 });
 
-/** The "Buat video" button under an approved storyboard: the length is a field of the request, never guessed from words. */
+/** The "Generate" button under an approved storyboard: a flag with no options, since the planner chooses the length. */
 describe("video from the button of an approved storyboard", () => {
-  const buttonRequest = (sheet: string | undefined, video: object, extra: object = {}) =>
-    videoRequest("Buat video dari storyboard ini.", sheet, { video, ...extra });
+  const buttonRequest = (sheet: string | undefined, extra: object = {}) =>
+    videoRequest("Buat video dari storyboard ini.", sheet, { video: true, ...extra });
 
   it("fits 10, 20 and 30 seconds with 2, 3 and 4 clips that add up to the length, all from the same picture", async () => {
     for (const [seconds, clips] of [
@@ -153,10 +131,10 @@ describe("video from the button of an approved storyboard", () => {
       [20, [8, 6, 6]],
       [30, [8, 8, 8, 6]],
     ] as const) {
-      const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
+      const app = createTestApp(fakeChatModel({ chunks: ["x"], videoSeconds: seconds }));
       const sheet = await uploadSheet(app);
 
-      const events = await readEvents(await app.chat(buttonRequest(sheet, { seconds }, { confirmedUsd: 3 })));
+      const events = await readEvents(await app.chat(buttonRequest(sheet, { confirmedUsd: 3 })));
 
       assert.deepEqual(app.videoModel.calls.map((call) => call.seconds), clips, `${seconds} s`);
       for (const [index, call] of app.videoModel.calls.entries()) {
@@ -168,50 +146,28 @@ describe("video from the button of an approved storyboard", () => {
   });
 
   it("asks the text model to share the scenes over the clips in order, and does not ask what the seller meant", async () => {
-    // The router would call this message plain chat, and the request reader would find no length: the field decides.
-    const chat = fakeChatModel({ chunks: ["x"] });
+    // The router would call this message plain chat: the button decides.
+    const chat = fakeChatModel({ chunks: ["x"], videoSeconds: 20 });
     const app = createTestApp(chat);
     const sheet = await uploadSheet(app);
     const scenes = ["Satu di dapur", "Dua di meja", "Tiga", "Empat", "Lima", "Enam di kasir"];
 
-    await readEvents(await app.chat(buttonRequest(sheet, { seconds: 20 }, { scenes, confirmedUsd: 2 })));
+    await readEvents(await app.chat(buttonRequest(sheet, { scenes, confirmedUsd: 2 })));
 
     const planned = chat.doGenerateCalls.filter((call) => JSON.stringify(call.prompt).includes("[task: video-plan]"));
     assert.equal(planned.length, 1);
     const prompt = JSON.stringify(planned[0].prompt);
-    assert.match(prompt, /Number of clips: 3/);
+    assert.equal(app.videoModel.calls.length, 3);
     assert.ok(prompt.indexOf("Satu di dapur") < prompt.indexOf("Enam di kasir"));
     // Only the product check of the picture and this plan asked the chat model anything.
     assert.equal(chat.doGenerateCalls.length, 2);
-  });
-
-  it("edits every clip like a professional editor, in the art direction the planner picked for this product", async () => {
-    const chat = fakeChatModel({ chunks: ["x"] });
-    const app = createTestApp(chat);
-    const sheet = await uploadSheet(app);
-
-    await readEvents(await app.chat(buttonRequest(sheet, { seconds: 10 }, { artDirection: ART, confirmedUsd: 1 })));
-
-    for (const call of app.videoModel.calls) {
-      assert.ok(call.prompt.includes(ART));
-      assert.match(call.prompt, /professional (video )?editor/i);
-      // The captions are added afterwards in the edit, so the model draws no text of its own.
-      assert.match(call.prompt, /do not draw any text/i);
-    }
-    // The planner is asked for the choices an editor makes (camera, effects, transitions, grade, text), in that look.
-    const planned = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: video-plan]"));
-    const prompt = JSON.stringify(planned?.prompt);
-    assert.ok(prompt.includes(ART));
-    for (const choice of [/professional (video )?editor/i, /camera move/i, /effect/i, /transition/i, /colou?r grade/i]) {
-      assert.match(prompt, choice);
-    }
   });
 
   it("makes no video when the text model cannot plan the clips, and books nothing", async () => {
     const app = createTestApp(fakeChatModel({ chunks: ["x"], failVideoPlan: true }));
     const sheet = await uploadSheet(app);
 
-    const events = await readEvents(await app.chat(buttonRequest(sheet, { seconds: 10 }, { confirmedUsd: 1 })));
+    const events = await readEvents(await app.chat(buttonRequest(sheet, { confirmedUsd: 1 })));
 
     assert.equal(app.videoModel.calls.length, 0);
     assert.equal(errorOf(events)?.type, "error");
@@ -223,24 +179,23 @@ describe("video from the button of an approved storyboard", () => {
     const app = createTestApp(fakeChatModel({ chunks: ["x"], peopleInPictures: true }));
     const sheet = await uploadSheet(app);
 
-    const events = await readEvents(await app.chat(buttonRequest(sheet, { seconds: 10 }, { confirmedUsd: 1 })));
+    const events = await readEvents(await app.chat(buttonRequest(sheet, { confirmedUsd: 1 })));
 
     assert.ok(finishedVideo(events));
     assert.equal(app.videoModel.calls.length, 2);
     assert.deepEqual(events.at(-1), { type: "done" });
   });
 
-  it("offers 10, 20 and 30 seconds, and nothing else", async () => {
+  it("takes the button as a flag, and refuses a value that is neither a flag nor an object", async () => {
     const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
     const sheet = await uploadSheet(app);
 
-    for (const seconds of [10, 20, 30]) {
-      assert.equal((await app.chat(buttonRequest(sheet, { seconds }))).status, 200, String(seconds));
+    for (const video of [true, {}]) {
+      assert.equal((await app.chat(videoRequest("Buat video.", sheet, { video }))).status, 200, JSON.stringify(video));
     }
-    for (const seconds of [0, 3, 10.5, 16, 24, 32, 40, "20", null]) {
-      assert.equal((await app.chat(buttonRequest(sheet, { seconds }))).status, 400, String(seconds));
+    for (const video of ["yes", 20, null, false]) {
+      assert.equal((await app.chat(videoRequest("Buat video.", sheet, { video }))).status, 400, JSON.stringify(video));
     }
-    assert.equal((await app.chat(buttonRequest(sheet, { seconds: 20, voiceOver: "yes" }))).status, 400);
   });
 
   it("always asks for the price first, whatever the length, and spends nothing until the seller agrees", async () => {
@@ -250,10 +205,10 @@ describe("video from the button of an approved storyboard", () => {
       [20, 2],
       [30, 3],
     ] as const) {
-      const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
+      const app = createTestApp(fakeChatModel({ chunks: ["x"], videoSeconds: seconds }));
       const sheet = await uploadSheet(app);
 
-      const events = await readEvents(await app.chat(buttonRequest(sheet, { seconds })));
+      const events = await readEvents(await app.chat(buttonRequest(sheet)));
 
       const ask = events.find((event) => event.type === "confirmation_requested");
       assert.ok(ask && ask.type === "confirmation_requested", `${seconds} s`);
@@ -268,36 +223,36 @@ describe("video from the button of an approved storyboard", () => {
   });
 
   it("includes the narration in the price it asks for, so the seller agrees to what is booked", async () => {
-    const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], videoSeconds: 20, voiceOver: true }));
     const sheet = await uploadSheet(app);
     const scenes = ["a", "b", "c", "d"];
 
     // 20 seconds of video is US$2.00 and 20 seconds of narration US$0.006.
-    const asked = await readEvents(await app.chat(buttonRequest(sheet, { seconds: 20, voiceOver: true }, { scenes })));
+    const asked = await readEvents(await app.chat(buttonRequest(sheet, { scenes })));
     const ask = asked.find((event) => event.type === "confirmation_requested");
     assert.ok(ask && ask.type === "confirmation_requested");
     assert.equal(ask.estimatedUsd, 2.006);
 
     // A yes to the price of the picture alone does not cover the narration: the question comes again.
-    const short = await readEvents(await app.chat(buttonRequest(sheet, { seconds: 20, voiceOver: true }, { scenes, confirmedUsd: 2 })));
+    const short = await readEvents(await app.chat(buttonRequest(sheet, { scenes, confirmedUsd: 2 })));
     assert.ok(short.some((event) => event.type === "confirmation_requested"));
     assert.equal(app.videoModel.calls.length, 0);
 
-    const agreed = await readEvents(await app.chat(buttonRequest(sheet, { seconds: 20, voiceOver: true }, { scenes, confirmedUsd: 2.006 })));
+    const agreed = await readEvents(await app.chat(buttonRequest(sheet, { scenes, confirmedUsd: 2.006 })));
     assert.ok(finishedVideo(agreed));
     assert.equal((await usageOf(app)).monthUsd, 2.006);
   });
 
-  it("lays a narration over the video when the seller switched the voice-over on", async () => {
-    const app = createTestApp(fakeChatModel({ chunks: ["x"], script: "Naskah untuk iklan sepatu." }));
+  it("lays the narration over the video when the planner chose a voice-over", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], voiceOver: true, videoPlan: { narration: [{ line: "Lapar banget ya?" }, { line: "Yuk, pesan sekarang!" }] } }));
     const sheet = await uploadSheet(app);
     const scenes = ["Scene satu", "Scene dua", "Scene tiga", "Scene empat"];
 
-    const events = await readEvents(await app.chat(buttonRequest(sheet, { seconds: 10, voiceOver: true }, { scenes, confirmedUsd: 1.003 })));
+    const events = await readEvents(await app.chat(buttonRequest(sheet, { scenes, confirmedUsd: 1.003 })));
 
     const narration = events.find((event) => event.type === "voice_over");
     assert.ok(narration && narration.type === "voice_over");
-    assert.equal(narration.script, "Naskah untuk iklan sepatu.");
+    assert.equal(narration.script, "Lapar banget ya? Yuk, pesan sekarang!");
     assert.equal(narration.seconds, 10);
     const ready = finishedVideo(events);
     assert.ok(ready && ready.type === "asset_ready");
@@ -307,11 +262,11 @@ describe("video from the button of an approved storyboard", () => {
 
   it("makes the longest video with a voice-over however much was already spent today", async () => {
     // The 30 second video costs US$3.00 and its narration US$0.009; there is no daily limit to stop it.
-    const app = createTestApp(fakeChatModel({ chunks: ["x"] }), undefined, { startingTodayUsd: 10 });
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], videoSeconds: 30, voiceOver: true }), undefined, { startingTodayUsd: 10 });
     const sheet = await uploadSheet(app);
 
     const events = await readEvents(
-      await app.chat(buttonRequest(sheet, { seconds: 30, voiceOver: true }, { scenes: ["a", "b", "c", "d"], confirmedUsd: 3.009 })),
+      await app.chat(buttonRequest(sheet, { scenes: ["a", "b", "c", "d"], confirmedUsd: 3.009 })),
     );
 
     assert.equal(errorOf(events), undefined);
@@ -319,11 +274,11 @@ describe("video from the button of an approved storyboard", () => {
     assert.equal(app.videoModel.calls.length, 4);
   });
 
-  it("makes a silent video when the voice-over is not asked for", async () => {
-    const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
+  it("makes a silent video when the planner chose no voice-over", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], videoSeconds: 20, voiceOver: false }));
     const sheet = await uploadSheet(app);
 
-    const events = await readEvents(await app.chat(buttonRequest(sheet, { seconds: 20, voiceOver: false }, { confirmedUsd: 2 })));
+    const events = await readEvents(await app.chat(buttonRequest(sheet, { confirmedUsd: 2 })));
 
     assert.equal(events.some((event) => event.type === "voice_over"), false);
     assert.equal(app.speechModel.calls.length, 0);
@@ -332,7 +287,7 @@ describe("video from the button of an approved storyboard", () => {
   it("asks for the storyboard first when the button is pressed without a storyboard picture", async () => {
     const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
 
-    const events = await readEvents(await app.chat(buttonRequest(undefined, { seconds: 20 })));
+    const events = await readEvents(await app.chat(buttonRequest(undefined)));
 
     const text = events.flatMap((event) => (event.type === "assistant_text" ? [event.text] : [])).join("");
     assert.match(text, /storyboard/i);
@@ -340,154 +295,96 @@ describe("video from the button of an approved storyboard", () => {
   });
 });
 
-/** The sound of the video: speech on camera in sync with the mouth, or a narration, as the planner decides for this ad. */
+/** The sound of the video: the actor is silent and a narrator speaks one line for each moment of the acting. */
 describe("a video that sounds and moves naturally", () => {
-  const DIALOGUES = ["Duh, perut keroncongan banget nih!", "Nih, burger spesial paling juara!"];
   const PROFILE = "Warm young Indonesian man, relaxed and friendly, medium pace";
-  const buttonRequest = (sheet: string | undefined, video: object, extra: object = {}) =>
-    videoRequest("Buat video dari storyboard ini.", sheet, { video, ...extra });
-  const voiceRequest = (sheet: string) =>
-    videoRequest("Buat video dari storyboard ini.", sheet, {
-      video: { seconds: 10, voiceOver: true },
-      scenes: ["a", "b", "c", "d", "e", "f"],
-      confirmedUsd: 1.003,
-    });
+  const buttonRequest = (sheet: string | undefined, extra: object = {}) => videoRequest("Buat video dari storyboard ini.", sheet, { video: true, ...extra });
+  const voiceRequest = (sheet: string) => buttonRequest(sheet, { scenes: ["a", "b", "c", "d", "e", "f"], confirmedUsd: 1.003 });
 
-  it("lets the person speak on camera, in sync with the mouth, when the planner decides so: the clips keep their own sound", async () => {
-    const chat = fakeChatModel({ chunks: ["x"], videoPlan: { audio: "on_camera", voice: "male", voiceProfile: PROFILE, dialogues: DIALOGUES } });
+  it("keeps the actor silent and has a narrator, in the voice that suits the actor, say what the actor feels", async () => {
+    const chat = fakeChatModel({ chunks: ["x"], voiceOver: true, videoPlan: { voice: "male", voiceProfile: PROFILE } });
     const app = createTestApp(chat);
-    const sheet = await uploadSheet(app);
-
-    const events = await readEvents(await app.chat(voiceRequest(sheet)));
-
-    // Each clip is told the exact words to say, in Indonesian, with lip movement that matches, in the one voice.
-    for (const [index, call] of app.videoModel.calls.entries()) {
-      assert.ok(call.prompt.includes(DIALOGUES[index]), `clip ${index + 1} says its line`);
-      assert.match(call.prompt, /lip movement that matches/i);
-      assert.ok(call.prompt.includes(PROFILE), "the same voice in every clip");
-    }
-    // The sound the clips came with is the speech, so it stays; no separate voice is read over it.
-    const ready = finishedVideo(events);
-    assert.ok(ready && ready.type === "asset_ready");
-    assert.equal((await probeVideo((await app.store.read(ready.assetId, "original"))!.bytes)).hasAudio, true);
-    assert.equal(app.speechModel.calls.length, 0);
-    assert.equal(events.some((event) => event.type === "voice_over"), false);
-    // Nothing was read aloud, so only the video is billed.
-    assert.equal((await usageOf(app)).monthUsd, 1);
-  });
-
-  it("reads a narration in the voice that suits the person when the planner decides so, and keeps the mouths closed", async () => {
-    const chat = fakeChatModel({ chunks: ["x"], videoPlan: { audio: "narration", voice: "male" } });
-    const app = createTestApp(chat);
-    const sheet = await uploadSheet(app);
-
-    const events = await readEvents(await app.chat(voiceRequest(sheet)));
-
-    assert.deepEqual(app.speechModel.calls.map((call) => call.voice), [VOICES.male]);
-    // A voice laid over the video must not fight a mouth that moves: nobody speaks on camera.
-    for (const call of app.videoModel.calls) assert.match(call.prompt, /mouths? stay closed/i);
-    assert.ok(events.some((event) => event.type === "voice_over"));
-    const ready = finishedVideo(events);
-    assert.ok(ready && ready.type === "asset_ready");
-    assert.equal((await probeVideo((await app.store.read(ready.assetId, "original"))!.bytes)).hasAudio, true);
-    assert.equal((await usageOf(app)).monthUsd, 1.003);
-  });
-
-  it("writes the narration after thinking about the mood of each moment, and has it read with the delivery it directed", async () => {
-    const DELIVERY = "Warm, upbeat young man; curious and playful at first, building excitement at the reveal, slowing and smiling on the call to buy.";
-    const SCRIPT = "Lapar banget? <short pause> Nih, burger spesial yang bikin kamu senyum! Pesan sekarang, ya.";
-    const chat = fakeChatModel({
-      chunks: ["x"],
-      script: SCRIPT,
-      delivery: DELIVERY,
-      videoPlan: { audio: "narration", voice: "male", voiceProfile: PROFILE },
-    });
-    const app = createTestApp(chat);
-    const sheet = await uploadSheet(app);
-
-    const events = await readEvents(await app.chat(videoRequest("Buat video dari storyboard ini.", sheet, {
-      video: { seconds: 10, voiceOver: true },
-      scenes: ["a", "b", "c", "d", "e", "f"],
-      artDirection: "Warm, appetizing colour and soft light.",
-      confirmedUsd: 1.003,
-    })));
-
-    // The words keep their pauses, and the speech model is told how to perform them, in the voice that suits the person.
-    assert.deepEqual(app.speechModel.calls.map((call) => ({ text: call.text, voice: call.voice, instructions: call.instructions })), [
-      { text: SCRIPT, voice: VOICES.male, instructions: DELIVERY },
-    ]);
-    // The writer thinks first, and is given what it needs to match the voice and the look of this ad.
-    const written = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: voice-script]"));
-    const prompt = JSON.stringify(written?.prompt);
-    for (const need of [/think/i, /intonation/i, /not flat/i, /<short pause>/, /Warm, appetizing colour/]) assert.match(prompt, need);
-    assert.ok(prompt.includes(PROFILE));
-    // The delivery goes with the narration, so changing the voice later keeps the same way of speaking.
-    const voice = events.find((event) => event.type === "voice_over");
-    assert.ok(voice && voice.type === "voice_over");
-    assert.equal(voice.delivery, DELIVERY);
-  });
-
-  it("speeds a narration up a little when it only just runs past the end of the video, so the closing line is not cut", async () => {
-    const app = createTestApp(fakeChatModel({ chunks: ["x"] }), undefined, { speechModel: fakeSpeechModel({ seconds: 9.7 }) });
-    const sheet = await uploadSheet(app);
-
-    const events = await readEvents(await app.chat(voiceRequest(sheet)));
-
-    // 9.7 s of narration for a 10 s video that must end half a second early: a small speed-up is enough, one call is made.
-    assert.equal(app.speechModel.calls.length, 1);
-    const ready = finishedVideo(events);
-    assert.ok(ready && ready.type === "asset_ready");
-    assert.ok(Math.abs((await probeVideo((await app.store.read(ready.assetId, "original"))!.bytes)).seconds - 10) < 0.6);
-  });
-
-  it("writes a shorter narration once when it would still be cut off after a speed-up, so the closing line is read in full", async () => {
-    const chat = fakeChatModel({ chunks: ["x"], script: "Naskah contoh yang cukup pendek.", delivery: "Warm and lively." });
-    const app = createTestApp(chat, undefined, { speechModel: fakeSpeechModel({ seconds: 12 }) });
-    const sheet = await uploadSheet(app);
-
-    const events = await readEvents(await app.chat(voiceRequest(sheet)));
-
-    const written = chat.doGenerateCalls.filter((call) => JSON.stringify(call.prompt).includes("[task: voice-script]"));
-    assert.equal(written.length, 2, "the narration is written again, once");
-    assert.match(JSON.stringify(written[1].prompt), /19 to 23 spoken words/);
-    assert.equal(app.speechModel.calls.length, 2);
-    // Both readings are billed: 10 s of video and two narrations of 10 s.
-    assert.equal((await usageOf(app)).monthUsd, 1.006);
-    assert.ok(finishedVideo(events));
-  });
-
-  it("does not count the pause tags of a narration as words, so a natural script is not refused for its pauses", async () => {
-    const plain = Array.from({ length: 26 }, () => "enak").join(" ");
-    const tags = Array.from({ length: 8 }, () => "<short pause>").join(" ");
-    const app = createTestApp(fakeChatModel({ chunks: ["x"], script: `${plain} ${tags}`, delivery: "Warm and lively." }));
     const sheet = await uploadSheet(app);
 
     await readEvents(await app.chat(voiceRequest(sheet)));
 
-    assert.equal(app.speechModel.calls.length, 1);
+    // The person does not speak, so there is no lip-sync to fight the narration; every line is read in the one voice.
+    for (const call of app.videoModel.calls) {
+      assert.match(call.prompt, /person does not speak \(a narrator is added later\)/i);
+      assert.doesNotMatch(call.prompt, /lip movement|says in Indonesian/i);
+    }
+    assert.ok(app.speechModel.calls.length >= 1);
+    assert.ok(app.speechModel.calls.every((call) => call.voice === VOICES.male));
   });
 
-  it("cuts cleanly between the panels inside a clip like an editor would, instead of letting the model morph one into the next", async () => {
-    const chat = fakeChatModel({ chunks: ["x"] });
-    const app = createTestApp(chat);
+  it("reads each line of the narration with the emotion of the moment it belongs to, in the same voice", async () => {
+    const LINES = [
+      { line: "Duh, lapar banget nih...", delivery: "Weary and wishful, drawn-out vowels, almost a sigh", from: 0.5 },
+      { line: "Nih, Burger Spesial paling juara!", delivery: "Bright and excited, rising on the reveal", from: 0.5 },
+    ];
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], voiceOver: true, videoPlan: { voice: "male", voiceProfile: PROFILE, narration: LINES } }));
     const sheet = await uploadSheet(app);
 
-    await readEvents(await app.chat(buttonRequest(sheet, { seconds: 10 }, { confirmedUsd: 1 })));
+    const events = await readEvents(await app.chat(voiceRequest(sheet)));
 
-    // A video model that is asked to play several panels in one clip dissolves one into the next, which looks generated.
-    for (const call of app.videoModel.calls) {
-      assert.match(call.prompt, /hard cuts?/i);
-      assert.match(call.prompt, /never morph/i);
-    }
-    const planned = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: video-plan]"));
-    assert.match(JSON.stringify(planned?.prompt), /hard cut/i);
+    // One reading for each line, in order, each told how to feel; the voice is described the same way every time.
+    assert.deepEqual(
+      app.speechModel.calls.map((call) => call.text),
+      LINES.map((line) => line.line),
+    );
+    app.speechModel.calls.forEach((call, index) => {
+      assert.equal(call.voice, VOICES.male);
+      assert.ok(call.instructions?.includes(PROFILE), "the same voice");
+      assert.ok(call.instructions?.includes(LINES[index].delivery), "the emotion of its moment");
+    });
+    const voice = events.find((event) => event.type === "voice_over");
+    assert.ok(voice && voice.type === "voice_over");
+    assert.equal(voice.script, LINES.map((line) => line.line).join(" "));
+    assert.equal(voice.lines.length, 2);
+  });
+
+  it("places each line at the moment of its clip, and leaves the end of the video free of narration", async () => {
+    // Two lines of 2 s: the first at 0.5 s of the first clip, the second at 0.5 s of the second clip, which starts at 6 s.
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], voiceOver: true, videoPlan: { narration: [{ line: "Satu dua tiga", from: 0.5 }, { line: "Empat lima enam", from: 0.5 }] } }), undefined, {
+      speechModel: fakeSpeechModel({ seconds: 2 }),
+    });
+    const sheet = await uploadSheet(app);
+
+    const events = await readEvents(await app.chat(voiceRequest(sheet)));
+
+    const ready = finishedVideo(events);
+    assert.ok(ready && ready.type === "asset_ready");
+    const bytes = new Uint8Array((await app.store.read(ready.assetId, "original"))!.bytes);
+    const heard = async (start: number, length: number) => levelAroundBetween(bytes, 1500, start, length);
+    assert.ok((await heard(1, 1.2)) > -45, "the first line is heard at its moment");
+    assert.ok((await heard(3.3, 2.2)) < -52, "and nothing is said between the lines");
+    assert.ok((await heard(7, 1.2)) > -45, "the second line is heard at its moment");
+    assert.ok((await heard(8.8, 1)) < -52, "and the last second and a half of the video is free of narration");
+  });
+
+  it("speeds a line up a little and starts it earlier when it is too long for its moment, instead of cutting it off", async () => {
+    // The second clip is 4 s and the video ends on a held second and a half: a line from 0.5 s has 2 s, this one is 2.5 s.
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], voiceOver: true, videoPlan: { narration: [{ line: "Satu dua", from: 0.5 }, { line: "Empat lima enam", from: 0.5 }] } }), undefined, {
+      speechModel: fakeSpeechModel({ seconds: 2.5 }),
+    });
+    const sheet = await uploadSheet(app);
+
+    const events = await readEvents(await app.chat(voiceRequest(sheet)));
+
+    const ready = finishedVideo(events);
+    assert.ok(ready && ready.type === "asset_ready");
+    const bytes = new Uint8Array((await app.store.read(ready.assetId, "original"))!.bytes);
+    assert.equal(app.speechModel.calls.length, 2);
+    assert.ok((await levelAroundBetween(bytes, 1500, 7.5, 0.8)) > -45, "the line is heard");
+    assert.ok((await levelAroundBetween(bytes, 1500, 8.8, 1)) < -52, "and is over before the held end of the video");
+    assert.ok(Math.abs((await probeVideo(bytes)).seconds - 10) < 0.6);
   });
 
   it("keeps the picture quality of the clips when it joins them, instead of compressing it down to a soft image", async () => {
     const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
     const sheet = await uploadSheet(app);
 
-    const events = await readEvents(await app.chat(buttonRequest(sheet, { seconds: 10 }, { confirmedUsd: 1 })));
+    const events = await readEvents(await app.chat(buttonRequest(sheet, { confirmedUsd: 1 })));
 
     // The clips come as 6 s and 4 s files; the joined video must not carry less detail per second than they did.
     const clipBytes = app.videoModel.calls.length > 0 ? await clipBitrate() : 0;
@@ -495,37 +392,6 @@ describe("a video that sounds and moves naturally", () => {
     assert.ok(ready && ready.type === "asset_ready");
     const joined = await probeVideo((await app.store.read(ready.assetId, "original"))!.bytes);
     assert.ok(joined.videoBitrate >= clipBytes * 1.2, `joined ${joined.videoBitrate} bps against clips of ${clipBytes} bps`);
-  });
-
-  it("keeps the mouths closed when no sound was asked for, instead of leaving people talking silently", async () => {
-    const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
-    const sheet = await uploadSheet(app);
-
-    const events = await readEvents(await app.chat(buttonRequest(sheet, { seconds: 10, voiceOver: false }, { confirmedUsd: 1 })));
-
-    for (const call of app.videoModel.calls) assert.match(call.prompt, /mouths? stay closed/i);
-    const ready = finishedVideo(events);
-    assert.ok(ready && ready.type === "asset_ready");
-    // Nobody speaks, but the sound effects of the clips are still there.
-    assert.equal((await probeVideo((await app.store.read(ready.assetId, "original"))!.bytes)).hasAudio, true);
-  });
-
-  it("sound-designs every clip like a professional editor: effects in sync with the action, room tone, no music, no stray speech", async () => {
-    const chat = fakeChatModel({ chunks: ["x"] });
-    const app = createTestApp(chat);
-    const sheet = await uploadSheet(app);
-
-    await readEvents(await app.chat(buttonRequest(sheet, { seconds: 10 }, { confirmedUsd: 1 })));
-
-    for (const call of app.videoModel.calls) {
-      assert.match(call.prompt, /sound effects/i);
-      assert.match(call.prompt, /in sync with/i);
-      assert.match(call.prompt, /room tone/i);
-      assert.match(call.prompt, /no music/i);
-    }
-    // The planner is asked for the sound effects of each clip, not only for what is seen.
-    const planned = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: video-plan]"));
-    assert.match(JSON.stringify(planned?.prompt), /sound effects?/i);
   });
 
   it("shows the planner the storyboard picture and lets it think first, so its choices fit this person and product", async () => {
@@ -540,32 +406,21 @@ describe("a video that sounds and moves naturally", () => {
     assert.match(prompt, /"type":"file"/);
     assert.match(prompt, /think/i);
     // The choice it makes about the sound, and what it must decide about the voice.
-    assert.match(prompt, /on_camera/);
-    assert.match(prompt, /narration/);
+    assert.match(prompt, /narrator/i);
     assert.match(prompt, /voice that suits/i);
   });
 
-  it("directs the clips like a real shoot, so the people move naturally and do not hold a frozen pose", async () => {
-    const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
-    const sheet = await uploadSheet(app);
-
-    await readEvents(await app.chat(buttonRequest(sheet, { seconds: 10 }, { confirmedUsd: 1 })));
-
-    for (const call of app.videoModel.calls) {
-      assert.match(call.prompt, /micro-expressions/i);
-      assert.match(call.prompt, /never a frozen pose/i);
-    }
-  });
-
-  it("remakes a clip of a video with speech on camera with the same words, and keeps the sound of the whole video", async () => {
+  it("remakes a stopped video with the same narration lines, which are read once the clips are made", async () => {
     const model = fakeVideoModel({ failOnClip: 1, failWith: Object.assign(new Error("bad request"), { statusCode: 400 }) });
-    const chat = fakeChatModel({ chunks: ["x"], videoPlan: { audio: "on_camera", voice: "male", voiceProfile: PROFILE, dialogues: DIALOGUES } });
-    const app = createTestApp(chat, undefined, { videoModel: model });
+    const LINES = [{ line: "Duh, lapar banget nih..." }, { line: "Yuk, pesan sekarang!" }];
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], voiceOver: true, videoPlan: { voice: "male", voiceProfile: PROFILE, narration: LINES } }), undefined, { videoModel: model });
     const sheet = await uploadSheet(app);
     const first = await readEvents(await app.chat(voiceRequest(sheet)));
     const partial = first.find((event) => event.type === "video_partial");
     assert.ok(partial && partial.type === "video_partial");
-    assert.equal(partial.audio, "on_camera");
+    // The voice is made after the clips, so nothing was read yet, and the lines are kept for the next try.
+    assert.equal(app.speechModel.calls.length, 0);
+    assert.deepEqual(partial.narration.map((line) => line.text), LINES.map((line) => line.line));
 
     const resumed = await readEvents(
       await app.chat(
@@ -576,124 +431,54 @@ describe("a video that sounds and moves naturally", () => {
             finished: partial.finished,
             voiceOver: partial.voiceOver,
             directions: partial.directions,
-            audio: partial.audio,
             voice: partial.voice,
+            narration: partial.narration,
           },
         }),
       ),
     );
 
-    assert.ok(app.videoModel.calls[2].prompt.includes(DIALOGUES[1]), "the remade clip says its own line");
+    assert.deepEqual(app.speechModel.calls.map((call) => call.text), LINES.map((line) => line.line));
     const ready = finishedVideo(resumed);
     assert.ok(ready && ready.type === "asset_ready");
     assert.equal((await probeVideo((await app.store.read(ready.assetId, "original"))!.bytes)).hasAudio, true);
-    assert.equal(app.speechModel.calls.length, 0);
   });
 });
 
-/** The finishing a professional editor does: captions in one style, added in the edit, and one colour grade over every clip. */
 describe("a video that is finished like a professional edit", () => {
-  const CAPTIONS = [
-    [{ text: "Duh, perut keroncongan banget nih!", from: 0.5, to: 3.5 }],
-    [{ text: "Yuk, pesan sekarang!", from: 0.5, to: 3 }],
-  ];
-  // No grain, so two videos that differ only in their captions can be compared pixel by pixel.
-  const CLEAN = { grain: 0, vignette: false };
-  const buttonRequest = (sheet: string | undefined, video: object, extra: object = {}) =>
-    videoRequest("Buat video dari storyboard ini.", sheet, { video, ...extra });
+  const buttonRequest = (sheet: string | undefined, extra: object = {}) => videoRequest("Buat video dari storyboard ini.", sheet, { video: true, ...extra });
 
-  const voiceRequestFor = (sheet: string) =>
-    videoRequest("Buat video dari storyboard ini.", sheet, { video: { seconds: 10, voiceOver: true }, scenes: ["a", "b", "c", "d", "e", "f"], confirmedUsd: 1.003 });
+  const voiceRequestFor = (sheet: string) => buttonRequest(sheet, { scenes: ["a", "b", "c", "d", "e", "f"], confirmedUsd: 1.003 });
 
   async function finished(videoPlan: Parameters<typeof fakeChatModel>[0]["videoPlan"], extra: object = {}) {
     const app = createTestApp(fakeChatModel({ chunks: ["x"], videoPlan }));
     const sheet = await uploadSheet(app);
-    const events = await readEvents(await app.chat(videoRequest("Buat video dari storyboard ini.", sheet, { video: { seconds: 10 }, confirmedUsd: 1, ...extra })));
+    const events = await readEvents(await app.chat(videoRequest("Buat video dari storyboard ini.", sheet, { video: true, confirmedUsd: 1, ...extra })));
     const ready = finishedVideo(events);
     assert.ok(ready && ready.type === "asset_ready");
     return { app, sheet, events, bytes: new Uint8Array((await app.store.read(ready.assetId, "original"))!.bytes) };
   }
 
-  it("puts the captions on the picture in the edit, only while the planner chose to show them", async () => {
-    const withCaptions = await finished({ captions: CAPTIONS, grade: CLEAN });
-    const without = await finished({ grade: CLEAN });
-
-    // The first caption is on screen at 1.5 s and gone at 4.5 s; the second clip starts at 6 s, so its caption shows at 7.5 s.
-    const shown = async (seconds: number) => meanDifference(await lowerThird(withCaptions.bytes, seconds), await lowerThird(without.bytes, seconds));
-    assert.ok((await shown(1.5)) > 3, "the first caption is drawn");
-    assert.ok((await shown(7.5)) > 3, "the caption of the second clip is drawn after the first clip");
-    assert.ok((await shown(4.5)) < 0.5, "nothing is drawn between the captions");
-  });
-
-  it("draws a designed callout in the colours the planner picked, only while it shows, and no text where the planner chose none", async () => {
-    const callout = [[{ text: "Anti-slip nyaman", from: 1, to: 4, kind: "callout" as const }], []];
-    const palette = { bubble: "#0b1d2e", text: "#7ff6ff", accent: "#00e5ff" };
-    const withCallout = await finished({ captions: callout, palette, grade: CLEAN });
-    const plain = await finished({ grade: CLEAN });
-
-    const shown = async (seconds: number) => meanDifference(await wholeFrame(withCallout.bytes, seconds), await wholeFrame(plain.bytes, seconds));
-    assert.ok((await shown(2.5)) > 1.5, "the callout is drawn while it shows");
-    assert.ok((await shown(5)) < 0.5, "and gone after");
-    // A callout is designed, not a subtitle: the same words as a subtitle look different (a bubble, in the planner's colours).
-    const asSubtitle = await finished({ captions: [[{ text: "Anti-slip nyaman", from: 1, to: 4, kind: "subtitle" as const }], []], palette, grade: CLEAN });
-    assert.ok(meanDifference(await wholeFrame(withCallout.bytes, 2.5), await wholeFrame(asSubtitle.bytes, 2.5)) > 1.5, "not drawn as a subtitle");
-  });
-
-  it("holds the call to buy to the very last frame, and shows it early enough to be read, even when the planner put it too late", async () => {
-    // The last clip is 4 s and starts at 6 s; the planner put the call to buy at 9.5 s, the last half second.
-    const closing = [[], [{ text: "Yuk, Pesan Sekarang!", from: 3.5, to: 4, kind: "cta" as const }]];
-    const withCta = await finished({ captions: closing, grade: CLEAN });
-    const plain = await finished({ grade: CLEAN });
-
-    const shown = async (seconds: number) => meanDifference(await wholeFrame(withCta.bytes, seconds), await wholeFrame(plain.bytes, seconds));
-    assert.ok((await shown(8.5)) > 1.5, "it is already on screen well before the end");
-    assert.ok((await shown(9.9)) > 1.5, "and it is still there on the last frame");
-    assert.ok((await shown(7)) < 0.5, "but it does not start long before");
-  });
-
-  it("keeps a palette that is not a colour from breaking the edit", async () => {
-    const odd = await finished({ captions: [[{ text: "Anti-slip nyaman", from: 1, to: 4, kind: "callout" as const }], []], palette: { bubble: "url(x)", text: "red; drop", accent: "nope" }, grade: CLEAN });
-    const plain = await finished({ grade: CLEAN });
-
-    assert.ok(meanDifference(await wholeFrame(odd.bytes, 2.5), await wholeFrame(plain.bytes, 2.5)) > 1.5, "a callout in the default colours");
-  });
-
-  it("asks the planner to decide whether the ad needs text at all, to prefer a few callouts and to end on a held call to buy", async () => {
+  it("asks the planner for a colour grade like a colourist, and gives it the word limit of a narration line for every length", async () => {
     const chat = fakeChatModel({ chunks: ["x"] });
     const app = createTestApp(chat);
-    const sheet = await uploadSheet(app);
+    await readEvents(await app.chat(buttonRequest(await uploadSheet(app), { confirmedUsd: 1 })));
 
-    await readEvents(await app.chat(buttonRequest(sheet, { seconds: 10 }, { confirmedUsd: 1 })));
-
-    const planned = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: video-plan]"));
-    const prompt = JSON.stringify(planned?.prompt);
-    for (const need of [/text is not required/i, /callouts?/, /subtitles?/, /palette/, /call to buy/i, /hold/i, /at most \d+ spoken words/]) assert.match(prompt, need);
+    const prompt = JSON.stringify(chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: video-plan]"))?.prompt);
+    for (const need of [/colourist/i, /grain/i, /vignette/]) assert.match(prompt, need);
+    // 10 seconds: a 6 s and a 4 s clip, so 12 and 5 words (the last clip keeps a held ending).
+    assert.match(prompt, /10 seconds: 2 clips of 6, 4 seconds; a narration line of at most 12, 5 words/);
   });
 
   it("keeps what is said in a clip within the seconds it has, dropping the sentences that would be cut off, and leaves room at the end", async () => {
     const long = "Pesan sekarang juga ya! Stok terbatas banget hari ini! Jangan sampai kehabisan, cepat klik tombol beli di bawah!";
-    const chat = fakeChatModel({ chunks: ["x"], videoPlan: { audio: "on_camera", voice: "male", dialogues: ["Duh, perut keroncongan banget nih!", long] } });
-    const app = createTestApp(chat);
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], voiceOver: true, videoPlan: { voice: "male", narration: [{ line: "Duh, perut keroncongan banget nih!" }, { line: long }] } }));
     const sheet = await uploadSheet(app);
 
     await readEvents(await app.chat(voiceRequestFor(sheet)));
 
-    // The last clip is 4 s with the end held: room for about five words, so only the first sentence is kept.
-    assert.ok(app.videoModel.calls[1].prompt.includes("Pesan sekarang juga ya!"));
-    assert.ok(!app.videoModel.calls[1].prompt.includes("Stok terbatas"), "a sentence that would be cut off is not asked for");
-  });
-
-  it("tells the model to draw no text, and asks the planner for the captions and when they show", async () => {
-    const chat = fakeChatModel({ chunks: ["x"] });
-    const app = createTestApp(chat);
-    const sheet = await uploadSheet(app);
-
-    await readEvents(await app.chat(buttonRequest(sheet, { seconds: 10 }, { confirmedUsd: 1 })));
-
-    for (const call of app.videoModel.calls) assert.match(call.prompt, /do not draw any text/i);
-    const planned = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: video-plan]"));
-    const prompt = JSON.stringify(planned?.prompt);
-    for (const need of [/captions/i, /from/, /seconds from the start of that clip/, /colourist/i, /grain/i, /vignette/]) assert.match(prompt, need);
+    // The last clip is 4 s with the end held: room for about five words, so only the first sentence is read.
+    assert.equal(app.speechModel.calls[1].text, "Pesan sekarang juga ya!");
   });
 
   it("gives every clip the one colour grade the planner chose, so the clips match", async () => {
@@ -704,14 +489,14 @@ describe("a video that is finished like a professional edit", () => {
     assert.ok((await colourfulness(vivid.bytes, 7)) > (await colourfulness(muted.bytes, 7)) * 1.1, "second clip");
   });
 
-  it("keeps the captions and the grade when a stopped video is remade", async () => {
+  it("keeps the grade when a stopped video is remade", async () => {
     const model = fakeVideoModel({ failOnClip: 1, failWith: Object.assign(new Error("bad request"), { statusCode: 400 }) });
-    const app = createTestApp(fakeChatModel({ chunks: ["x"], videoPlan: { captions: CAPTIONS, grade: CLEAN } }), undefined, { videoModel: model });
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], videoPlan: { grade: { saturation: 1.2, grain: 0, vignette: false } } }), undefined, { videoModel: model });
     const sheet = await uploadSheet(app);
-    const first = await readEvents(await app.chat(videoRequest("Buat video dari storyboard ini.", sheet, { video: { seconds: 10 }, confirmedUsd: 1 })));
+    const first = await readEvents(await app.chat(videoRequest("Buat video dari storyboard ini.", sheet, { video: true, confirmedUsd: 1 })));
     const partial = first.find((event) => event.type === "video_partial");
     assert.ok(partial && partial.type === "video_partial");
-    assert.equal(partial.captions[1][0].text, "Yuk, pesan sekarang!");
+    assert.equal(partial.grade.saturation, 1.2);
 
     const resumed = await readEvents(
       await app.chat(
@@ -722,9 +507,7 @@ describe("a video that is finished like a professional edit", () => {
             finished: partial.finished,
             voiceOver: partial.voiceOver,
             directions: partial.directions,
-            audio: partial.audio,
             voice: partial.voice,
-            captions: partial.captions,
             grade: partial.grade,
           },
         }),
@@ -734,9 +517,9 @@ describe("a video that is finished like a professional edit", () => {
     const ready = finishedVideo(resumed);
     assert.ok(ready && ready.type === "asset_ready");
     const bytes = new Uint8Array((await app.store.read(ready.assetId, "original"))!.bytes);
-    const plain = await finished({ grade: CLEAN });
-    assert.ok(meanDifference(await lowerThird(bytes, 1.5), await lowerThird(plain.bytes, 1.5)) > 3, "caption of the kept clip");
-    assert.ok(meanDifference(await lowerThird(bytes, 7.5), await lowerThird(plain.bytes, 7.5)) > 3, "caption of the remade clip");
+    const muted = await finished({ grade: { saturation: 0.85, grain: 0, vignette: false } });
+    assert.ok((await colourfulness(bytes, 1)) > (await colourfulness(muted.bytes, 1)) * 1.1, "the kept clip is graded as the first try chose");
+    assert.ok((await colourfulness(bytes, 7)) > (await colourfulness(muted.bytes, 7)) * 1.1, "and so is the remade clip");
   });
 });
 
@@ -744,7 +527,7 @@ describe("a video that is finished like a professional edit", () => {
 describe("music under the video", () => {
   const BRIEF = "Upbeat lo-fi hip hop at 92 BPM in D minor, warm Rhodes piano and soft drums, steady energy from the first beat.";
   const musicRequest = (sheet: string, extra: object = {}) =>
-    videoRequest("Buat video dari storyboard ini.", sheet, { video: { seconds: 10, music: true }, confirmedUsd: 1.04, ...extra });
+    videoRequest("Buat video dari storyboard ini.", sheet, { video: true, confirmedUsd: 1.04, ...extra });
 
   it("adds the music the planner designed, ends it with a fade, and books its price with the video", async () => {
     const chat = fakeChatModel({ chunks: ["x"], videoPlan: { music: { brief: BRIEF, level: 0.2 } } });
@@ -767,27 +550,24 @@ describe("music under the video", () => {
     assert.equal((await usageOf(app)).monthUsd, 1.04);
   });
 
-  it("makes a video with no music at all when the seller did not ask for it, and does not ask the planner to design any", async () => {
-    const chat = fakeChatModel({ chunks: ["x"], videoPlan: { music: { brief: BRIEF } } });
-    const app = createTestApp(chat);
+  it("makes a video with no music at all when the planner chose none", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
     const sheet = await uploadSheet(app);
 
-    const events = await readEvents(await app.chat(videoRequest("Buat video dari storyboard ini.", sheet, { video: { seconds: 10 }, confirmedUsd: 1 })));
+    const events = await readEvents(await app.chat(videoRequest("Buat video dari storyboard ini.", sheet, { video: true, confirmedUsd: 1 })));
 
     assert.equal(app.musicModel.calls.length, 0);
     const ready = finishedVideo(events);
     assert.ok(ready && ready.type === "asset_ready");
     assert.ok((await levelAround(new Uint8Array((await app.store.read(ready.assetId, "original"))!.bytes), 1000)) < -48);
     assert.equal((await usageOf(app)).monthUsd, 1);
-    const planned = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: video-plan]"));
-    assert.match(JSON.stringify(planned?.prompt), /did not ask for music/i);
   });
 
   it("includes the music in the price it asks for, so the seller agrees to what is booked", async () => {
-    const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], videoPlan: { music: { brief: BRIEF } } }));
     const sheet = await uploadSheet(app);
 
-    const asked = await readEvents(await app.chat(videoRequest("Buat video dari storyboard ini.", sheet, { video: { seconds: 10, music: true } })));
+    const asked = await readEvents(await app.chat(videoRequest("Buat video dari storyboard ini.", sheet, { video: true })));
     const ask = asked.find((event) => event.type === "confirmation_requested");
     assert.ok(ask && ask.type === "confirmation_requested");
     assert.equal(ask.estimatedUsd, 1.04);
@@ -855,11 +635,8 @@ describe("music under the video", () => {
             finished: partial.finished,
             voiceOver: partial.voiceOver,
             directions: partial.directions,
-            audio: partial.audio,
             voice: partial.voice,
-            captions: partial.captions,
             grade: partial.grade,
-            palette: partial.palette,
             music: partial.music,
           },
           confirmedUsd: 1.04,
@@ -871,6 +648,139 @@ describe("music under the video", () => {
     const ready = finishedVideo(resumed);
     assert.ok(ready && ready.type === "asset_ready");
     assert.ok((await levelAround(new Uint8Array((await app.store.read(ready.assetId, "original"))!.bytes), 1000)) > -46);
+  });
+});
+
+/** The video model is given the storyboard picture as it is. The app draws no text and cleans nothing. */
+describe("the storyboard picture as the reference of the video model", () => {
+  const request = (sheet: string, extra: object = {}) =>
+    videoRequest("Buat video dari storyboard ini.", sheet, { video: true, confirmedUsd: 1, ...extra });
+  it("makes every clip from the storyboard picture as it is, with no picture drawn first and none booked", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
+    const sheet = await uploadSheet(app);
+
+    const events = await readEvents(await app.chat(request(sheet)));
+
+    assert.equal(app.imageModel.calls.length, 0);
+    const original = await storedSheet(app, sheet);
+    assert.ok(app.videoModel.calls.length > 0);
+    for (const call of app.videoModel.calls) assert.deepEqual(Buffer.from(call.frame.bytes), original);
+    assert.equal(events.some((event) => event.type === "asset_ready" && event.kind === "image"), false);
+    assert.ok(finishedVideo(events));
+    // Only the video is booked: US$0.10 a second for 10 seconds.
+    assert.equal((await usageOf(app)).monthUsd, 1);
+  });
+
+  it("ignores a clean copy sent by an older browser, and still starts every clip from the storyboard picture", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
+    const sheet = await uploadSheet(app);
+    const other = await uploadPhoto(app, "#33cc33");
+
+    await readEvents(await app.chat(request(sheet, { cleanSheet: other })));
+
+    const original = await storedSheet(app, sheet);
+    assert.ok(app.videoModel.calls.length > 0);
+    for (const call of app.videoModel.calls) assert.deepEqual(Buffer.from(call.frame.bytes), original);
+  });
+
+  it("asks for the price of the video alone, and a yes to it is enough", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
+    const sheet = await uploadSheet(app);
+
+    const asked = await readEvents(await app.chat(request(sheet, { confirmedUsd: undefined })));
+    const ask = asked.find((event) => event.type === "confirmation_requested");
+    assert.ok(ask && ask.type === "confirmation_requested");
+    assert.equal(ask.estimatedUsd, 1);
+    assert.equal(app.videoModel.calls.length, 0);
+
+    const agreed = await readEvents(await app.chat(request(sheet, { confirmedUsd: 1 })));
+    assert.equal(agreed.some((event) => event.type === "confirmation_requested"), false);
+    assert.ok(finishedVideo(agreed));
+  });
+});
+
+/** The video model decides everything about how the ad looks and sounds: the app only names the part and what is added later. */
+describe("the video model is given no rules of ours", () => {
+  const request = (sheet: string, extra: object = {}) => videoRequest("Buat video dari storyboard ini.", sheet, { video: true, confirmedUsd: 1.04, ...extra });
+  const planPrompt = (chat: ReturnType<typeof fakeChatModel>) =>
+    JSON.stringify(chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: video-plan]"))?.prompt);
+  // Every word of advice we used to give: how to move, act, sound, grade, show text, or what a storyboard sheet is.
+  const OLD_RULES =
+    /sound design|sound effects|room tone|micro-expression|push-in|frozen pose|something moves|colou?r grade|effects|professional|camera|emotion|text|caption|art direction|grid|panel|dissolve|never|no voice/i;
+
+  it("says only that the picture is the storyboard of an ad and which part this clip plays, in a few words", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"] }));
+    const sheet = await uploadSheet(app);
+
+    await readEvents(await app.chat(request(sheet, { artDirection: ART, scenes: ["a", "b", "c", "d", "e", "f"] })));
+
+    assert.equal(app.videoModel.calls.length, 2);
+    app.videoModel.calls.forEach((call, index) => {
+      assert.match(call.prompt, /storyboard of an ad/i);
+      assert.ok(call.prompt.includes(directionOf(index)), `clip ${index + 1} plays its own part`);
+      assert.ok(call.prompt.length < 220, `short: ${call.prompt.length} letters`);
+      assert.doesNotMatch(call.prompt, OLD_RULES);
+      // The look is already in the picture, so the art direction is not repeated to the video model.
+      assert.equal(call.prompt.includes(ART.slice(0, 30)), false);
+    });
+  });
+
+  it("tells the video model the person does not speak only when the planner chose a voice-over", async () => {
+    const voiced = createTestApp(fakeChatModel({ chunks: ["x"], voiceOver: true }));
+    await readEvents(await voiced.chat(request(await uploadSheet(voiced), { confirmedUsd: 1.003 })));
+    const silent = createTestApp(fakeChatModel({ chunks: ["x"], voiceOver: false }));
+    await readEvents(await silent.chat(request(await uploadSheet(silent), { confirmedUsd: 1 })));
+
+    assert.ok(voiced.videoModel.calls.length > 0 && silent.videoModel.calls.length > 0);
+    for (const call of voiced.videoModel.calls) assert.match(call.prompt, /the person does not speak \(a narrator is added later\)/i);
+    for (const call of silent.videoModel.calls) assert.doesNotMatch(call.prompt, /speak|narrator/i);
+  });
+
+  it("tells the video model there is no background music only when the planner chose music", async () => {
+    const withMusic = createTestApp(fakeChatModel({ chunks: ["x"], videoPlan: { music: { brief: "Calm piano at 80 BPM." } } }));
+    await readEvents(await withMusic.chat(request(await uploadSheet(withMusic))));
+    const without = createTestApp(fakeChatModel({ chunks: ["x"] }));
+    await readEvents(await without.chat(request(await uploadSheet(without), { confirmedUsd: 1 })));
+
+    assert.ok(withMusic.videoModel.calls.length > 0 && without.videoModel.calls.length > 0);
+    for (const call of withMusic.videoModel.calls) assert.match(call.prompt, /no background music \(it is added later\)/i);
+    for (const call of without.videoModel.calls) assert.doesNotMatch(call.prompt, /music/i);
+  });
+
+  it("asks the planner only which panels each clip plays, and none of the choices the video model makes", async () => {
+    const chat = fakeChatModel({ chunks: ["x"] });
+    const app = createTestApp(chat);
+    await readEvents(await app.chat(request(await uploadSheet(app), { confirmedUsd: 1 })));
+
+    const prompt = planPrompt(chat);
+    for (const need of [/which panels it plays/i, /none (is )?skipped/i, /think/i, /colourist/i]) assert.match(prompt, need);
+    for (const gone of [/camera move/i, /push-in/i, /effects shown/i, /acting beats/i, /sound effects/i, /transition/i, /word for word/i, /never invent/i, /caption/i, /call to buy/i]) {
+      assert.doesNotMatch(prompt, gone);
+    }
+  });
+});
+
+/** A little grain, never a lot, and no clip left silent. */
+describe("texture that stays tasteful", () => {
+  const CLEAN = { grain: 0, vignette: false };
+  async function finished(videoPlan: Parameters<typeof fakeChatModel>[0]["videoPlan"]) {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], videoPlan }));
+    const sheet = await uploadSheet(app);
+    const events = await readEvents(await app.chat(videoRequest("Buat video dari storyboard ini.", sheet, { video: true, confirmedUsd: 1 })));
+    const ready = finishedVideo(events);
+    assert.ok(ready && ready.type === "asset_ready");
+    return { events, bytes: new Uint8Array((await app.store.read(ready.assetId, "original"))!.bytes) };
+  }
+
+  it("keeps the grain light, whatever the planner asked for, so the picture does not get noisy", async () => {
+    const heavy = await finished({ grade: { grain: 8, vignette: false } });
+    const light = await finished({ grade: { grain: 4, vignette: false } });
+    const none = await finished({ grade: CLEAN });
+
+    const bitrate = async (video: { bytes: Uint8Array }) => (await probeVideo(video.bytes)).videoBitrate;
+    // A planner that asks for 8 gets the same grain as one that asks for 4, and both are grainier than none.
+    assert.ok(Math.abs((await bitrate(heavy)) - (await bitrate(light))) / (await bitrate(light)) < 0.1, "grain above the limit is not used");
+    assert.ok((await bitrate(light)) > (await bitrate(none)) * 1.05, "grain is still there");
   });
 });
 
@@ -932,6 +842,170 @@ describe("confirming an expensive video", () => {
   });
 });
 
+/** The "Generate" button has no options: the planner decides the length, the voice-over and the music, and the seller says yes to the price. */
+describe("a video whose length, voice-over and music the AI chooses", () => {
+  const button = (sheet: string, extra: object = {}) =>
+    videoRequest("Buat video dari storyboard ini.", sheet, { video: true, scenes: ["a", "b", "c", "d", "e", "f"], ...extra });
+  const askOf = (events: ChatEvent[]) => {
+    const ask = events.find((event) => event.type === "confirmation_requested");
+    assert.ok(ask && ask.type === "confirmation_requested");
+    return ask;
+  };
+  const planCalls = (chat: ReturnType<typeof fakeChatModel>) =>
+    chat.doGenerateCalls.filter((call) => JSON.stringify(call.prompt).includes("[task: video-plan]"));
+  const BRIEF = "Upbeat lo-fi hip hop at 92 BPM, warm Rhodes piano and soft drums.";
+
+  it("asks the planner first and shows the price and what it chose, before any clip, voice or music is made", async () => {
+    const chat = fakeChatModel({ chunks: ["x"], videoSeconds: 20, voiceOver: true, videoPlan: { music: { brief: BRIEF } } });
+    const app = createTestApp(chat);
+    const sheet = await uploadSheet(app);
+
+    const events = await readEvents(await app.chat(button(sheet)));
+
+    const ask = askOf(events);
+    // 20 seconds of video (US$2.00), 20 seconds of narration (US$0.006) and the music (US$0.04).
+    assert.equal(ask.estimatedUsd, 2.046);
+    assert.match(ask.message, /20 detik/);
+    assert.match(ask.message, /dengan voice over/);
+    assert.match(ask.message, /dengan musik/);
+    assert.match(ask.message, /US\$2\.05/);
+    assert.doesNotMatch(ask.message, /klip/);
+    assert.deepEqual(ask.videoChoice?.clips, [8, 6, 6]);
+    assert.equal(planCalls(chat).length, 1);
+    assert.equal(app.videoModel.calls.length, 0);
+    assert.equal(app.speechModel.calls.length, 0);
+    assert.equal(app.musicModel.calls.length, 0);
+    assert.equal(app.imageModel.calls.length, 0);
+    assert.equal((await usageOf(app)).monthUsd, 0);
+  });
+
+  it("does not let the request choose the length, the voice-over or the music", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], videoSeconds: 10 }));
+    const sheet = await uploadSheet(app);
+
+    const events = await readEvents(await app.chat(button(sheet, { video: { seconds: 30, voiceOver: true, music: true } })));
+
+    assert.equal(askOf(events).estimatedUsd, 1);
+  });
+
+  it("makes exactly the plan it showed when the seller says yes, without asking the planner again", async () => {
+    for (const [seconds, clips] of [
+      [10, [6, 4]],
+      [20, [8, 6, 6]],
+      [30, [8, 8, 8, 6]],
+    ] as const) {
+      const chat = fakeChatModel({ chunks: ["x"], videoSeconds: seconds, voiceOver: true, videoPlan: { music: { brief: BRIEF } } });
+      const app = createTestApp(chat);
+      const sheet = await uploadSheet(app);
+      const ask = askOf(await readEvents(await app.chat(button(sheet))));
+
+      const events = await readEvents(await app.chat(button(sheet, { videoChoice: ask.videoChoice, confirmedUsd: ask.estimatedUsd })));
+
+      assert.equal(planCalls(chat).length, 1, `${seconds} s: one plan for the question and the yes together`);
+      assert.deepEqual(app.videoModel.calls.map((call) => call.seconds), clips, `${seconds} s`);
+      app.videoModel.calls.forEach((call, index) => assert.ok(call.prompt.includes(directionOf(index))));
+      assert.equal(app.musicModel.calls.length, 1);
+      assert.ok(events.some((event) => event.type === "voice_over"));
+      assert.ok(finishedVideo(events));
+      assert.equal((await usageOf(app)).monthUsd, ask.estimatedUsd);
+    }
+  });
+
+  it("asks again when the plan that comes back costs more than the yes", async () => {
+    const chat = fakeChatModel({ chunks: ["x"], videoSeconds: 30 });
+    const app = createTestApp(chat);
+    const sheet = await uploadSheet(app);
+    const ask = askOf(await readEvents(await app.chat(button(sheet))));
+
+    // The seller said yes to US$1.00 but sends back the plan of 30 seconds (US$3.00).
+    const events = await readEvents(await app.chat(button(sheet, { videoChoice: ask.videoChoice, confirmedUsd: 1 })));
+
+    assert.equal(askOf(events).estimatedUsd, 3);
+    assert.equal(app.videoModel.calls.length, 0);
+    assert.equal((await usageOf(app)).monthUsd, 0);
+  });
+
+  it("makes no voice and no music, and does not price them, when the planner chose neither", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], videoSeconds: 20, voiceOver: false }));
+    const sheet = await uploadSheet(app);
+    const ask = askOf(await readEvents(await app.chat(button(sheet))));
+
+    assert.equal(ask.estimatedUsd, 2);
+    assert.match(ask.message, /tanpa voice over/);
+    assert.match(ask.message, /tanpa musik/);
+
+    const events = await readEvents(await app.chat(button(sheet, { videoChoice: ask.videoChoice, confirmedUsd: ask.estimatedUsd })));
+
+    assert.equal(app.speechModel.calls.length, 0);
+    assert.equal(app.musicModel.calls.length, 0);
+    assert.equal(events.some((event) => event.type === "voice_over"), false);
+    for (const call of app.videoModel.calls) assert.doesNotMatch(call.prompt, /speak|narrator|music/i);
+    assert.equal((await usageOf(app)).monthUsd, 2);
+  });
+
+  it("tells the video model about the narrator and the music only when the planner chose them", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], videoSeconds: 10, voiceOver: true, videoPlan: { music: { brief: BRIEF } } }));
+    const sheet = await uploadSheet(app);
+    const ask = askOf(await readEvents(await app.chat(button(sheet))));
+
+    await readEvents(await app.chat(button(sheet, { videoChoice: ask.videoChoice, confirmedUsd: ask.estimatedUsd })));
+
+    assert.ok(app.videoModel.calls.length > 0);
+    for (const call of app.videoModel.calls) {
+      assert.match(call.prompt, /the person does not speak/i);
+      assert.match(call.prompt, /no background music/i);
+    }
+  });
+
+  it("tells the planner that it chooses the length, the voice-over and the music, and passes on what a typed request says", async () => {
+    const typedChat = fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 20 });
+    const typedApp = createTestApp(typedChat);
+    const typed = await readEvents(await typedApp.chat(videoRequest("buat video 20 detik dong pakai suara", await uploadSheet(typedApp))));
+
+    const buttonChat = fakeChatModel({ chunks: ["x"] });
+    const pressed = createTestApp(buttonChat);
+    await readEvents(await pressed.chat(button(await uploadSheet(pressed))));
+
+    const prompt = JSON.stringify(planCalls(typedChat)[0].prompt);
+    for (const need of [/buat video 20 detik dong pakai suara/, /choose \\+"seconds/, /voiceOver/, /choose \\+"use/, /10 seconds/, /20 seconds/, /30 seconds/]) {
+      assert.match(prompt, need);
+    }
+    // A typed request that costs more than US$1 asks, like the button.
+    assert.equal(askOf(typed).estimatedUsd, 2);
+    // The button has no words to pass on.
+    assert.doesNotMatch(JSON.stringify(planCalls(buttonChat)[0].prompt), /The seller wrote/);
+  });
+
+  it("rejects a plan sent back that this server could not have made", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], videoSeconds: 10 }));
+    const sheet = await uploadSheet(app);
+    const ask = askOf(await readEvents(await app.chat(button(sheet))));
+    const choice = ask.videoChoice!;
+
+    for (const bad of [
+      { ...choice, clips: [3, 3] },
+      { ...choice, clips: [8, 8, 8, 8, 8] },
+      { ...choice, directions: ["only one"] },
+      { ...choice, seconds: 0 },
+      "nonsense",
+    ]) {
+      assert.equal((await app.chat(button(sheet, { videoChoice: bad, confirmedUsd: 99 }))).status, 400, JSON.stringify(bad).slice(0, 40));
+    }
+    assert.equal(app.videoModel.calls.length, 0);
+  });
+
+  it("makes nothing and books nothing when the planner cannot decide", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], failVideoPlan: true }));
+    const sheet = await uploadSheet(app);
+
+    const events = await readEvents(await app.chat(button(sheet)));
+
+    assert.equal(errorOf(events)?.type, "error");
+    assert.equal(app.videoModel.calls.length, 0);
+    assert.equal((await usageOf(app)).monthUsd, 0);
+  });
+});
+
 describe("recovering from a failed clip", () => {
   const partialOf = (events: ChatEvent[]) => events.find((event) => event.type === "video_partial");
   const rejected = Object.assign(new Error("bad request"), { statusCode: 400 });
@@ -957,7 +1031,8 @@ describe("recovering from a failed clip", () => {
     // Each direction is the planner's own, followed by what is said in that clip (here: nothing, nobody speaks).
     assert.equal(partial.directions.length, 2);
     partial.directions.forEach((direction, index) => assert.ok(direction.startsWith(directionOf(index)), direction));
-    assert.equal(partial.audio, "none");
+    // Nobody was asked to speak, so there are no narration lines to remake.
+    assert.deepEqual(partial.narration, []);
     assert.equal((await app.store.read(partial.finished[0], "original"))?.mediaType, "video/mp4");
     assert.match(errorOf(events)?.message ?? "", /klip 2 dari 2/i);
     assert.equal(finishedVideo(events), undefined);
@@ -978,7 +1053,6 @@ describe("recovering from a failed clip", () => {
       await app.chat(
         videoRequest("Coba ulang bagian yang gagal.", sheet, {
           resume: { seconds: partial.seconds, clips: partial.clips, finished: partial.finished, directions: partial.directions },
-          artDirection: ART,
         }),
       ),
     );
@@ -988,7 +1062,8 @@ describe("recovering from a failed clip", () => {
     assert.equal(app.videoModel.calls.length, 3);
     assert.equal(app.videoModel.calls[2].seconds, 4);
     assert.match(app.videoModel.calls[2].prompt, new RegExp(directionOf(1)));
-    assert.ok(app.videoModel.calls[2].prompt.includes(ART), "the remade clip keeps the look of the others");
+    // The remade clip is asked the same way as the first try asked it: the picture and its part, with no rules added.
+    assert.equal(app.videoModel.calls[2].prompt, app.videoModel.calls[0].prompt.replace(directionOf(0), directionOf(1)));
     assert.deepEqual(Buffer.from(app.videoModel.calls[2].frame.bytes), await storedSheet(app, sheet));
 
     const ready = finishedVideo(resumed);
@@ -1044,6 +1119,8 @@ describe("recovering from a failed clip", () => {
             finished: partial.finished,
             voiceOver: partial.voiceOver,
             directions: partial.directions,
+            voice: partial.voice,
+            narration: partial.narration,
           },
         }),
       ),
@@ -1052,7 +1129,8 @@ describe("recovering from a failed clip", () => {
     const ready = finishedVideo(resumed);
     assert.ok(ready && ready.type === "asset_ready");
     assert.equal((await probeVideo((await app.store.read(ready.assetId, "original"))!.bytes)).hasAudio, true);
-    assert.equal(app.speechModel.calls.length, 1);
+    // One reading for each of the two clips' lines.
+    assert.equal(app.speechModel.calls.length, 2);
     assert.ok(resumed.some((event) => event.type === "voice_over"));
     // US$0.60 stays from the first try, the remade 4 s clip adds US$0.40 and the voice US$0.003.
     assert.equal((await usageOf(app)).monthUsd, 1.003);
@@ -1098,12 +1176,12 @@ describe("recovering from a failed clip", () => {
 });
 
 describe("voice-over", () => {
-  const SCRIPT = "Ayo cobain produk keren ini sekarang juga, kualitasnya bikin kamu jatuh cinta!";
   const SCENES = ["Scene A", "Scene B", "Scene C", "Scene D"];
   const voiceOverOf = (events: ChatEvent[]) => events.find((event) => event.type === "voice_over");
 
-  it("lays one narration over the whole video, from a script written for its length and scenes, and shows the script", async () => {
-    const chat = fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10, voiceOver: true, script: SCRIPT });
+  it("lays the narration over the whole video, one line for each moment, and shows the lines", async () => {
+    const LINES = [{ line: "Ayo cobain produk keren ini!" }, { line: "Kualitasnya bikin jatuh cinta!" }];
+    const chat = fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10, voiceOver: true, videoPlan: { narration: LINES } });
     const app = createTestApp(chat);
     const sheet = await uploadSheet(app);
 
@@ -1111,14 +1189,10 @@ describe("voice-over", () => {
       await app.chat(videoRequest("video 10 detik pakai voice over", sheet, { scenes: SCENES })),
     );
 
-    // The script is written once, for about 25 to 30 spoken words in 10 seconds, from the scenes.
-    const written = chat.doGenerateCalls.filter((call) => JSON.stringify(call.prompt).includes("[task: voice-script]"));
-    assert.equal(written.length, 1);
-    assert.match(JSON.stringify(written[0].prompt), /25 to 30 spoken words/);
-    assert.match(JSON.stringify(written[0].prompt), /Scene A/);
-
-    // It is read aloud once, with one voice, and laid over the video.
-    assert.deepEqual(app.speechModel.calls.map((call) => call.text), [SCRIPT]);
+    // The planner writes the lines, from the scenes and with the picture in front of it; each is read aloud once.
+    const planned = chat.doGenerateCalls.find((call) => JSON.stringify(call.prompt).includes("[task: video-plan]"));
+    assert.match(JSON.stringify(planned?.prompt), /Scene A/);
+    assert.deepEqual(app.speechModel.calls.map((call) => call.text), LINES.map((line) => line.line));
     const ready = finishedVideo(events);
     assert.ok(ready && ready.type === "asset_ready");
     const probe = await probeVideo((await app.store.read(ready.assetId, "original"))!.bytes);
@@ -1127,7 +1201,7 @@ describe("voice-over", () => {
 
     const voice = voiceOverOf(events);
     assert.ok(voice && voice.type === "voice_over");
-    assert.equal(voice.script, SCRIPT);
+    assert.equal(voice.script, LINES.map((line) => line.line).join(" "));
     // The video is US$1.00 and the voice a few thousandths of a dollar, both on the meter.
     assert.equal((await usageOf(app)).monthUsd, 1.003);
     assert.deepEqual(events.at(-1), { type: "done" });
@@ -1167,20 +1241,9 @@ describe("voice-over", () => {
     const events = await readEvents(await app.chat(videoRequest("video 10 detik pakai voice over", sheet)));
 
     assert.ok(finishedVideo(events));
-    assert.equal(app.speechModel.calls.length, 1);
+    // Every line was read (and billed), but none could be laid over the video.
+    assert.equal(app.speechModel.calls.length, 2);
     assert.equal((await usageOf(app)).monthUsd, 1.003);
-  });
-
-  it("does not read a written script aloud when it is far too long for the video, and gives the voice back", async () => {
-    const stretched = Array.from({ length: 28 }, () => "a".repeat(80)).join(" ");
-    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10, voiceOver: true, script: stretched }));
-    const sheet = await uploadSheet(app);
-
-    const events = await readEvents(await app.chat(videoRequest("video 10 detik pakai voice over", sheet)));
-
-    assert.ok(finishedVideo(events));
-    assert.equal(app.speechModel.calls.length, 0);
-    assert.equal((await usageOf(app)).monthUsd, 1);
   });
 
   it("still gives the silent video when the voice fails, says so, and gives the voice back", async () => {
@@ -1205,11 +1268,15 @@ describe("voice-over", () => {
 });
 
 describe("revising the voice-over", () => {
-  const SCRIPT = "Ayo cobain produk keren ini sekarang juga, kualitasnya bikin kamu jatuh cinta!";
+  const LINES = [
+    { line: "Duh, lapar banget nih...", delivery: "Weary and wishful, almost a sigh" },
+    { line: "Ayo cobain, bikin jatuh cinta!", delivery: "Bright and excited, rising" },
+  ];
+  const SCRIPT = LINES.map((line) => line.line).join(" ");
 
   /** A finished video with a narration, and what a revision request needs to know about it. */
   async function narratedVideo(chatOptions: Parameters<typeof fakeChatModel>[0]) {
-    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10, voiceOver: true, script: SCRIPT }));
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10, voiceOver: true, videoPlan: { narration: LINES } }));
     const sheet = await uploadSheet(app);
     const events = await readEvents(await app.chat(videoRequest("video 10 detik pakai voice over", sheet)));
     const voice = events.find((event) => event.type === "voice_over");
@@ -1221,7 +1288,7 @@ describe("revising the voice-over", () => {
     return {
       app: revising,
       first: app,
-      revise: { silentAssetId, seconds: voice.seconds, script: voice.script, voice: voice.voice },
+      revise: { silentAssetId, seconds: voice.seconds, script: voice.script, voice: voice.voice, lines: voice.lines },
     };
   }
 
@@ -1249,39 +1316,19 @@ describe("revising the voice-over", () => {
     assert.deepEqual(events.at(-1), { type: "done" });
   });
 
-  it("keeps the way of speaking when only the voice changes", async () => {
-    const DELIVERY = "Warm and lively, rising on the product, smiling at the end.";
-    const first = createTestApp(fakeChatModel({ chunks: ["x"], intent: "VIDEO", videoSeconds: 10, voiceOver: true, script: SCRIPT, delivery: DELIVERY }));
-    const sheet = await uploadSheet(first);
-    const made = await readEvents(await first.chat(videoRequest("video 10 detik pakai voice over", sheet)));
-    const voice = made.find((event) => event.type === "voice_over");
-    assert.ok(voice && voice.type === "voice_over");
-    const revising = createTestApp(fakeChatModel({ chunks: ["x"], intent: "REVISE_VOICE", voiceRevision: { voice: "male" } }), undefined, {
-      videoModel: first.videoModel,
-      speechModel: first.speechModel,
-    });
-    const silent = await first.store.read(voice.silentAssetId, "original");
-    const silentAssetId = await revising.store.saveVideo(new Uint8Array(silent!.bytes));
-
-    await readEvents(
-      await revising.chat(
-        reviseRequest("pakai suara cowok", { silentAssetId, seconds: voice.seconds, script: voice.script, voice: voice.voice, delivery: voice.delivery }),
-      ),
-    );
-
-    const call = revising.speechModel.calls.at(-1);
-    assert.equal(call?.voice, VOICES.male);
-    assert.equal(call?.instructions, DELIVERY);
-  });
-
-  it("changes only the voice and keeps the script", async () => {
+  it("keeps what was said and how it was felt when only the voice changes", async () => {
     const { app, revise } = await narratedVideo({ chunks: ["x"], intent: "REVISE_VOICE", voiceRevision: { voice: "male" } });
+    const before = app.speechModel.calls.length;
 
     const events = await readEvents(await app.chat(reviseRequest("pakai suara cowok", revise)));
 
-    const call = app.speechModel.calls.at(-1);
-    assert.equal(call?.text, SCRIPT);
-    assert.equal(call?.voice, VOICES.male);
+    // Every line is read again in the new voice, each with the emotion it had.
+    const again = app.speechModel.calls.slice(before);
+    assert.deepEqual(again.map((call) => call.text), LINES.map((line) => line.line));
+    again.forEach((call, index) => {
+      assert.equal(call.voice, VOICES.male);
+      assert.ok(call.instructions?.includes(LINES[index].delivery));
+    });
     const voice = events.find((event) => event.type === "voice_over");
     assert.ok(voice && voice.type === "voice_over");
     assert.equal(voice.script, SCRIPT);

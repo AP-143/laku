@@ -674,92 +674,10 @@
   font-weight: 650;
 }
 
-.chat .video-field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.chat .video-field-label {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+.chat .video-note {
+  font-size: 13px;
+  line-height: 1.45;
   color: #6d6d6a;
-}
-
-.chat .video-lengths {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.chat .video-length {
-  padding: 6px 14px;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 500;
-  background: rgba(255, 255, 255, 0.8);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
-  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
-}
-
-.chat .video-length:hover:not(:disabled) {
-  background: #fff;
-}
-
-.chat .video-length.is-on {
-  color: #fff;
-  background: #1d1d1d;
-  box-shadow: none;
-}
-
-.chat .video-length:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-.chat .video-voice {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.chat .video-voice input {
-  appearance: none;
-  flex: none;
-  margin-top: 1px;
-  display: grid;
-  place-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 5px;
-  background: #fff;
-  box-shadow: inset 0 0 0 1.5px #8b8b88;
-  cursor: pointer;
-  transition: background 0.15s ease, box-shadow 0.15s ease;
-}
-
-.chat .video-voice input:checked {
-  background: #1d1d1d;
-  box-shadow: none;
-}
-
-.chat .video-voice input:checked::after {
-  content: "";
-  width: 9px;
-  height: 5px;
-  margin-top: -2px;
-  border: solid #fff;
-  border-width: 0 0 2px 2px;
-  transform: rotate(-45deg);
-}
-
-.chat .video-voice input:disabled {
-  cursor: default;
-  opacity: 0.5;
 }
 
 .chat .video-panel .actions {

@@ -2,7 +2,7 @@
 export const CHAT_SYSTEM_PROMPT = `
 You are LAKU, a friendly assistant for small online sellers in Indonesia.
 You help turn an amateur product photo into a studio photo and a storyboard: one picture with six panels of an ad.
-Storyboard and video are one feature: a video ad of 10, 20 or 30 seconds is made from the picture of an approved storyboard. If asked for a video, tell them to make a storyboard and its picture first; once the picture is done, a "Buat video iklan" panel appears under it, where the seller picks a length and presses "Generate".
+Storyboard and video are one feature: a video ad of 10, 20 or 30 seconds is made from the picture of an approved storyboard. If asked for a video, tell them to make a storyboard and its picture first; once the picture is done, a "Buat video iklan" panel appears under it, where the seller presses "Generate": the AI then decides the length, whether there is a voice-over and whether there is music, and the seller only says yes to the price.
 Never say you are making an image or a video yourself; the app does that when the seller asks for it or approves a storyboard.
 
 Always reply in casual, simple Bahasa Indonesia. Keep replies short and concrete.
@@ -32,14 +32,13 @@ Answer NO if there is no clear product in it, or it only shows a person, a face,
 import { MAX_ART_DIRECTION_CHARS, PANEL_SHOTS, PANEL_TITLES, SCENE_COUNT } from "../shared/storyboard";
 import {
   dialogueWords,
-  sanitizeCaptions,
+  planChosenLength,
+  planClips,
   sanitizeGrade,
   sanitizeMusic,
-  sanitizePalette,
   trimDialogue,
-  type ClipCaption,
+  VIDEO_LENGTH_CHOICES,
   type MusicPlan,
-  type TextPalette,
   type VideoGrade,
 } from "../shared/video-plan";
 
@@ -111,123 +110,114 @@ export function parseReplacement(answer: string): { index: number; text: string 
 }
 
 /**
- * Shares the storyboard over the clips of a video, and decides how the video sounds. The video model is given the
- * storyboard picture and one direction per clip, so a clip plays only its part and the clips together tell the whole
- * story, in order. Written in English because it is read by the video model, not by the seller.
+ * Decides a whole video: how long it is, whether it has a voice-over and whether it has music, how the story is shared over
+ * the clips, and the colour grade. The video model is given the storyboard picture and one direction per clip, so a clip
+ * plays only its part and the clips together tell the whole story, in order; how it looks, moves and sounds is the video
+ * model's own choice. `wish` is what the seller typed, when they typed instead of pressing the button.
+ * Written in English because it is read by models, not by the seller.
  */
-export function videoPlanPrompt(request: { scenes: string[]; clips: number[]; artDirection?: string; wantsVoice: boolean; wantsMusic?: boolean }): string {
+export function videoPlanPrompt(request: { scenes: string[]; artDirection?: string; wish?: string }): string {
   const scenes =
     request.scenes.length > 0
       ? request.scenes.map((scene, index) => `${index + 1}. ${PANEL_TITLES[index] ?? "Panel"}: ${scene}`).join("\n")
       : "(none given: follow the panels of the picture itself)";
-  const clips = request.clips
-      .map((seconds, index) => `Clip ${index + 1}: ${seconds} seconds (at most ${dialogueWords(seconds, index === request.clips.length - 1)} spoken words)`)
-      .join("\n");
-  const total = request.clips.reduce((sum, seconds) => sum + seconds, 0);
-  const sound = request.wantsVoice
-    ? `The seller asked for a voice. Decide "audio". "on_camera": the person on screen speaks short, natural lines in Indonesian taken from the captions, in sync with their mouth (best when a person is in most clips and talks to the camera or about the product). "narration": a separate narrator reads over the video and nobody speaks on camera (best when the product is the star or the person only reacts).`
-    : `The seller did not ask for a voice, so nobody speaks: answer "audio": "narration" and leave every "dialogue" empty.`;
-  // Where the cuts between clips fall, so the music can be given a tempo that puts them on a beat.
-  let elapsed = 0;
-  const cuts = request.clips.slice(0, -1).map((seconds) => `${(elapsed += seconds).toFixed(1)} s`);
-  const music = request.wantsMusic
-    ? `The seller asked for music. Design the music bed like an editor choosing a track, as "music": {"use": true, "brief": "...", "level": 0.2}. "brief" is a prompt in English for a music model that makes a 30 second instrumental clip, of which only the first ${total} seconds are used: name the genre and mood that suit this product, its buyers and the art direction; a tempo in BPM chosen so the cuts fall on a beat (a beat lasts 60 divided by the BPM in seconds; ${cuts.length > 0 ? `the cuts fall at ${cuts.join(", ")}` : "there is no cut inside the video"}); the key; the instruments; and the energy: a steady groove from the first beat, no long intro, no big ending. No artist names and no vocals. "level" is how loud it sits, from 0.08 to 0.4: quieter (0.08 to 0.15) when someone speaks or a narrator reads, up to 0.3 when nothing is said. Answer "use": false when no music would suit this ad.`
-    : `The seller did not ask for music: answer "music": {"use": false}.`;
+  // For each length: the clips it is made of, the words a narration line may have in each, and where the cuts fall (so the music can sit on a beat).
+  const options = VIDEO_LENGTH_CHOICES.flatMap((seconds) => {
+    const plan = planClips(seconds);
+    if (!plan.ok) return [];
+    let elapsed = 0;
+    const cuts = plan.clips.slice(0, -1).map((length) => `${(elapsed += length).toFixed(1)} s`);
+    const words = plan.clips.map((length, index) => dialogueWords(length, index === plan.clips.length - 1));
+    return [
+      `- ${seconds} seconds: ${plan.clips.length} clips of ${plan.clips.join(", ")} seconds; a narration line of at most ${words.join(", ")} words in them; ${cuts.length > 0 ? `the cuts fall at ${cuts.join(", ")}` : "no cut inside the video"}`,
+    ];
+  }).join("\n");
+  const wish = request.wish
+    ? `The seller wrote: ${JSON.stringify(request.wish)}. Follow what they ask for (the length, a voice-over, music) as far as the options allow, and decide whatever they did not mention.`
+    : "The seller only pressed the Generate button: everything is yours to decide.";
   return `
 [task: video-plan]
-You are a professional video editor and sound designer. A vertical ad video of ${total} seconds is made from a storyboard picture (a grid of ${SCENE_COUNT} panels) in ${request.clips.length} clips, one after the other. Look at the picture: it shows the person and the product.
+You are the producer of a vertical ad video that is made from a storyboard picture (a grid of ${SCENE_COUNT} panels), in clips one after the other. Look at the picture: it shows the person and the product. You decide how long the video is, whether it has a voice-over and whether it has music.
 The art direction of this ad, chosen for this product: ${request.artDirection ?? "a clean, bright, professional commercial look that suits the product"}
 The panels of the storyboard, in story order:
 ${scenes}
-Number of clips: ${request.clips.length}
-${clips}
-Think first: in "thinking" write a few sentences about the product, who buys it, the person in the picture (gender, age, manner) and what sound suits this ad.
-Share the whole story over the clips: every panel is shown, in order, and none is skipped. A longer clip lingers on its panels and adds natural small actions; a shorter one moves faster. When a clip plays more than one panel, say where the hard cut between them falls: an editor cuts, a model morphs, and a morph looks generated.
-The first clip is the hook, the last clip is the call to buy, and what the person says or the caption shown comes from the scene's caption.
-Text: text is not required. Decide, as a professional editor would, whether this ad needs any. Many strong ads use only one to three short callouts (a key benefit or an offer) and a closing call to buy, and some use none; use subtitles only when someone speaks and reading helps, and never caption every line. The video model draws no text itself, so the app adds what you write, as one "kind" each: "callout" (a designed bubble that pops in beside the product, for a benefit), "subtitle" (plain words at the bottom, for what is said) or "cta" (the call to buy, such as "Yuk, Pesan Sekarang!"). Give each a "from" and "to" in seconds from the start of that clip, so it shows while its moment is on screen, stays at least one second and never overlaps another; keep each under eight words. Leave a clip's captions empty when it needs no text.
-The ending: put the call to buy in the last clip. It must be fully on screen at least two seconds before the video ends and then hold to the last frame, and nobody speaks in the last second and a half, so the closing line is never cut off. The "at most N spoken words" beside each clip is a hard limit: a line that is longer would be cut off.
-Palette: choose the colours of the callouts to match the art direction, as hex colours: "bubble" (the fill), "text" (its words) and "accent" (its outline and the fill of the call to buy), for example a dark bubble with a neon accent for a gadget, or a cream bubble with a warm yellow accent for food.
-Grade: choose the colour grade and texture of the whole video like a colourist, the same for every clip so they match: "contrast" (0.95 to 1.15), "saturation" (0.85 to 1.2), "brightness" (-0.04 to 0.04), "warmth" (-0.08 cooler to 0.08 warmer), "grain" (0 to 8; a little grain takes away the plastic look of generated pictures) and "vignette" (true or false), to suit the art direction.
-Music: ${music}
-Sound: every clip gets sound effects in sync with what is seen (cloth, footsteps, plates, the sizzle, crunch or pour of food, clicks, whooshes on camera moves and transitions, pops for graphics) over a natural room tone. No music.
-${sound}
-"voice" is "female" or "male": the voice that suits the person in the picture. "voiceProfile" describes that voice in English (age, tone, pace) so that every clip uses the same voice.
-"dialogue" is what the person says in Indonesian in that clip, at most about 2.5 words per second of the clip, only when "audio" is "on_camera"; leave it empty when nobody speaks in that clip (for example a close-up of the product).
-For each clip write a "direction" in English of two or three sentences, making the choices a professional editor would make for this art direction: which panels it plays and what happens, the camera move that fits (a slow push-in, a gentle orbit, a quick whip pan, a punch-in), the effect or detail that makes it lively, the sound effects that go with the action, the transition into the next clip, the colour grade, and the caption that shows on screen with how it animates.
-Reply with JSON only, in this shape: {"thinking": "...", "audio": "on_camera" or "narration", "voice": "female" or "male", "voiceProfile": "...", "grade": {"contrast": 1.05, "saturation": 1.1, "brightness": 0, "warmth": 0.02, "grain": 3, "vignette": true}, "palette": {"bubble": "#fff4dc", "text": "#3b2314", "accent": "#ffc83a"}, "music": {"use": true or false, "brief": "...", "level": 0.2}, "clips": [${request.clips.map(() => '{"direction": "...", "dialogue": "...", "captions": [{"kind": "callout", "text": "...", "from": 0.5, "to": 3}]}').join(", ")}]}
+${wish}
+Length: choose "seconds" from these options, the one that tells this story best (a shorter video moves faster, a longer one lets the story linger). Write one entry in "clips" for every clip of the option you choose.
+${options}
+Think first: in "thinking" write a few sentences about the product, who buys it, the person in the picture (gender, age, manner) and what this ad needs.
+Share the whole story over the clips: every panel is played, in order, and none is skipped.
+Grade: choose the colour grade and texture of the whole video like a colourist, the same for every clip so they match: "contrast" (0.95 to 1.15), "saturation" (0.85 to 1.2), "brightness" (-0.04 to 0.04), "warmth" (-0.08 cooler to 0.08 warmer), "grain" (0 to 4) and "vignette" (true or false), to suit the art direction.
+Voice-over: choose "voiceOver": true when a narrator would make this ad stronger, and false when it is better without one. With a voice-over the person in the video does not speak and a narrator is added later, in a voice that suits the person. For each clip write one narration line in Indonesian (within the words allowed for that clip in the length you chose) about what the person feels in that part of the story, and a "delivery" in English that directs its emotion and pace so the voice is never flat: for example "weary and wishful, drawn-out vowels, almost a sigh", "bright and excited, rising on the reveal", "warm, proud and inviting". "from" is the second of the clip where the line starts. The word limit is hard: a longer line would be cut off, and nobody speaks in the last second and a half of the video. Leave a clip's narration empty when its part is better left silent. Without a voice-over the "narration" of every clip is empty.
+Music: choose "use": true when music would make this ad stronger, and false when it is better without. Design the music bed like an editor choosing a track, as "music": {"use": true, "brief": "...", "level": 0.2}. "brief" is a prompt in English for a music model that makes a 30 second instrumental clip, of which only the first seconds of the video are used: name the genre and mood that suit this product, its buyers and the art direction; a tempo in BPM chosen so the cuts of the length you chose fall on a beat (a beat lasts 60 divided by the BPM in seconds); the key; the instruments; and the energy: a steady groove from the first beat, no long intro, no big ending. No artist names and no vocals. "level" is how loud it sits, from 0.08 to 0.4: quieter (0.08 to 0.15) when a narrator reads, up to 0.3 when nothing is said.
+"voice" is "female" or "male": the voice that suits the person in the picture. "voiceProfile" describes that voice in English (age, tone, pace) so that every line uses the same voice.
+For each clip write a "direction" in English of one or two plain sentences: which panels it plays and what happens in them. Say nothing about how it is filmed, edited, acted or heard: the video model decides all of that itself.
+Reply with JSON only, in this shape, with one entry in "clips" for each clip of the length you chose: {"thinking": "...", "seconds": 10 or 20 or 30, "voiceOver": true or false, "voice": "female" or "male", "voiceProfile": "...", "grade": {"contrast": 1.05, "saturation": 1.1, "brightness": 0, "warmth": 0.02, "grain": 3, "vignette": true}, "music": {"use": true or false, "brief": "...", "level": 0.2}, "clips": [{"direction": "...", "narration": {"line": "...", "delivery": "...", "from": 0.5}}]}
 `.trim();
 }
 
 /** How a video sounds and what happens in each clip, as the planner decided. */
 export interface VideoPlan {
-  audio: "on_camera" | "narration";
+  /** The length of the video the planner chose, and the clips it is made of. */
+  seconds: number;
+  clipSeconds: number[];
+  /** Whether the planner chose a voice-over; false when it wrote no line for any clip. */
+  voiceOver: boolean;
   voice: "female" | "male";
   /** The voice in words (age, tone, pace), repeated in every clip so the person sounds the same all through. */
   voiceProfile: string;
   /** The colour grade and texture of the whole video. */
   grade: VideoGrade;
-  /** The colours of the callouts and the call to buy. */
-  palette: TextPalette;
   /** The music bed, when the planner chose one. */
   music?: MusicPlan;
-  clips: { direction: string; dialogue: string; captions: ClipCaption[] }[];
+  clips: { direction: string; narration?: { text: string; delivery: string; from: number } }[];
 }
 
 const DEFAULT_VOICE_PROFILE = "Friendly young Indonesian voice, natural pace";
-const MAX_DIALOGUE_CHARS = 300;
+const MAX_LINE_CHARS = 300;
+const MAX_DELIVERY_CHARS = 700;
 
-/** The plan of a video, for clips of these lengths in seconds. Throws when the answer is not exactly one direction for every clip. */
-export function parseVideoPlan(answer: string, clipSeconds: number[]): VideoPlan {
-  const { clips, audio, voice, voiceProfile, grade, palette, music } = parseJsonObject(answer);
-  if (!Array.isArray(clips) || clips.length !== clipSeconds.length) throw new Error("The model did not return one direction for every clip.");
+/** The narration line of one clip, kept to the words that fit its seconds, or nothing when the clip has none. */
+function readNarration(value: unknown, clipSeconds: number, isLast: boolean): { text: string; delivery: string; from: number } | undefined {
+  const { line, delivery, from } = (value ?? {}) as Record<string, unknown>;
+  if (typeof line !== "string" || !line.trim()) return undefined;
+  const text = trimDialogue(line.trim().slice(0, MAX_LINE_CHARS), dialogueWords(clipSeconds, isLast));
+  if (!text) return undefined;
+  return {
+    text,
+    delivery: typeof delivery === "string" && delivery.trim() ? delivery.trim().slice(0, MAX_DELIVERY_CHARS) : DEFAULT_DELIVERY,
+    from: typeof from === "number" && Number.isFinite(from) ? Math.min(Math.max(from, 0), Math.max(0, clipSeconds - 1)) : 0.4,
+  };
+}
+
+/** The plan of a video. Throws when the answer has no length the app can make, or no direction for every clip of it. */
+export function parseVideoPlan(answer: string): VideoPlan {
+  const { clips, seconds, voiceOver, voice, voiceProfile, grade, music } = parseJsonObject(answer);
+  if (!Array.isArray(clips)) throw new Error("The model did not return one direction for every clip.");
+  const length = planChosenLength(seconds, clips.length);
+  if (!length) throw new Error("The model did not return the clips of a length this app can make.");
   const read = (clip: unknown, index: number) => {
-    // A plain string is a direction with nothing said and no caption.
-    const { direction, dialogue, captions } = typeof clip === "string" ? { direction: clip, dialogue: "", captions: [] } : ((clip ?? {}) as Record<string, unknown>);
+    // A plain string is a direction with nothing said.
+    const { direction, narration } = typeof clip === "string" ? { direction: clip, narration: undefined } : ((clip ?? {}) as Record<string, unknown>);
     if (typeof direction !== "string" || !direction.trim()) throw new Error("The model did not return one direction for every clip.");
     return {
       direction: direction.trim(),
       // Only what can be said inside the clip, so a line is never cut off by the end of it.
-      dialogue:
-        typeof dialogue === "string"
-          ? trimDialogue(dialogue.trim().slice(0, MAX_DIALOGUE_CHARS), dialogueWords(clipSeconds[index], index === clipSeconds.length - 1))
-          : "",
-      captions: sanitizeCaptions(captions, clipSeconds[index]),
+      narration: readNarration(narration, length.clips[index], index === length.clips.length - 1),
     };
   };
+  const planned = clips.map(read);
+  // A voice-over exists only when the planner chose one and wrote a line for it.
+  const spoken = voiceOver === true && planned.some((clip) => clip.narration);
   return {
-    audio: audio === "on_camera" ? "on_camera" : "narration",
+    seconds: length.seconds,
+    clipSeconds: length.clips,
+    voiceOver: spoken,
     voice: voice === "male" ? "male" : "female",
     voiceProfile: typeof voiceProfile === "string" && voiceProfile.trim() ? voiceProfile.trim().slice(0, 300) : DEFAULT_VOICE_PROFILE,
     grade: sanitizeGrade(grade),
-    palette: sanitizePalette(palette),
     music: sanitizeMusic(music),
-    clips: clips.map(read),
+    clips: spoken ? planned : planned.map(({ direction }) => ({ direction })),
   };
-}
-
-/** What the seller asked for in a video request: the length in seconds (none if not named) and a voice-over. */
-export interface VideoRequest {
-  seconds?: number;
-  voiceOver: boolean;
-}
-
-export function parseVideoRequest(answer: string): VideoRequest {
-  const { seconds, voiceOver } = parseJsonObject(answer);
-  return {
-    seconds: typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0 ? seconds : undefined,
-    voiceOver: voiceOver === true,
-  };
-}
-
-/** Reads how long a video the seller wants and whether it needs a voice-over, from a message such as "video 10 detik pakai voice over". */
-export function videoRequestPrompt(text: string): string {
-  return `
-[task: video-request]
-A seller of an online shop asks for an ad video. Answer with only a JSON object {"seconds": <number or null>, "voiceOver": <true or false>}.
-"seconds" is the video length in seconds they asked for (convert minutes to seconds), or null if they name no length.
-"voiceOver" is true only if they ask for narration, a voice-over, a voice, or a narrator.
-Message: ${JSON.stringify(text)}
-`.trim();
 }
 
 /** What a seller wants changed in a narration: a new script, a different voice, or both. Neither means unclear. */
@@ -283,59 +273,8 @@ export function withoutTags(script: string): string {
   return script.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-/**
- * Writes the narration of an ad video and directs how it is performed. The writer thinks first, about the mood of
- * each moment, then writes natural spoken Indonesian and a delivery note for the speech model, so the voice rises,
- * slows and smiles where the story does instead of reading everything on one note.
- */
-export function voiceScriptPrompt(request: {
-  scenes: string[];
-  seconds: number;
-  text: string;
-  voiceProfile?: string;
-  artDirection?: string;
-}): string {
-  const { min, max } = wordRange(request.seconds);
-  const scenes = request.scenes.length > 0 ? request.scenes.map((scene, index) => `${index + 1}. ${scene}`).join("\n") : "(none given)";
-  return `
-[task: voice-script]
-You are a voice director and copywriter for short ads. Write the narration of a ${request.seconds} second ad video of a product sold by a small online shop, and direct how it is performed.
-Think first: in "thinking" write a few sentences about the mood of each moment of the story (the hook, the product, the benefit, the call to buy), where the energy should rise, where it should slow down, and what would sound natural for this product and its buyers.
-The voice of the narrator: ${request.voiceProfile ?? "a friendly young Indonesian voice"}.
-The look and mood of the ad: ${request.artDirection ?? "clean, bright and professional"}.
-"script": natural spoken Indonesian, the way a real person talks, not a written text and not flat: short and long sentences mixed, everyday words, ${min} to ${max} spoken words so it can be read aloud in ${request.seconds} seconds. Use punctuation to carry the intonation (a question mark for curiosity, an exclamation mark for excitement, an ellipsis for a beat), and at most four inline tags where a real speaker would pause or smile: <short pause>, <breath> or <laugh>. Never write any other tag, and never a sound effect. Tags are not counted as words. Do not invent prices, discounts or claims that were not given.
-"delivery": two or three sentences in English that direct the speech model: the voice and its manner, the emotional arc from the first line to the last, the pace, and how the pitch moves (for example "warm and upbeat; curious and playful at first, building excitement at the reveal, slowing down and smiling on the call to buy"). It must make the voice move, never read on one note.
-Scenes of the video:
-${scenes}
-The seller asked: ${JSON.stringify(request.text)}
-Reply with JSON only, in this shape: {"thinking": "...", "delivery": "...", "script": "..."}
-`.trim();
-}
-
-/** The narration as the writer wrote it, and how to perform it. */
-export interface VoiceScript {
-  script: string;
-  delivery: string;
-}
-
-/** Used when the writer gave no delivery: the voice still has to move. */
+/** Used for a line that has no delivery of its own: the voice still has to move. */
 export const DEFAULT_DELIVERY = "Natural, warm and expressive, with lively intonation that follows the meaning of each sentence; never flat.";
-const MAX_DELIVERY_CHARS = 600;
-
-/** The writer's answer. A plain text answer (no JSON) is taken as the script alone. Throws when there is no script. */
-export function parseVoiceScript(answer: string): VoiceScript {
-  let script = "";
-  let delivery = "";
-  try {
-    const parsed = parseJsonObject(answer);
-    if (typeof parsed.script === "string") script = parsed.script.trim();
-    if (typeof parsed.delivery === "string") delivery = parsed.delivery.trim().slice(0, MAX_DELIVERY_CHARS);
-  } catch {
-    script = answer.trim();
-  }
-  if (!script) throw new Error("The model did not write a script.");
-  return { script, delivery: delivery || DEFAULT_DELIVERY };
-}
 
 export type Intent = "studio_photo" | "revise_photo" | "storyboard" | "edit_scene" | "approve_scenes" | "video" | "revise_voice" | "chat";
 

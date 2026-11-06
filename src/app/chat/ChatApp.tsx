@@ -234,7 +234,7 @@ export default function ChatApp() {
                       silentAssetId: event.silentAssetId,
                       voice: event.voice,
                       seconds: event.seconds,
-                      delivery: event.delivery,
+                      lines: event.lines,
                     }
                   : item,
               );
@@ -254,17 +254,18 @@ export default function ChatApp() {
                 voiceOver: event.voiceOver,
                 sheet: typeof body.sheet === "string" ? body.sheet : "",
                 directions: event.directions,
-                audio: event.audio,
+                narration: event.narration,
                 voice: event.voice,
-                captions: event.captions,
                 grade: event.grade,
-                palette: event.palette,
                 music: event.music,
               },
             ]);
             break;
           case "confirmation_requested":
-            setItems((current) => [...current, { id: newId(), kind: "confirm", message: event.message, estimatedUsd: event.estimatedUsd, retry }]);
+            setItems((current) => [
+              ...current,
+              { id: newId(), kind: "confirm", message: event.message, estimatedUsd: event.estimatedUsd, videoChoice: event.videoChoice, retry },
+            ]);
             break;
           case "usage_updated":
             setUsage({ monthUsd: event.monthUsd });
@@ -397,19 +398,19 @@ export default function ChatApp() {
     [busy, patchItem, run],
   );
 
-  /** Makes the video of an approved storyboard from its picture, with the length and voice-over the seller chose. */
+  /** Makes the video of an approved storyboard from its picture; the AI decides the length, the voice-over and the music. */
   const makeVideo = useCallback(
-    (itemId: string, options: { seconds: number; voiceOver: boolean; music: boolean }) => {
+    (itemId: string) => {
       const card = itemsRef.current.find((candidate) => candidate.id === itemId);
       if (busy || !card || card.kind !== "scenes" || !card.sheet) return;
       void run(
         {
           messages: [{ role: "user", text: VIDEO_TEXT }],
           sheet: card.sheet,
-          // The scenes let the narration be written from them when a voice-over is asked for.
+          // The scenes let the planner share the story over the clips.
           scenes: card.scenes,
           artDirection: card.artDirection,
-          video: options,
+          video: true,
         },
         {},
       );
@@ -444,7 +445,7 @@ export default function ChatApp() {
         {
           messages: [{ role: "user", text: "Coba ulang bagian yang gagal." }],
           sheet: item.sheet,
-          // The scenes let the script be written again when the first try asked for a voice-over.
+          // The scenes tell the server which storyboard this is.
           scenes: item.voiceOver ? storyboardFor(workspaceRef.current).scenes : undefined,
           artDirection: storyboardFor(workspaceRef.current).artDirection,
           resume: {
@@ -453,11 +454,9 @@ export default function ChatApp() {
             finished: item.finished,
             voiceOver: item.voiceOver,
             directions: item.directions,
-            audio: item.audio,
+            narration: item.narration,
             voice: item.voice,
-            captions: item.captions,
             grade: item.grade,
-            palette: item.palette,
             music: item.music,
           },
         },
@@ -473,8 +472,8 @@ export default function ChatApp() {
       const item = itemsRef.current.find((candidate) => candidate.id === itemId);
       if (busy || !item || item.kind !== "confirm" || item.answer) return;
       patchItem(itemId, (current) => (current.kind === "confirm" ? { ...current, answer: yes ? "yes" : "no" } : current));
-      // The yes is for this price: the server asks again if the same request would now cost more.
-      if (yes) void run({ ...item.retry, confirmedUsd: item.estimatedUsd }, {});
+      // The yes is for this price and this plan: the plan comes back as it was shown, and the server asks again if it would cost more.
+      if (yes) void run({ ...item.retry, confirmedUsd: item.estimatedUsd, videoChoice: item.videoChoice }, {});
     },
     [busy, patchItem, run],
   );
