@@ -155,6 +155,22 @@ describe("storyboard", () => {
     assert.match(prompt, /no camera notes/i);
   });
 
+  it("gives the image model no words about itself to write on the picture", async () => {
+    // A real run drew "storyboard" and "panel 9:16" on the picture, and the video model then copied them into a clip.
+    const app = newApp({ artDirection: ART });
+    const photoAssetId = await uploadPhoto(app);
+
+    await makeStoryboard(app, photoAssetId);
+
+    const prompt = app.imageModel.calls[0].prompt ?? "";
+    assert.doesNotMatch(prompt, /9:16|storyboard|sheet|panel/i);
+    // What is on the picture is told positively: the title pills and the captions are its only text.
+    assert.match(prompt, /only text/i);
+    assert.match(prompt, /grid of 6 scenes/i);
+    // The shape is still asked for through the image call itself.
+    assert.equal(app.imageModel.calls[0].aspectRatio, "9:16");
+  });
+
   it("asks for a professionally designed ad sheet, with a different kind of shot in each panel", async () => {
     // A plain grid with white captions looked flat next to a hand-finished ad storyboard.
     const app = newApp({ artDirection: ART });

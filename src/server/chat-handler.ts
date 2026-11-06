@@ -349,7 +349,7 @@ async function readConversation(request: Request): Promise<Conversation | undefi
   };
 }
 
-export function createChatHandler(models: ModelClient, assets: AssetStore, ledger: UsageLedger): ChatHandler {
+export function createChatHandler(models: ModelClient, assets: AssetStore, ledger: UsageLedger, options: { log?: (message: string) => void } = {}): ChatHandler {
   return async (request) => {
     const conversation = await readConversation(request);
 
@@ -388,7 +388,7 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         return frameVerdicts.get(frame)!;
       };
       const jobs = createImageJobs({ models, assets, ledger, send, isProduct });
-      const videos = createVideoJobs({ models, assets, ledger, send, isProduct: isProductFrame });
+      const videos = createVideoJobs({ models, assets, ledger, send, isProduct: isProductFrame, log: options.log });
 
       function reply(text: string) {
         send({ type: "assistant_text", text });

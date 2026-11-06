@@ -37,12 +37,13 @@ export function revisionPrompt(instruction: string): string {
 }
 
 /**
- * One video clip made from the storyboard picture. The video model is told what the picture is and which part of it this
- * clip plays, and nothing else: the style, the text, the effects, the camera, the acting and the sound are its own to decide,
- * because a pile of rules from us made a real video worse.
+ * One video clip made from the storyboard picture. The video model is told what the picture is (a plan to film, not
+ * footage to copy: a real run copied a scene of it, frame and labels included) and which part of it this clip plays, and
+ * nothing else: the style, the text, the effects, the camera, the acting and the sound are its own to decide, because a
+ * pile of rules from us made a real video worse.
  */
 export function clipPrompt(direction: string): string {
-  return `The reference image is the storyboard of an ad. Make the ad video from it. This clip plays: ${direction}`;
+  return `The reference image is the storyboard of an ad: a plan of its scenes to film, not footage. Make the finished ad video from it. This clip plays: ${direction}`;
 }
 
 /**
@@ -52,19 +53,19 @@ export function clipPrompt(direction: string): string {
  * that is drawn on the panel; a "|" in a caption starts a new line (a checklist, or the call to buy).
  */
 export function sheetPrompt(scenes: readonly string[], artDirection?: string): string {
-  const panels = scenes.map((scene, index) => `${index + 1}. ${PANEL_TITLES[index]} (${PANEL_SHOTS[index]}): ${scene}`).join("\n");
+  const listed = scenes.map((scene, index) => `${index + 1}. ${PANEL_TITLES[index]} (${PANEL_SHOTS[index]}): ${scene}`).join("\n");
   return (
-    `Create ONE vertical 9:16 advertisement storyboard sheet, designed the way a professional video editor and art director would present an ad, using this exact product from the reference photo. ` +
+    `Create ONE tall vertical advertisement picture that shows the ${scenes.length} scenes of an ad in order, designed the way a professional video editor and art director would present an ad, using this exact product from the reference photo. ` +
     `Art direction, chosen for this product (follow it for the mood, colour, light, graphic style and effects): ${artDirection ?? DEFAULT_ART_DIRECTION} ` +
-    `Layout: a grid of ${scenes.length} panels, 2 columns by ${scenes.length / 2} rows, read left to right and top to bottom, with thin white gutters that are slightly angled instead of perfectly straight. ` +
-    `The photos are high-end commercial photography with crisp detail on the product. Every panel shares the same place and light. Wherever a person appears it is the same friendly Indonesian person, with the same face, hair and clothes in every panel. ` +
-    `The panels, in order, each with the kind of shot it must be (the shots differ from panel to panel):\n${panels}\n` +
-    `Add graphics on top of the photos, like a designed ad. In the top-left corner of each panel put a dark-brown rounded pill label with white italic handwritten lettering of its number and title, written exactly as above (for example "1. ${PANEL_TITLES[0]}"). ` +
+    `Layout: a grid of ${scenes.length} scenes, 2 columns by ${scenes.length / 2} rows, read left to right and top to bottom, with thin white gutters that are slightly angled instead of perfectly straight. ` +
+    `The photos are high-end commercial photography with crisp detail on the product. Every scene shares the same place and light. Wherever a person appears it is the same friendly Indonesian person, with the same face, hair and clothes in every scene. ` +
+    `The scenes, in order, each with the kind of shot it must be (the shots differ from scene to scene):\n${listed}\n` +
+    `Add graphics on top of the photos, like a designed ad. In the top-left corner of each scene put a dark-brown rounded pill label with white italic handwritten lettering of its number and title, written exactly as above (for example "1. ${PANEL_TITLES[0]}"). ` +
     `Add a cream speech bubble (or cloud bubble) with bold brown handwritten lettering for the words that follow "Caption:" in that scene, copied exactly and spelled correctly in Indonesian; make the most important word bold and underlined. ` +
-    `Where the caption has several lines separated by "|", write each line on its own line and never write the "|" sign itself. In the panel with three benefits show them only as the tick checklist, one line per benefit with a yellow circle tick, and give that panel no speech bubble. ` +
-    `In the last panel the first line is a headline in a cream bubble and the second line is a yellow rounded call-to-action pill with an orange swoosh underline. ` +
+    `Where the caption has several lines separated by "|", write each line on its own line and never write the "|" sign itself. In the scene with three benefits show them only as the tick checklist, one line per benefit with a yellow circle tick, and give that scene no speech bubble. ` +
+    `In the last scene the first line is a headline in a cream bubble and the second line is a yellow rounded call-to-action pill with an orange swoosh underline. ` +
     `Add a few small accents in the style of the art direction near the action, never covering the product or a face. ` +
-    `Show only what the scene describes; do not write the scene text itself. No camera notes, no other labels and no other text. ${KEEP_PRODUCT}`
+    `The only text on the picture is the number-and-title pills and the captions, each written once, with no camera notes. Show only what the scene describes; do not write the scene text itself. ${KEEP_PRODUCT}`
   );
 }
 

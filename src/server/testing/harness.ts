@@ -26,6 +26,8 @@ interface TestAppOptions {
   speechModel?: FakeSpeechModel;
   /** The stand-in for the music model; defaults to one that makes every clip of music. */
   musicModel?: FakeMusicModel;
+  /** Where the app writes what it tells the video model; nowhere unless a test listens. */
+  log?: (message: string) => void;
 }
 
 /** A mid-month, mid-day default, so no test depends on the real date. */
@@ -54,7 +56,7 @@ export function createTestApp(
     writeFileSync(ledgerFile, starting.map((entry) => `${JSON.stringify({ at: entry.at.toISOString(), usd: entry.usd })}\n`).join(""));
   }
   return {
-    chat: createChatHandler(createModelClient({ chatModel: model, imageModel, videoModel, speechModel, musicModel }), store, ledger),
+    chat: createChatHandler(createModelClient({ chatModel: model, imageModel, videoModel, speechModel, musicModel }), store, ledger, { log: options.log }),
     upload: createUploadHandler(store),
     usage: createUsageHandler(ledger),
     store,

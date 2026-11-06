@@ -55,7 +55,7 @@ The Seller's first request, kept as they wrote it (at most 400 characters, never
 _Avoid_: Prompt, instructions, requirements
 
 **Storyboard picture**:
-The whole Storyboard as one vertical image: a grid of six panels, each with its numbered title and the Caption of its Scene, made from the Product photo so the product stays the same in every panel. It is made in the same request as the Seller asks for the Storyboard (no approval of the Scenes in between), costs one image and can be made again from the same Scenes.
+The whole Storyboard as one tall vertical image: a grid of six panels, each with its numbered title and the Caption of its Scene (those are its only text; it carries no words about itself), made from the Product photo so the product stays the same in every panel. It is made in the same request as the Seller asks for the Storyboard (no approval of the Scenes in between), costs one image and can be made again from the same Scenes.
 _Avoid_: Frame, sheet (in the UI), scene image, thumbnail
 
 **Ad video**:
@@ -67,7 +67,7 @@ How long the Ad video runs: 10, 20 or 30 seconds, chosen by the planner for the 
 _Avoid_: Duration, any other number of seconds
 
 **Clip**:
-One piece of an Ad video, 4 to 8 seconds, made from the Storyboard picture and a direction that says only which part of the story it plays; the video model decides how it looks, moves and sounds. Several Clips are joined into the Ad video; if one fails, the finished ones are kept and only the rest is made again.
+One piece of an Ad video, 4 to 8 seconds, made from the Storyboard picture and a direction that tells the story of its part as a film scene, with the Caption words of the Scenes it plays; the video model is told only that the picture is a plan to film, not footage, and decides how it looks, moves, sounds and how the text shows. Several Clips are joined into the Ad video; if one fails, the finished ones are kept and only the rest is made again.
 _Avoid_: Segment, shot
 
 **Voice-over**:

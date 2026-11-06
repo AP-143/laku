@@ -106,8 +106,8 @@ export function videoPlanPrompt(request: {
 }): string {
   const scenes =
     request.scenes.length > 0
-      ? request.scenes.map((scene, index) => `${index + 1}. ${PANEL_TITLES[index] ?? "Panel"}: ${scene}`).join("\n")
-      : "(none given: follow the panels of the picture itself)";
+      ? request.scenes.map((scene, index) => `Scene ${index + 1}: ${scene}`).join("\n")
+      : "(none given: follow the scenes of the picture itself)";
   // For each length: the clips it is made of, the words a narration line may have in each, and where the cuts fall (so the music can sit on a beat).
   const options = VIDEO_LENGTH_CHOICES.flatMap((seconds) => {
     const plan = planClips(seconds);
@@ -138,20 +138,20 @@ export function videoPlanPrompt(request: {
       : "The seller only pressed the Generate button: everything is yours to decide.";
   return `
 [task: video-plan]
-You are the producer of a vertical ad video that is made from a storyboard picture (a grid of ${SCENE_COUNT} panels), in clips one after the other. Look at the picture: it shows the person and the product. You decide how long the video is, whether it has a voice-over and whether it has music.
+You are the producer of a vertical ad video that is made from a storyboard picture (a grid of ${SCENE_COUNT} scenes), in clips one after the other. Look at the picture: it shows the person and the product. You decide how long the video is, whether it has a voice-over and whether it has music.
 The art direction of this ad, chosen for this product: ${request.artDirection ?? "a clean, bright, professional commercial look that suits the product"}
-The panels of the storyboard, in story order:
+The scenes of the storyboard, in story order (a scene may end with its caption: the words the storyboard shows on screen):
 ${scenes}
 ${wish}
 ${request.length ? `Length: "seconds" is ${request.length}.` : 'Length: choose "seconds" from these options, the one that tells this story best (a shorter video moves faster, a longer one lets the story linger).'} Write one entry in "clips" for every clip of the option.
 ${options}
 Think first: in "thinking" write a few sentences about the product, who buys it, the person in the picture (gender, age, manner) and what this ad needs.
-Share the whole story over the clips: every panel is played, in order, and none is skipped.
+Share the whole story over the clips: every scene is played, in order, and none is skipped.
 Grade: choose the colour grade and texture of the whole video like a colourist, the same for every clip so they match: "contrast" (0.95 to 1.15), "saturation" (0.85 to 1.2), "brightness" (-0.04 to 0.04), "warmth" (-0.08 cooler to 0.08 warmer), "grain" (0 to 4) and "vignette" (true or false), to suit the art direction.
 Voice-over: choose "voiceOver": true when a narrator would make this ad stronger, and false when it is better without one. With a voice-over the person in the video does not speak and a narrator is added later, in a voice that suits the person. For each clip write one narration line in Indonesian (within the words allowed for that clip in the length you chose) about what the person feels in that part of the story, and a "delivery" in English that directs its emotion and pace so the voice is never flat: for example "weary and wishful, drawn-out vowels, almost a sigh", "bright and excited, rising on the reveal", "warm, proud and inviting". "from" is the second of the clip where the line starts. The word limit is hard: a longer line would be cut off, and nobody speaks in the last second and a half of the video. Leave a clip's narration empty when its part is better left silent. Without a voice-over the "narration" of every clip is empty.
 Music: choose "use": true when music would make this ad stronger, and false when it is better without. Design the music bed like an editor choosing a track, as "music": {"use": true, "brief": "...", "level": 0.2}. "brief" is a prompt in English for a music model that makes a 30 second instrumental clip, of which only the first seconds of the video are used: name the genre and mood that suit this product, its buyers and the art direction; a tempo in BPM chosen so the cuts of the length you chose fall on a beat (a beat lasts 60 divided by the BPM in seconds); the key; the instruments; and the energy: a steady groove from the first beat, no long intro, no big ending. No artist names and no vocals. "level" is how loud it sits, from 0.08 to 0.4: quieter (0.08 to 0.15) when a narrator reads, up to 0.3 when nothing is said.
 "voice" is "female" or "male": the voice that suits the person in the picture. "voiceProfile" describes that voice in English (age, tone, pace) so that every line uses the same voice.
-For each clip write a "direction" in English of one or two plain sentences: which panels it plays and what happens in them. Say nothing about how it is filmed, edited, acted or heard: the video model decides all of that itself.
+For each clip write a "direction" in English of one or two plain sentences: the story of that part told as a film scene, what happens, who is in it and what is shown, in story order. Refer to a scene by what happens in it, never by its number or title. When a scene it plays has a caption, the caption words are part of what is shown on screen, copied as written, so the video model has the words. Say nothing about how it is filmed, edited, acted, heard or how the text looks: the video model decides all of that itself.
 Reply with JSON only, in this shape, with one entry in "clips" for each clip of the length you chose: {"thinking": "...", "seconds": 10 or 20 or 30, "voiceOver": true or false, "voice": "female" or "male", "voiceProfile": "...", "grade": {"contrast": 1.05, "saturation": 1.1, "brightness": 0, "warmth": 0.02, "grain": 3, "vignette": true}, "music": {"use": true or false, "brief": "...", "level": 0.2}, "clips": [{"direction": "...", "narration": {"line": "...", "delivery": "...", "from": 0.5}}]}
 `.trim();
 }
