@@ -6,6 +6,7 @@ import { fakeVideoModel } from "./testing/fake-video-model";
 import { readEvents } from "./testing/events";
 import { chatRequest, createTestApp } from "./testing/harness";
 import { makePhoto, uploadRequest } from "./testing/photos";
+import { FILLER } from "./testing/plain-tone";
 
 /**
  * Video as a Feature of its own through the chat API: the seller picks it, attaches a Storyboard picture they already
@@ -129,6 +130,17 @@ describe("video as a feature of its own", () => {
 
     assert.equal(app.videoModel.calls.length, 0);
     assert.equal(finishedVideo(events), undefined);
+  });
+
+  it("tells the seller that the attached picture shows no product and what to attach, not to send a product photo", async () => {
+    const app = createTestApp(fakeChatModel({ chunks: ["x"], isProduct: false }));
+    const picture = await attachStoryboard(app);
+
+    const text = replyText(await readEvents(await app.chat(video(picture, "bikinin video iklan"))));
+
+    assert.match(text, /gambar storyboard/i);
+    assert.doesNotMatch(text, /foto/i);
+    assert.doesNotMatch(text, FILLER);
   });
 
   it("does not borrow a storyboard picture the browser sends along: with nothing attached it asks for one", async () => {

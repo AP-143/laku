@@ -7,6 +7,7 @@ import { fakeImageModel } from "./testing/fake-image-model";
 import { readEvents } from "./testing/events";
 import { chatRequest, createTestApp } from "./testing/harness";
 import { makePhoto, uploadRequest } from "./testing/photos";
+import { FILLER } from "./testing/plain-tone";
 
 /** Feature 2 through the chat API: a storyboard request goes straight to its one picture, and the storyboard stops there. */
 
@@ -160,6 +161,21 @@ describe("storyboard", () => {
     assert.match(words, /fitur Video/);
     assert.doesNotMatch(words, /Buat video iklan|Generate|panel/);
     assert.doesNotMatch(words, /Setujui|setuju|usulan/i);
+  });
+
+  it("tells the seller that the video's length comes from their own words, and does not say the AI picks it", async () => {
+    const app = newApp();
+    const photoAssetId = await uploadPhoto(app);
+
+    const events = await makeStoryboard(app, photoAssetId);
+
+    const words = events.flatMap((event) => (event.type === "assistant_text" ? [event.text] : [])).join("");
+    // The lengths are the ones the Video feature offers, and the price is asked before the video is made.
+    assert.match(words, /10, 20, atau 30 detik/);
+    assert.match(words, /harga/i);
+    // The video model decides the sound and the music itself; the app promises nothing about them, and nothing about a length it picks.
+    assert.doesNotMatch(words, /AI yang menentukan|suara|musik/i);
+    assert.doesNotMatch(words, FILLER);
   });
 
   it("uses the studio photo of an earlier turn when the request is typed without a new photo", async () => {

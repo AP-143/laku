@@ -11,6 +11,7 @@ import {
   type ChatSession,
   type Workspace,
 } from "./saved-conversation";
+import { STORYBOARD_READY_MESSAGE } from "../../shared/chat-messages";
 import { redrawRequest, type ThreadItem } from "./thread";
 
 /** The chat sessions the seller sees in the sidebar, kept in the browser's storage across reloads. */
@@ -198,6 +199,23 @@ describe("chat sessions", () => {
     const { items } = loadWorkspace(storage).sessions[0];
 
     assert.deepEqual(items.map((item) => item.id), ["a", "d", "e"]);
+  });
+
+  it("leaves out the storyboard-ready reply that said the AI picks the video's length, and keeps the current one", () => {
+    const saved: ThreadItem[] = [
+      { id: "a", kind: "user", text: "buat storyboard" },
+      {
+        id: "b",
+        kind: "bot",
+        text: "Storyboard-nya sudah jadi. Mau dijadikan video? Pilih fitur Video di sidebar, lampirkan gambar storyboard ini, lalu AI yang menentukan durasi, suara, dan musiknya. Harganya kutanyakan dulu sebelum videonya dibuat.",
+      },
+      { id: "c", kind: "bot", text: STORYBOARD_READY_MESSAGE },
+    ];
+    const storage = memoryStorage({ "laku:sessions:v1": JSON.stringify({ sessions: [{ id: "s", items: saved }], activeId: "s" }) });
+
+    const { items } = loadWorkspace(storage).sessions[0];
+
+    assert.deepEqual(items.map((item) => item.id), ["a", "c"]);
   });
 
   it("loads a chat saved with the text step: a storyboard card with its picture stays, one that was never drawn is left out", () => {

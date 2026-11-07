@@ -2,7 +2,7 @@ import type { ChatEvent } from "../../shared/chat-events";
 
 /** Browser-side calls to the chat API. Nothing here retries: the user decides when to try again. */
 
-const NETWORK_MESSAGE = "Koneksi ke server bermasalah. Cek internetmu lalu coba lagi ya.";
+const NETWORK_MESSAGE = "Koneksi ke server bermasalah. Periksa koneksi internet, lalu coba lagi.";
 const NETWORK_ERROR: ChatEvent = { type: "error", message: NETWORK_MESSAGE, retryable: true };
 
 /** Reads an NDJSON response and hands each event over as it arrives. */

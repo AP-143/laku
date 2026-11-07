@@ -110,7 +110,7 @@ export function Sidebar({ workspace, ready, open, disabled, links, onSelect, onN
           </svg>
           Sesi baru
         </button>
-        {disabled && <p className="side-hint">Tunggu prosesnya selesai dulu ya.</p>}
+        {disabled && <p className="side-hint">Tunggu proses selesai.</p>}
 
         <h3 className="side-label">Mulai dari</h3>
         <nav className="side-features" aria-label="Mulai dari fitur">

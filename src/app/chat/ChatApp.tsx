@@ -292,11 +292,11 @@ export default function ChatApp() {
   const attach = useCallback(async (file: File) => {
     setNote(undefined);
     if (!ACCEPTED_TYPES.includes(file.type)) {
-      setNote("Format fotonya belum didukung. Pakai JPG, PNG, atau WebP ya.");
+      setNote("Format foto tidak didukung. Gunakan JPG, PNG, atau WebP.");
       return;
     }
     if (file.size > MAX_PHOTO_BYTES) {
-      setNote("Fotonya terlalu besar. Maksimal 10 MB ya.");
+      setNote("Ukuran foto melebihi batas 10 MB.");
       return;
     }
     setPhoto({ previewUrl: URL.createObjectURL(file), uploading: true });

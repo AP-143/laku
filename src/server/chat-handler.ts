@@ -16,13 +16,13 @@ import { createVideoJobs, videoCostUsd } from "./video-jobs";
 
 export type ChatHandler = (request: Request) => Promise<Response>;
 
-const INVALID_REQUEST_MESSAGE = "Pesanmu belum bisa dibaca. Tulis pesan dulu lalu kirim lagi ya.";
-const PHOTO_NOT_FOUND_MESSAGE = "Fotonya tidak ketemu. Coba unggah lagi ya.";
-const NOT_A_PRODUCT_MESSAGE =
-  "Maaf, saat ini aku hanya bisa memproses foto produk. Coba kirim foto barang yang mau kamu jual ya.";
-const NEED_PHOTO_MESSAGE = "Kirim dulu foto produknya ya (klik ikon penjepit kertas), nanti aku bantu.";
-const NEED_ATTACHED_STORYBOARD_MESSAGE = "Lampirkan dulu gambar storyboard-nya ya, baru aku buatkan videonya.";
-const PICK_VIDEO_FEATURE_MESSAGE = "Untuk membuat video, pilih fitur Video di sidebar, lalu lampirkan gambar storyboard-nya ya.";
+const INVALID_REQUEST_MESSAGE = "Pesan tidak dapat dibaca. Tulis pesan, lalu kirim lagi.";
+const PHOTO_NOT_FOUND_MESSAGE = "Foto tidak ditemukan. Unggah ulang fotonya.";
+const NOT_A_PRODUCT_MESSAGE = "Ini bukan foto produk. Kirim foto barang yang akan kamu jual.";
+const NOT_A_PRODUCT_PICTURE_MESSAGE = "Produk tidak terlihat jelas di gambar ini. Lampirkan gambar storyboard yang dibuat di fitur Storyboard.";
+const NEED_PHOTO_MESSAGE = "Kirim foto produk terlebih dahulu dengan ikon penjepit kertas.";
+const NEED_ATTACHED_STORYBOARD_MESSAGE = "Lampirkan gambar storyboard terlebih dahulu.";
+const PICK_VIDEO_FEATURE_MESSAGE = "Untuk membuat video, pilih fitur Video di sidebar, lalu lampirkan gambar storyboard.";
 const priceText = (usd: number) =>
   `US$${usd.toFixed(2)} (sekitar Rp${(Math.round((usd * COSTS.idrPerUsd) / 100) * 100).toLocaleString("id-ID")})`;
 /** The Price question, in the words of the seller: what is made and what it costs. */
@@ -310,7 +310,9 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, optio
         }
         send({ type: "done" });
       } catch (error) {
-        if (error instanceof NotAProductError) return reply(NOT_A_PRODUCT_MESSAGE);
+        if (error instanceof NotAProductError) {
+          return reply(conversation.intent === "video" ? NOT_A_PRODUCT_PICTURE_MESSAGE : NOT_A_PRODUCT_MESSAGE);
+        }
         // No automatic retry: the user decides whether to try again.
         send(describeFailure(error));
       }

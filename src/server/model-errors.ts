@@ -4,13 +4,12 @@ import type { ChatEvent } from "../shared/chat-events";
 
 type ErrorEvent = Extract<ChatEvent, { type: "error" }>;
 
-const RATE_LIMITED_MESSAGE = "Terlalu banyak permintaan dalam waktu singkat. Tunggu sebentar lalu coba lagi ya.";
-const QUOTA_EXHAUSTED_MESSAGE =
-  "Saldo atau kuota layanan AI sudah habis. Isi saldo di Google AI Studio atau coba lagi nanti ya.";
-const REFUSED_MESSAGE = "Fotonya ditolak oleh model gambar. Coba foto lain, atau ubah permintaanmu, lalu coba lagi ya.";
-const UNSUPPORTED_MESSAGE = "Model gambar tidak bisa memakai fotonya. Coba foto lain (JPG, PNG, atau WebP) lalu coba lagi ya.";
-const NETWORK_MESSAGE = "Koneksi ke layanan AI bermasalah. Cek internetmu lalu coba lagi ya.";
-const GENERIC_MESSAGE = "Maaf, ada gangguan saat memproses pesanmu. Coba lagi ya.";
+const RATE_LIMITED_MESSAGE = "Terlalu banyak permintaan dalam waktu singkat. Tunggu sebentar, lalu coba lagi.";
+const QUOTA_EXHAUSTED_MESSAGE = "Saldo atau kuota layanan AI habis. Isi saldo di Google AI Studio atau coba lagi nanti.";
+const REFUSED_MESSAGE = "Permintaan ditolak oleh model AI. Ubah permintaan atau gunakan gambar lain, lalu coba lagi.";
+const UNSUPPORTED_MESSAGE = "Gambar tidak dapat digunakan. Gunakan file JPG, PNG, atau WebP, lalu coba lagi.";
+const NETWORK_MESSAGE = "Koneksi ke layanan AI bermasalah. Periksa koneksi internet, lalu coba lagi.";
+const GENERIC_MESSAGE = "Terjadi gangguan saat memproses pesan. Coba lagi.";
 
 function statusOf(error: unknown): number | undefined {
   const { statusCode, status, cause } = (error ?? {}) as { statusCode?: unknown; status?: unknown; cause?: unknown };
