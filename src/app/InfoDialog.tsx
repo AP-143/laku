@@ -14,17 +14,17 @@ const TOPICS: Record<Topic, { title: string; body: ReactNode }> = {
       <ul>
         <li>
           <strong>Foto Studio</strong>
-          <span>Foto produk dari HP jadi foto studio: latar putih bersih, backdrop warna, atau suasana lifestyle.</span>
+          <span>Ubah foto produk dari HP menjadi foto studio: latar putih bersih, backdrop warna, atau suasana lifestyle.</span>
         </li>
         <li>
           <strong>Storyboard</strong>
-          <span>Storyboard dari satu foto produk, jumlah panelnya disesuaikan AI dengan permintaanmu, langsung jadi satu gambar lengkap dengan nomor dan caption.</span>
+          <span>Buat storyboard dari satu foto produk. AI menyesuaikan jumlah panel dengan permintaanmu, dan hasilnya satu gambar lengkap dengan nomor dan caption.</span>
         </li>
         <li>
           <strong>Video</strong>
           <span>
-            Lampirkan gambar storyboard, lalu tulis videonya mau dibuat seperti apa dan berapa detik. AI yang memutuskan sisanya. Kamu
-            setuju dengan harganya dulu sebelum videonya dibuat.
+            Lampirkan gambar storyboard, lalu tulis video yang diinginkan dan durasinya. AI memutuskan sisanya. Harga harus
+            disetujui sebelum video dibuat.
           </span>
         </li>
       </ul>
@@ -35,11 +35,15 @@ const TOPICS: Record<Topic, { title: string; body: ReactNode }> = {
     body: (
       <>
         <ol>
-          <li>Unggah satu foto produk (JPG, PNG, atau WebP, maksimal 10 MB).</li>
-          <li>Pilih gaya foto atau tulis permintaanmu, misalnya “bikinin storyboard dong”.</li>
-          <li>Bandingkan hasilnya dengan foto asli, coba lagi kalau perlu, lalu unduh.</li>
+          <li>Pilih fitur di sidebar: Foto Studio, Storyboard, atau Video.</li>
+          <li>
+            Lampirkan foto produk (JPG, PNG, atau WebP, maksimal 10 MB) dan tulis permintaanmu. Untuk Video, lampirkan gambar
+            storyboard dan sebutkan durasinya: 10, 20, atau 30 detik.
+          </li>
+          <li>Setujui harga yang ditampilkan. Gambar atau video baru dibuat setelah itu.</li>
+          <li>Periksa hasilnya, coba lagi jika perlu, lalu unduh.</li>
         </ol>
-        <p>Produknya harus tetap sama: bentuk, warna, logo, dan tulisannya tidak boleh berubah.</p>
+        <p>Pada Foto Studio dan Storyboard, produk tetap sama: bentuk, warna, logo, dan tulisannya tidak berubah.</p>
       </>
     ),
   },
