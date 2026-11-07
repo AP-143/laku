@@ -39,7 +39,7 @@ Open http://localhost:3000/chat. Generated files go under `storage/` (git-ignore
 
 ## Cost
 
-Real runs spend real money: about US$0.03 for a studio photo or a storyboard picture, about US$0.10 per second of video (US$1 for 10 seconds). The app keeps a local estimate of this month's spend (the usage meter) but sets **no spend limit** of its own, so a bug or a loop can spend until your balance ends. Set a spend cap on the Google billing side.
+Real runs spend real money: about US$0.03 for a studio photo or a storyboard picture, about US$0.10 per second of video (US$1 for 10 seconds). The app asks the seller in a pop-up (the Price question) before it makes a studio photo, a storyboard picture or a video (and again on every retry), and counts nothing else: it has no usage meter or spend limit of its own, so a bug or a loop can spend until your balance ends. Set a spend cap on the Google billing side.
 
 ## Test
 

@@ -1,11 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { COSTS } from "../config/models";
 import type { AssetRole, ChatEvent, JobKind } from "../shared/chat-events";
 import type { AssetFile, AssetStore } from "./asset-store";
 import type { ModelClient } from "./model-client";
-import { mayStillBeBilled } from "./model-errors";
 import { preparePhoto } from "./photo-intake";
-import { readUsage, type UsageLedger } from "./usage-ledger";
 
 interface ImageJobRequest {
   prompt: string;
@@ -20,43 +17,28 @@ interface ImageJobRequest {
 export class NotAProductError extends Error {}
 
 /**
- * Runs one paid image generation from start to finish: budget check, model call, saving, ledger, events.
+ * Runs one paid image generation from start to finish: product check, model call, saving, events.
  * It throws on failure and never retries, so the caller decides what the user sees.
  */
 export function createImageJobs(deps: {
   models: ModelClient;
   assets: AssetStore;
-  ledger: UsageLedger;
   send: (event: ChatEvent) => void;
   /** Asked about the source image of every generation, so no paid path skips the product check. */
   isProduct: (image: AssetFile) => Promise<boolean>;
 }) {
-  const { models, assets, ledger, send, isProduct } = deps;
+  const { models, assets, send, isProduct } = deps;
 
   return {
     async generate({ prompt, source, sourceAssetId, kind, role }: ImageJobRequest) {
       if (!(await isProduct(source))) throw new NotAProductError();
 
-      // The cost is booked before the call, so the meter already counts a call that is still running.
-      await ledger.record(COSTS.imageUsd);
-
       send({ type: "job_started", jobId: randomUUID(), kind });
-      let image;
-      try {
-        image = await models.generateImage({ prompt, reference: source, aspectRatio: kind === "storyboard_sheet" ? "9:16" : "1:1" });
-      } catch (error) {
-        // A call that was rejected is not billed, so the booking goes back. A timeout or a cancel may still be
-        // billed, so it stays booked: the limits would otherwise sit below the real spend.
-        if (!mayStillBeBilled(error)) await ledger.record(-COSTS.imageUsd);
-        throw error;
-      }
+      const image = await models.generateImage({ prompt, reference: source, aspectRatio: kind === "storyboard_sheet" ? "9:16" : "1:1" });
 
       // Resized copy included, so the result can feed the next generation.
       const assetId = await assets.save(await preparePhoto(image.bytes));
       send({ type: "asset_ready", assetId, kind: "image", url: `/api/assets/${assetId}`, role, sourceAssetId });
-
-      const { monthUsd } = await readUsage(ledger);
-      send({ type: "usage_updated", monthUsd });
     },
   };
 }

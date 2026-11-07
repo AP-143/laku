@@ -51,11 +51,13 @@ const isSession = (value: unknown): value is ChatSession =>
  * - A storyboard card without its picture is one that was never drawn (an old card that waited for an approval, or a
  *   picture that failed): the card shows nothing and a video cannot be made from it. The retry button of a picture that
  *   failed is in its error message and carries the scenes itself.
+ * - The price card of a video (the Price question is a pop-up now) has no buttons left to press.
  * - The replies of the old text step ("tekan Setujui & buat gambar") point at buttons that are gone. The seller's own
  *   words are never touched.
  */
 function isObsolete(item: ThreadItem): boolean {
-  if ((item as { kind: string }).kind === "partial") return true;
+  const kind = (item as { kind: string }).kind;
+  if (kind === "partial" || kind === "confirm") return true;
   if (item.kind === "scenes") return "frames" in item || !item.sheet;
   return item.kind === "bot" && OBSOLETE_REPLIES.has(item.text);
 }

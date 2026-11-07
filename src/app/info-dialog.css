@@ -98,6 +98,36 @@
   background: #000;
 }
 
+/* The Price question dialog: a yes and a no side by side. */
+.price-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.price-actions .info-close:disabled,
+.price-no:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.price-no {
+  margin-top: 18px;
+  height: 40px;
+  padding: 0 20px;
+  border: 1px solid rgba(29, 29, 29, 0.2);
+  border-radius: 999px;
+  background: #fff;
+  color: #1d1d1d;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.price-no:hover {
+  background: #f4f2ee;
+}
+
 .info-dialog :focus-visible {
   outline: 2px solid #e88654;
   outline-offset: 2px;

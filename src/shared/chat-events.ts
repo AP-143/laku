@@ -30,8 +30,6 @@ export type ChatEvent =
   | { type: "storyboard_scenes"; sourceAssetId: string; scenes: string[]; artDirection?: string }
   /** Something went wrong. `message` is shown to the user as is, so it is Indonesian. */
   | { type: "error"; message: string; retryable: boolean; code?: ErrorCode }
-  /** This month's estimated spend changed (sent after every paid generation). */
-  | { type: "usage_updated"; monthUsd: number }
   /** Always the last event of a successful stream. */
   | { type: "done" };
 

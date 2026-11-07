@@ -16,7 +16,6 @@ interface ThreadViewProps {
   onRetry: (request: RetryRequest) => void;
   /** The retry button of the storyboard picture, which draws it again from the same scenes. */
   onRedraw: (itemId: string) => void;
-  onAnswerConfirm: (itemId: string, yes: boolean) => void;
   photoUrl: (assetId: string) => string;
 }
 
@@ -30,7 +29,6 @@ export function ThreadView({
   busy,
   onRetry,
   onRedraw,
-  onAnswerConfirm,
   photoUrl,
 }: ThreadViewProps) {
   const end = useRef<HTMLDivElement>(null);
@@ -86,25 +84,6 @@ export function ThreadView({
                   </a>
                 </div>
               </figure>
-            );
-
-          case "confirm":
-            return (
-              <div key={item.id} className="msg msg-bot">
-                <p>{item.message}</p>
-                {/* A yes needs no note: the video's progress follows. Only a no is worth saying aloud. */}
-                {item.answer === "no" && <span className="hint">Dibatalkan, tidak ada biaya.</span>}
-                {!item.answer && (
-                  <div className="actions">
-                    <button type="button" className="btn btn-primary" disabled={busy} onClick={() => onAnswerConfirm(item.id, true)}>
-                      Lanjut
-                    </button>
-                    <button type="button" className="btn" disabled={busy} onClick={() => onAnswerConfirm(item.id, false)}>
-                      Batal
-                    </button>
-                  </div>
-                )}
-              </div>
             );
 
           case "video":
@@ -164,7 +143,7 @@ export function ThreadView({
       {busy && (
         <div className="msg msg-bot msg-progress">
           <Spinner label="Sedang bekerja" />
-          <p>{progress?.message ?? "Sebentar ya…"}</p>
+          <p>{progress?.message ?? "Sedang berpikir…"}</p>
         </div>
       )}
       <div ref={end} />

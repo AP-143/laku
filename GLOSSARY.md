@@ -75,9 +75,5 @@ _Avoid_: Chat, thread, conversation, history (history is the list of Sessions)
 ### Money
 
 **Price question**:
-The question that tells the Seller what an Ad video will cost, for the Length their words name, and asks before anything is spent. A yes covers that price; the same request that would now cost more asks again.
-_Avoid_: Confirmation, checkout, payment
-
-**Usage meter**:
-The estimated spend of the month shown to the Seller. It only counts; it stops nothing, because LAKU sets no spend limit (the monthly budget and the daily limit were removed): the balance on Google's side is the only stop. It is an estimate and can run a little below what Google really bills.
-_Avoid_: Balance, saldo, quota
+The pop-up that tells the Seller what a Studio photo, a Storyboard picture or an Ad video will cost (for a video, at the Length their words name), and asks before anything is spent. It is asked again for every "Coba lagi" and every picture drawn again, because each one costs again. It opens after the app has read the request ("thinking") and before any image or video model is called. "Lanjut" (yes) makes the video at that price; "Batal", Esc or a click outside (no) stops, spends nothing and the chat says so. A yes covers that price; the same request that would now cost more asks again. It is the only cost guard in the app: LAKU keeps no usage meter, ledger or spend limit, and the balance on Google's side is the only other stop.
+_Avoid_: Confirmation, checkout, payment, Usage meter (removed)

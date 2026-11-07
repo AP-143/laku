@@ -5,8 +5,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import type { ChatEvent, ChatIntent } from "../../shared/chat-events";
 import { useInfoDialog } from "../InfoDialog";
 import { PaperBackground } from "../PaperBackground";
-import { assetUrl, fetchUsage, sendChat, uploadPhoto } from "./chat-client";
+import { assetUrl, sendChat, uploadPhoto } from "./chat-client";
 import { Composer, type AttachedPhoto } from "./Composer";
+import { PriceDialog, type PriceAsk } from "./PriceDialog";
 import {
   activeSession,
   browserStorage,
@@ -39,13 +40,11 @@ const WIDE_SCREEN = "(min-width: 1000px)";
 const SAVE_DELAY_MS = 400;
 const HISTORY_LENGTH = 12;
 
+const PRICE_DECLINED_MESSAGE = "Dibatalkan. Tidak ada biaya.";
+
 const newId = () => crypto.randomUUID();
 
 const BEFORE_LOAD: Workspace = { sessions: [{ id: "before-load", items: [] }], activeId: "before-load" };
-
-interface Usage {
-  monthUsd: number;
-}
 
 /** How the events of one request are folded into the thread. */
 interface RunContext {
@@ -66,7 +65,7 @@ export default function ChatApp() {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<Progress | undefined>();
   const [note, setNote] = useState<string | undefined>();
-  const [usage, setUsage] = useState<Usage | undefined>();
+  const [ask, setAsk] = useState<PriceAsk | undefined>();
   const [menu, setMenu] = useState(false);
   const info = useInfoDialog();
   // The entrance animation plays once on first paint, then its class is removed.
@@ -92,7 +91,6 @@ export default function ChatApp() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reading browser storage can only happen after mount
     setWorkspace(loadWorkspace(browserStorage()));
     setReady(true);
-    void fetchUsage().then(setUsage);
   }, []);
 
   // Callbacks read the newest thread through these refs, so they do not need to be rebuilt on every message.
@@ -162,7 +160,9 @@ export default function ChatApp() {
       setBusy(true);
       setNote(undefined);
       let botId: string | undefined;
-      const retry: RetryRequest = body;
+      // A yes is for this one request: "Coba lagi" sends the request without it, so the Price question is asked again.
+      const retry: RetryRequest = { ...body };
+      delete retry.confirmedUsd;
       // The storyboard card this request draws the picture for: the one it was started from, or the one its scenes created.
       let cardId = context.scenesItemId;
       // Once the scenes are known, a picture that fails is retried from them, without planning them again.
@@ -221,13 +221,7 @@ export default function ChatApp() {
             break;
           }
           case "confirmation_requested":
-            setItems((current) => [
-              ...current,
-              { id: newId(), kind: "confirm", message: event.message, estimatedUsd: event.estimatedUsd, retry },
-            ]);
-            break;
-          case "usage_updated":
-            setUsage({ monthUsd: event.monthUsd });
+            setAsk({ message: event.message, estimatedUsd: event.estimatedUsd, retry, scenesItemId: context.scenesItemId });
             break;
           case "error":
             setItems((current) => [
@@ -337,16 +331,16 @@ export default function ChatApp() {
     [busy, run],
   );
 
-  /** The seller's answer to a price question: yes sends the same request again, now confirmed; no spends nothing. */
-  const answerConfirmation = useCallback(
-    (itemId: string, yes: boolean) => {
-      const item = itemsRef.current.find((candidate) => candidate.id === itemId);
-      if (busy || !item || item.kind !== "confirm" || item.answer) return;
-      patchItem(itemId, (current) => (current.kind === "confirm" ? { ...current, answer: yes ? "yes" : "no" } : current));
+  /** The seller's answer to the price pop-up: yes sends the same request again, now confirmed; no stops and spends nothing. */
+  const answerPrice = useCallback(
+    (yes: boolean) => {
+      if (busy || !ask) return;
+      setAsk(undefined);
       // The yes is for this price: the server asks again if the same request would now cost more.
-      if (yes) void run({ ...item.retry, confirmedUsd: item.estimatedUsd }, {});
+      if (yes) void run({ ...ask.retry, confirmedUsd: ask.estimatedUsd }, { scenesItemId: ask.scenesItemId });
+      else setItems((current) => [...current, { id: newId(), kind: "bot", text: PRICE_DECLINED_MESSAGE }]);
     },
-    [busy, patchItem, run],
+    [ask, busy, run, setItems],
   );
 
   function clearComposer() {
@@ -415,7 +409,6 @@ export default function ChatApp() {
             ready={ready}
             open={historyOpen}
             disabled={busy}
-            usage={usage}
             links={
               <>
                 <a {...info.link("fitur")}>Fitur</a>
@@ -466,7 +459,6 @@ export default function ChatApp() {
                   busy={busy}
                   onRetry={retryRequest}
                   onRedraw={redrawSheet}
-                  onAnswerConfirm={answerConfirmation}
                   photoUrl={(assetId) => assetUrl(assetId, "resized")}
                 />
               )}
@@ -498,6 +490,7 @@ export default function ChatApp() {
         </div>
       </div>
       {info.dialog}
+      <PriceDialog ask={ask} busy={busy} onAnswer={answerPrice} />
     </div>
   );
 }

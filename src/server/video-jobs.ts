@@ -4,8 +4,6 @@ import type { ChatEvent } from "../shared/chat-events";
 import type { AssetFile, AssetStore } from "./asset-store";
 import { NotAProductError } from "./image-jobs";
 import type { ModelClient } from "./model-client";
-import { mayStillBeBilled } from "./model-errors";
-import { readUsage, type UsageLedger } from "./usage-ledger";
 
 /** The storyboard picture a video is made from. */
 export interface StoryboardSheet {
@@ -19,20 +17,19 @@ const roundUsd = (usd: number) => Math.round(usd * 10_000) / 10_000;
 export const videoCostUsd = (seconds: number) => roundUsd(seconds * COSTS.videoUsdPerSecond);
 
 /**
- * Runs one video from start to finish: product check, budget reservation, the video, saving, events.
+ * Runs one video from start to finish: product check, the video, saving, events.
  * It throws on failure and never retries, so the caller decides what the user sees.
  */
 export function createVideoJobs(deps: {
   models: ModelClient;
   assets: AssetStore;
-  ledger: UsageLedger;
   send: (event: ChatEvent) => void;
   /** Asked about the picture the video is made from, so no paid path skips the product check (the frame check, not the photo one). */
   isProduct: (image: AssetFile) => Promise<boolean>;
   /** Told what the video model is asked (the seller's words only), so a bad video can be traced to its words. */
   log?: (message: string) => void;
 }) {
-  const { models, assets, ledger, send, isProduct, log } = deps;
+  const { models, assets, send, isProduct, log } = deps;
 
   return {
     /**
@@ -43,25 +40,12 @@ export function createVideoJobs(deps: {
       const { sheet, prompt, seconds } = request;
       if (!(await isProduct(sheet.file))) throw new NotAProductError();
 
-      // The video is booked before it is made, so simultaneous requests cannot squeeze under a limit.
-      const cost = videoCostUsd(seconds);
-      await ledger.record(cost);
-
       const jobId = randomUUID();
       send({ type: "job_started", jobId, kind: "video" });
       send({ type: "job_progress", jobId, message: "Membuat video" });
 
-      let video: Uint8Array;
-      try {
-        log?.(`[video ${seconds}s] prompt: ${prompt ?? "(none)"}`);
-        video = await models.generateVideo({ prompt, frame: sheet.file, seconds });
-      } catch (error) {
-        // A video that was rejected is given back; one that timed out may still be billed, so it stays booked.
-        if (!mayStillBeBilled(error)) await ledger.record(-cost);
-        const { monthUsd } = await readUsage(ledger);
-        send({ type: "usage_updated", monthUsd });
-        throw error;
-      }
+      log?.(`[video ${seconds}s] prompt: ${prompt ?? "(none)"}`);
+      const video = await models.generateVideo({ prompt, frame: sheet.file, seconds });
 
       const assetId = await assets.saveVideo(video);
       send({
@@ -72,9 +56,6 @@ export function createVideoJobs(deps: {
         role: "video",
         sourceAssetId: sheet.assetId,
       });
-
-      const { monthUsd } = await readUsage(ledger);
-      send({ type: "usage_updated", monthUsd });
     },
   };
 }

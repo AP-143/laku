@@ -12,7 +12,6 @@ import { NotAProductError, createImageJobs } from "./image-jobs";
 import { revisionPrompt, sheetPrompt, studioPhotoPrompt } from "./image-prompts";
 import { describeFailure } from "./model-errors";
 import type { ChatMessage, ModelClient } from "./model-client";
-import type { UsageLedger } from "./usage-ledger";
 import { createVideoJobs, videoCostUsd } from "./video-jobs";
 
 export type ChatHandler = (request: Request) => Promise<Response>;
@@ -26,8 +25,13 @@ const NEED_ATTACHED_STORYBOARD_MESSAGE = "Lampirkan dulu gambar storyboard-nya y
 const PICK_VIDEO_FEATURE_MESSAGE = "Untuk membuat video, pilih fitur Video di sidebar, lalu lampirkan gambar storyboard-nya ya.";
 const priceText = (usd: number) =>
   `US$${usd.toFixed(2)} (sekitar Rp${(Math.round((usd * COSTS.idrPerUsd) / 100) * 100).toLocaleString("id-ID")})`;
-/** What the video costs, in the words of the seller: seconds and price. */
-const confirmVideoMessage = (seconds: number, usd: number) => `Video ${seconds} detik. Perkiraan biaya ${priceText(usd)}. Lanjut?`;
+/** The Price question, in the words of the seller: what is made and what it costs. */
+const confirmMessage = (what: string, usd: number) => `${what} · ${priceText(usd)}`;
+const imagePriceQuestion = {
+  studio: "Foto studio",
+  storyboard: "Gambar storyboard",
+  redraw: "Gambar storyboard (ulang)",
+} as const;
 
 // Every accepted message costs model quota, so the size of a request is bounded before it reaches the model.
 const MAX_BODY_BYTES = 64 * 1024;
@@ -149,7 +153,7 @@ async function readConversation(request: Request): Promise<Conversation | undefi
   };
 }
 
-export function createChatHandler(models: ModelClient, assets: AssetStore, ledger: UsageLedger, options: { log?: (message: string) => void } = {}): ChatHandler {
+export function createChatHandler(models: ModelClient, assets: AssetStore, options: { log?: (message: string) => void } = {}): ChatHandler {
   return async (request) => {
     const conversation = await readConversation(request);
 
@@ -185,12 +189,23 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         if (!frameVerdicts.has(frame)) frameVerdicts.set(frame, models.isProductFrame(frame));
         return frameVerdicts.get(frame)!;
       };
-      const jobs = createImageJobs({ models, assets, ledger, send, isProduct });
-      const videos = createVideoJobs({ models, assets, ledger, send, isProduct: isProductFrame, log: options.log });
+      const jobs = createImageJobs({ models, assets, send, isProduct });
+      const videos = createVideoJobs({ models, assets, send, isProduct: isProductFrame, log: options.log });
 
       function reply(text: string) {
         send({ type: "assistant_text", text });
         send({ type: "done" });
+      }
+
+      /**
+       * The Price question. True when the seller has already said yes to this price or more; otherwise the question is sent
+       * (and the turn ends) and nothing is spent. A yes is for this price: a request that now costs more asks again.
+       */
+      function agreedTo(what: string, usd: number): boolean {
+        if (conversation!.confirmedUsd !== undefined && usd <= conversation!.confirmedUsd) return true;
+        send({ type: "confirmation_requested", confirmationId: randomUUID(), message: confirmMessage(what, usd), estimatedUsd: usd });
+        send({ type: "done" });
+        return false;
       }
 
       /**
@@ -212,8 +227,11 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
       }
 
       try {
-        // The retry button of a picture that failed, or of one the seller wants drawn again, is an explicit action.
-        if (conversation.redraw && redrawPhoto) return await makeSheet(conversation.redraw, redrawPhoto);
+        // The retry button of a picture that failed, or of one the seller wants drawn again, is an explicit action, and costs an image again.
+        if (conversation.redraw && redrawPhoto) {
+          if (!agreedTo(imagePriceQuestion.redraw, COSTS.imageUsd)) return;
+          return await makeSheet(conversation.redraw, redrawPhoto);
+        }
 
         // The cheap check comes first, so nothing costly ever runs for a photo that is not a product.
         // A photo attached in the Video feature is a storyboard picture, which the video job asks the looser question about.
@@ -233,19 +251,7 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
           if (!picture) return reply(NEED_ATTACHED_STORYBOARD_MESSAGE);
           // The length is the one the seller's words name, otherwise the shortest; the price follows it and is always asked first.
           const seconds = requestedLength(lastText) ?? VIDEO_LENGTH_CHOICES[0];
-          const estimatedUsd = videoCostUsd(seconds);
-          // The yes is for this price: a request that now costs more is asked about again.
-          const agreed = conversation.confirmedUsd !== undefined && estimatedUsd <= conversation.confirmedUsd;
-          if (!agreed) {
-            send({
-              type: "confirmation_requested",
-              confirmationId: randomUUID(),
-              message: confirmVideoMessage(seconds, estimatedUsd),
-              estimatedUsd,
-            });
-            send({ type: "done" });
-            return;
-          }
+          if (!agreedTo(`Video ${seconds} detik`, videoCostUsd(seconds))) return;
           // What the seller typed goes to the video model as it is, and the model decides the rest.
           await videos.generate({ sheet: picture, prompt: lastText || undefined, seconds });
           send({ type: "done" });
@@ -258,6 +264,7 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
 
         if (intent === "studio_photo") {
           if (!source || !sourceAssetId) return reply(NEED_PHOTO_MESSAGE);
+          if (!agreedTo(imagePriceQuestion.studio, COSTS.imageUsd)) return;
           // A typed request with no preset is the seller's own style; with a preset it is an extra note.
           const style = conversation.style ?? (lastText ? { text: lastText } : { preset: "clean_white" as const });
           const note = conversation.style && lastText ? lastText : undefined;
@@ -273,6 +280,7 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
         }
 
         if (intent === "revise_photo" && previous && conversation.lastImageAssetId) {
+          if (!agreedTo(imagePriceQuestion.studio, COSTS.imageUsd)) return;
           await jobs.generate({
             prompt: revisionPrompt(lastText),
             source: previous,
@@ -286,6 +294,8 @@ export function createChatHandler(models: ModelClient, assets: AssetStore, ledge
 
         if (intent === "storyboard") {
           if (!source || !sourceAssetId) return reply(NEED_PHOTO_MESSAGE);
+          // The price is that of the one picture, so it is asked before the planner runs.
+          if (!agreedTo(imagePriceQuestion.storyboard, COSTS.imageUsd)) return;
           // The planner reads the seller's request and writes the scenes (text, next to no cost); the picture is made in the
           // same request, since asking for a storyboard is asking for its picture.
           const { scenes, artDirection } = await models.planScenes(source, lastText);

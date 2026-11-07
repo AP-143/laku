@@ -58,15 +58,6 @@ export async function uploadPhoto(file: File): Promise<{ assetId: string } | { e
   return result;
 }
 
-export async function fetchUsage(): Promise<{ monthUsd: number } | undefined> {
-  try {
-    const response = await fetch("/api/usage", { cache: "no-store" });
-    return response.ok ? await response.json() : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 export const assetUrl = (assetId: string, variant: "original" | "resized" = "original") =>
   `/api/assets/${assetId}${variant === "resized" ? "?variant=resized" : ""}`;
 

@@ -50,10 +50,6 @@ const FEATURE_LABELS: Record<ChatIntent, string> = {
   video: "Video",
 };
 
-function formatUsd(value: number): string {
-  return `US$${value.toFixed(2).replace(".", ",")}`;
-}
-
 interface Props {
   workspace: Workspace;
   /** False until the saved chats are read, so the list does not flash an empty chat. */
@@ -62,7 +58,6 @@ interface Props {
   open: boolean;
   /** Starting, switching and deleting chats wait while a request is running. */
   disabled: boolean;
-  usage?: { monthUsd: number };
   /** Info links (features, how it works, contact) shown at the bottom. */
   links: ReactNode;
   onSelect: (id: string) => void;
@@ -74,8 +69,8 @@ interface Props {
   onToggle: () => void;
 }
 
-/** The app sidebar: brand, new chat, the three features, every saved chat (newest first), and the spend meter. */
-export function Sidebar({ workspace, ready, open, disabled, usage, links, onSelect, onNew, onFeature, onDelete, onToggle }: Props) {
+/** The app sidebar: brand, new chat, the three features, and every saved chat (newest first). */
+export function Sidebar({ workspace, ready, open, disabled, links, onSelect, onNew, onFeature, onDelete, onToggle }: Props) {
   // The chat the seller is being asked about; deleting takes a second click so it cannot happen by accident.
   const [confirming, setConfirming] = useState<string | undefined>();
 
@@ -202,14 +197,6 @@ export function Sidebar({ workspace, ready, open, disabled, usage, links, onSele
         </ul>
 
         <div className="side-foot">
-          {usage && (
-            <div className="side-usage" title="Perkiraan pemakaian saldo bulan ini">
-              <div className="side-usage-row">
-                <span>Pemakaian bulan ini</span>
-                <strong>{formatUsd(usage.monthUsd)}</strong>
-              </div>
-            </div>
-          )}
           <div className="side-links">{links}</div>
         </div>
       </aside>

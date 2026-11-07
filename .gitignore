@@ -7,7 +7,7 @@ node_modules/
 .next/
 out/
 
-# local data (generated assets, sample photos, usage ledger)
+# local data (generated assets, sample photos)
 storage/
 samples/
 

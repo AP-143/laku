@@ -62,7 +62,7 @@ describe("storyboard", () => {
     // The scenes come first (a retry draws from them), then the picture, then the words that say what to do next.
     assert.deepEqual(
       events.map((e) => e.type),
-      ["storyboard_scenes", "job_started", "asset_ready", "usage_updated", "assistant_text", "done"],
+      ["storyboard_scenes", "job_started", "asset_ready", "assistant_text", "done"],
     );
   });
 
@@ -132,7 +132,7 @@ describe("storyboard", () => {
     const app = newApp({ artDirection: ART });
     const photoAssetId = await uploadPhoto(app);
 
-    const events = await makeStoryboard(app, photoAssetId);
+    await makeStoryboard(app, photoAssetId);
 
     assert.equal(app.imageModel.calls.length, 1);
     // The picture starts from the product photo, which keeps the product the same in every panel.
@@ -144,9 +144,8 @@ describe("storyboard", () => {
     SCENES.forEach((scene) => assert.match(prompt, new RegExp(scene)));
     assert.ok(prompt.indexOf(SCENES[0]) < prompt.indexOf(SCENES[5]));
     assert.ok(prompt.includes(ART));
-    // One picture costs one image, not six; vertical (9:16), so the video made from it is vertical too.
-    const lastUsage = events.findLast((e) => e.type === "usage_updated");
-    assert.equal(lastUsage?.type === "usage_updated" && lastUsage.monthUsd, 0.0336);
+    // One picture is one image call, not six; vertical (9:16), so the video made from it is vertical too.
+    assert.equal(app.imageModel.calls.length, 1);
     assert.equal(app.imageModel.calls[0].aspectRatio, "9:16");
   });
 
@@ -310,7 +309,6 @@ describe("storyboard", () => {
     const last = events.at(-1);
     assert.equal(last?.type === "error" && last.code, "rate_limited");
     assert.equal(events.some((e) => e.type === "assistant_text"), false);
-    assert.equal((await (await app.usage(new Request("http://localhost/api/usage"))).json()).monthUsd, 0);
   });
 
   it("draws the picture again from the same scenes on a retry, without planning again", async () => {
@@ -399,7 +397,6 @@ describe("storyboard", () => {
     assert.equal(events.some((e) => e.type === "job_started" || e.type === "asset_ready" || e.type === "storyboard_scenes"), false);
     assert.deepEqual(events.at(-1), { type: "done" });
     assert.equal(app.imageModel.calls.length, 0);
-    assert.equal((await (await app.usage(new Request("http://localhost/api/usage"))).json()).monthUsd, 0);
   });
 });
 

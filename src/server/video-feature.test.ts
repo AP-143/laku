@@ -27,9 +27,6 @@ const finishedVideo = (events: ChatEvent[]) =>
 const replyText = (events: ChatEvent[]) =>
   events.flatMap((event) => (event.type === "assistant_text" ? [event.text] : [])).join("");
 
-const monthUsd = async (app: App) =>
-  ((await (await app.usage(new Request("http://localhost/api/usage"))).json()) as { monthUsd: number }).monthUsd;
-
 /** A request to make a video that the seller has already said yes to, for up to `confirmedUsd`. */
 const video = (picture: string, text: string, extra: Record<string, unknown> = {}) =>
   chatRequest({ messages: [{ role: "user", text, photoAssetId: picture }], intent: "video", confirmedUsd: 10, ...extra });
@@ -124,7 +121,7 @@ describe("video as a feature of its own", () => {
     assert.equal(app.videoModel.calls.length, 1);
   });
 
-  it("refuses an attached picture that shows no product, before the video is made, and books nothing", async () => {
+  it("refuses an attached picture that shows no product, before the video is made", async () => {
     const app = createTestApp(fakeChatModel({ chunks: ["x"], isProduct: false }));
     const picture = await attachStoryboard(app);
 
@@ -132,7 +129,6 @@ describe("video as a feature of its own", () => {
 
     assert.equal(app.videoModel.calls.length, 0);
     assert.equal(finishedVideo(events), undefined);
-    assert.equal(await monthUsd(app), 0);
   });
 
   it("does not borrow a storyboard picture the browser sends along: with nothing attached it asks for one", async () => {
@@ -179,7 +175,7 @@ describe("the price of a video", () => {
     const picture = await attachStoryboard(app);
     const request = { messages: [{ role: "user", text: "video 20 detik", photoAssetId: picture }], intent: "video" };
 
-    const asked = await readEvents(await app.chat(chatRequest(request)));
+    const asked = await readEvents(await app.chat(chatRequest({ ...request, confirmedUsd: null })));
 
     const ask = asked.find((event) => event.type === "confirmation_requested");
     assert.ok(ask && ask.type === "confirmation_requested");
@@ -187,13 +183,13 @@ describe("the price of a video", () => {
     assert.match(ask.message, /20 detik/);
     assert.equal(app.videoModel.calls.length, 0);
     assert.equal(finishedVideo(asked), undefined);
-    assert.equal(await monthUsd(app), 0);
+    // A no is simply no second request: the question was the whole turn, and it ended without a video.
+    assert.deepEqual(asked.at(-1), { type: "done" });
 
     const agreed = await readEvents(await app.chat(chatRequest({ ...request, confirmedUsd: ask.estimatedUsd })));
 
     assert.ok(finishedVideo(agreed));
     assert.equal(app.videoModel.calls[0].seconds, 20);
-    assert.equal(await monthUsd(app), 2);
   });
 
   it("is asked again when the same request would now cost more than the price the seller said yes to", async () => {
@@ -210,7 +206,7 @@ describe("the price of a video", () => {
 });
 
 describe("a video that fails", () => {
-  it("is never tried again by itself, gives the booking back, and says it failed", async () => {
+  it("is never tried again by itself, and says it failed", async () => {
     const videoModel = fakeVideoModel({ failWith: new Error("fake video failure") });
     const app = createTestApp(fakeChatModel({ chunks: ["x"] }), undefined, { videoModel });
     const picture = await attachStoryboard(app);
@@ -220,18 +216,6 @@ describe("a video that fails", () => {
     assert.equal(videoModel.calls.length, 1);
     assert.equal(finishedVideo(events), undefined);
     assert.ok(events.some((event) => event.type === "error"));
-    assert.equal(await monthUsd(app), 0);
-  });
-
-  it("stays booked when the call timed out, because it may still be billed", async () => {
-    const videoModel = fakeVideoModel({ failWith: Object.assign(new Error("took too long"), { name: "TimeoutError" }) });
-    const app = createTestApp(fakeChatModel({ chunks: ["x"] }), undefined, { videoModel });
-    const picture = await attachStoryboard(app);
-
-    const events = await readEvents(await app.chat(video(picture, "video 20 detik")));
-
-    assert.ok(events.some((event) => event.type === "error"));
-    assert.equal(await monthUsd(app), 2);
   });
 });
 

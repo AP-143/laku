@@ -15,7 +15,7 @@
  *   npm run bakeoff -- --photos=some/folder
  *
  * It never retries a paid call, and it refuses to start when the estimated spend is above the cap.
- * What a real run spends is added to the app's usage meter. Google has no balance API: the real spend is on the
+ * Google has no balance API: the real spend is on the
  * AI Studio Spend page (the month-to-date counter there is a few minutes behind, the charts hours).
  */
 import { execFile } from "node:child_process";
@@ -26,7 +26,6 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { experimental_generateSpeech as generateSpeech, generateImage } from "ai";
 import sharp from "sharp";
 import { BAKEOFF_CANDIDATES, VIDEO_SETTINGS, type BakeoffImageCandidate } from "../../src/config/models";
-import { createDefaultUsageLedger } from "../../src/server/usage-ledger";
 import { formatUsd, type Estimate } from "./pricing";
 import { buildViewerHtml, classifyError, formatSummary, type JobResult } from "./report";
 
@@ -450,8 +449,6 @@ async function main() {
     }
   }
 
-  // The usage meter of the app must see what a run spent, or it reads lower than the real bill.
-  if (runningUsd > 0) await createDefaultUsageLedger().record(runningUsd);
   await writeFile(path.join(runDir, "results.json"), JSON.stringify(results, null, 2));
   await writeFile(path.join(runDir, "index.html"), buildViewerHtml(results, photoNames, videoSource.note));
 

@@ -15,7 +15,7 @@ export const MODELS = {
    * bake-off: faithful on 5 of 5 photos, against 4 of 5 for the earlier gateway model (bfl/flux-kontext-pro).
    */
   image: "gemini-nano-banana-2.1",
-  /** The output size every image call asks for, so the price booked in `COSTS.imageUsd` is the price paid. */
+  /** The output size every image call asks for, so the price quoted from `COSTS.imageUsd` is the price paid. */
   imageSize: "1K",
   /**
    * Image-to-video clips, called directly on the Google key (Interactions API) by src/server/video-model.ts.
@@ -137,8 +137,8 @@ Acceptance run of 2026-11-03 (ticket #14), through the app's own handlers on the
 `.trim();
 
 /**
- * Estimated spend, used by the usage meter. Prices change, so re-check them against Google's pricing page.
- * The app sets no spend limit: the balance and any spend cap on Google's side are the only stops.
+ * The price quoted to the seller in the Price question. Prices change, so re-check them against Google's pricing page.
+ * The app sets no spend limit: the seller's yes to the Price question, the balance and any spend cap on Google's side are the only stops.
  */
 export const COSTS = {
   /** One image from `MODELS.image` at 1K (US$0.0336 on Google's pricing page, see the bake-off notes). */
