@@ -21,7 +21,7 @@ Every model runs directly on a Google AI Studio key (no gateway):
 
 All model IDs and estimated prices live in `src/config/models.ts`. Only `src/server/model-client.ts` talks to models.
 
-Nothing paid happens by guesswork: the storyboard picture (about US$0.03) is drawn only when the seller asks for a storyboard, and pressing the video button always shows the price first.
+Nothing paid happens by guesswork: before a studio photo, a storyboard picture (about US$0.03 each) or a video is made, and again on every retry, a pop-up shows the price and waits for a yes.
 
 Read `GLOSSARY.md` for the domain words and `docs/adr/` for why things are the way they are.
 
