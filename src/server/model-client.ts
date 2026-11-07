@@ -29,7 +29,7 @@ const MAX_CHECK_TOKENS = 16;
 /** The short scenes (as many as the ad needs) with their captions and the art direction, or one rewritten scene, as JSON. */
 const MAX_SCENE_TOKENS = 1600;
 /** Studio photos are square; the storyboard picture is vertical so the video made from it is vertical too. */
-export type ImageAspectRatio = "1:1" | "9:16";
+type ImageAspectRatio = "1:1" | "9:16";
 
 export interface ChatMessage {
   role: "user" | "assistant";

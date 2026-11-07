@@ -1,6 +1,6 @@
 import { formatUsd } from "./pricing";
 
-export type ErrorClass =
+type ErrorClass =
   | "account_blocked"
   | "rate_limit"
   | "no_credits_or_quota"
@@ -71,7 +71,7 @@ interface ModelSummary {
   estimatedUsd: number;
 }
 
-export function summarize(results: JobResult[]): ModelSummary[] {
+function summarize(results: JobResult[]): ModelSummary[] {
   const byModel = new Map<string, ModelSummary>();
   for (const result of results) {
     if (result.status === "skipped") continue;

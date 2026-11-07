@@ -6,7 +6,7 @@ interface FakeVideoModelOptions {
   failWith?: unknown;
 }
 
-export interface FakeVideoCall {
+interface FakeVideoCall {
   prompt?: string;
   frame: AssetFile;
   seconds: number;

@@ -24,7 +24,7 @@ export interface Workspace {
 }
 
 /** The part of localStorage this module uses, so tests can pass a plain object. */
-export interface KeyValueStorage {
+interface KeyValueStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
 }

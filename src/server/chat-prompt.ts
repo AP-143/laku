@@ -33,7 +33,7 @@ Answer NO if there is no clear product in it, or it only shows a person, a face,
 import { MAX_ART_DIRECTION_CHARS, MAX_SCENES } from "../shared/storyboard";
 
 /** How a scene carries the words that are written on its panel: `<what is seen> Caption: "<the words>"`. */
-export const CAPTION_MARK = "Caption:";
+const CAPTION_MARK = "Caption:";
 
 /** Scenes are shown to the seller, so they are written in Bahasa Indonesia. */
 export function planScenesPrompt(request: string): string {

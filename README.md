@@ -21,8 +21,6 @@ Every model runs directly on a Google AI Studio key (no gateway):
 
 All model IDs and estimated prices live in `src/config/models.ts`. Only `src/server/model-client.ts` talks to models.
 
-Nothing paid happens by guesswork: before a studio photo, a storyboard picture (about US$0.03 each) or a video is made, and again on every retry, a pop-up shows the price and waits for a yes.
-
 Read `GLOSSARY.md` for the domain words and `docs/adr/` for why things are the way they are.
 
 ## Run it
@@ -39,7 +37,7 @@ Open http://localhost:3000/chat. Generated files go under `storage/` (git-ignore
 
 ## Cost
 
-Real runs spend real money: about US$0.03 for a studio photo or a storyboard picture, about US$0.10 per second of video (US$1 for 10 seconds). The app asks the seller in a pop-up (the Price question) before it makes a studio photo, a storyboard picture or a video (and again on every retry), and counts nothing else: it has no usage meter or spend limit of its own, so a bug or a loop can spend until your balance ends. Set a spend cap on the Google billing side.
+Real runs spend real money: about US$0.03 per studio photo or storyboard picture, about US$0.10 per second of video (US$1 for 10 seconds). A pop-up (the Price question) shows the price and waits for a yes before each one, and again on every retry. The app has no usage meter or spend limit, so a bug or a loop can spend until your balance ends: set a spend cap on the Google billing side.
 
 ## Test
 
@@ -54,7 +52,7 @@ The tests sit at one seam, the chat API: they send a request to the chat handler
 
 ## Before you put it on the internet
 
-This is a prototype made to run on localhost. The chat API is bounded per request (body size, message count and length, reply tokens) but has **no authentication and no per-IP or per-session rate limit**. Add both before exposing it publicly, otherwise anyone can spend your model quota.
+The prototype runs on localhost only. The chat API is bounded per request but has **no authentication and no rate limit**: add both before exposing it, or anyone can spend your model quota.
 
 ## License
 

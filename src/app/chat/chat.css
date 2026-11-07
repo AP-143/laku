@@ -1,5 +1,5 @@
 /*
- * Chat page. Ported from docs/design/chat-fastshot.md; every rule is scoped under .chat so it cannot leak.
+ * Chat page. Every rule is scoped under .chat so it cannot leak.
  * Desktop uses the reference's unit system (--u = 1 px of a 1560x1008 frame) and absolute toolbar coordinates.
  * Tablet and compact switch --u to 1px and use ordinary flex layout.
  */

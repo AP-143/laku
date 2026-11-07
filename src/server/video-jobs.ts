@@ -6,7 +6,7 @@ import { NotAProductError } from "./image-jobs";
 import type { ModelClient } from "./model-client";
 
 /** The storyboard picture a video is made from. */
-export interface StoryboardSheet {
+interface StoryboardSheet {
   assetId: string;
   file: AssetFile;
 }

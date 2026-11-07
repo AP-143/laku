@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-export type AssetVariant = "original" | "resized";
+type AssetVariant = "original" | "resized";
 
 export interface AssetFile {
   bytes: Uint8Array;

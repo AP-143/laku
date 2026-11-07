@@ -6,7 +6,7 @@ const RESIZED_LONG_SIDE = 1024;
 
 const MEDIA_TYPES: Record<string, string> = { jpeg: "image/jpeg", png: "image/png", webp: "image/webp" };
 
-export interface PreparedPhoto {
+interface PreparedPhoto {
   original: AssetFile;
   resized: AssetFile;
 }

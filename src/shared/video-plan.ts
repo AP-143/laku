@@ -6,7 +6,7 @@
 /** The lengths a video can have. A seller who names none gets the shortest. */
 export const VIDEO_LENGTH_CHOICES = [10, 20, 30] as const;
 
-export type VideoSeconds = (typeof VIDEO_LENGTH_CHOICES)[number];
+type VideoSeconds = (typeof VIDEO_LENGTH_CHOICES)[number];
 
 /**
  * The length a seller's own words ask for: a number of seconds written as "10 detik", "30s" or "20 sec", taken as the

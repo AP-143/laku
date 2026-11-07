@@ -37,7 +37,7 @@ export type ChatEvent =
 export type ErrorCode = "rate_limited" | "quota_exhausted";
 
 export type JobKind = "studio_photo" | "storyboard_sheet" | "video";
-export type AssetKind = "image" | "video";
+type AssetKind = "image" | "video";
 /** A `storyboard_sheet` is the whole storyboard as one picture: all its panels, with titles and captions. */
 export type AssetRole = "studio_photo" | "storyboard_sheet" | "video";
 
