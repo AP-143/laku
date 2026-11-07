@@ -3,13 +3,11 @@
  * The wire format is shared by the server and the browser, so it lives in one place.
  */
 
-import type { MusicPlan, NarrationLine, VideoChoice, VideoGrade, VoiceGender } from "./video-plan";
-
 export type ChatEvent =
   /** A piece of the assistant's reply. Concatenate the pieces in order. */
   | { type: "assistant_text"; text: string }
   /** The bot needs the user's explicit yes before doing something costly. */
-  | { type: "confirmation_requested"; confirmationId: string; message: string; estimatedUsd?: number; videoChoice?: VideoChoice }
+  | { type: "confirmation_requested"; confirmationId: string; message: string; estimatedUsd?: number }
   /** A long-running generation started. */
   | { type: "job_started"; jobId: string; kind: JobKind }
   /** Progress of a running generation. */
@@ -24,35 +22,6 @@ export type ChatEvent =
       role?: AssetRole;
       /** The asset this one was made from, so the UI can show before and after side by side. */
       sourceAssetId?: string;
-    }
-  /**
-   * The video has a narration: the script that was read aloud, the voice, and the silent video it was laid over
-   * (kept so the script or the voice can be changed without making the clips again).
-   */
-  | { type: "voice_over"; script: string; voice: string; silentAssetId: string; seconds: number; lines: NarrationLine[] }
-  /**
-   * A video stopped part way. The clips in `finished` (by position) are kept and saved; the rest can be remade by
-   * sending `resume` with these same numbers. `failedIndex` is the first clip that did not come out.
-   */
-  | {
-      type: "video_partial";
-      seconds: number;
-      clips: number[];
-      finished: Record<number, string>;
-      failedIndex: number;
-      sourceAssetId: string;
-      /** The video has a voice-over, so it is added when the missing clips are remade. */
-      voiceOver: boolean;
-      /** What each clip was told to play and say, sent back on a resume so the remade clips still fit the kept ones. */
-      directions: string[];
-      /** The lines of the voice-over, read once the clips are made, so a remade video gets them too. */
-      narration: NarrationLine[];
-      /** The voice of the narration, when there is one. */
-      voice: VoiceGender;
-      /** The colour grade, so a remade video is finished the same way. */
-      grade: VideoGrade;
-      /** The music the video was to get, made after the clips, so a remade video still gets it. */
-      music?: MusicPlan;
     }
   /**
    * The scenes of a storyboard (one per panel) and its art direction, sent just before its picture is drawn. They are data

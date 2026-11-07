@@ -168,15 +168,13 @@ describe("chat sessions", () => {
     const studio: ThreadItem = { id: "s", kind: "studio", assetId: "x", sourceAssetId: "p", retry: {} };
     const scenes: ThreadItem = { id: "c", kind: "scenes", sourceAssetId: "p", scenes: ["a", "b", "c", "d", "e", "f"] };
     const video: ThreadItem = { id: "v", kind: "video", assetId: "x", sourceAssetId: "p" };
-    const partial: ThreadItem = { id: "t", kind: "partial", seconds: 16, clips: [4, 4, 4, 4], finished: {}, failedIndex: 0, voiceOver: false, sheet: "s", directions: [], narration: [], voice: "female", grade: { contrast: 1, saturation: 1, brightness: 0, warmth: 0, grain: 0, vignette: false } };
     const featureOf = (items: ThreadItem[]) => describeSession({ id: "s", items }).feature;
 
     assert.equal(featureOf([user]), undefined);
     assert.equal(featureOf([user, studio]), "studio_photo");
     assert.equal(featureOf([user, scenes]), "storyboard");
-    // A chat whose first result is a video, or one that stopped part way, is a video chat.
+    // A chat whose first result is a video is a video chat.
     assert.equal(featureOf([user, video]), "video");
-    assert.equal(featureOf([user, partial]), "video");
     // A video made under its own storyboard keeps the label of the first result.
     assert.equal(featureOf([user, scenes, video]), "storyboard");
     assert.equal(featureOf([user, studio, scenes, video]), "studio_photo");

@@ -12,17 +12,6 @@ const UNSUPPORTED_MESSAGE = "Model gambar tidak bisa memakai fotonya. Coba foto 
 const NETWORK_MESSAGE = "Koneksi ke layanan AI bermasalah. Cek internetmu lalu coba lagi ya.";
 const GENERIC_MESSAGE = "Maaf, ada gangguan saat memproses pesanmu. Coba lagi ya.";
 
-/** One clip of a video did not come out. The clips made before it are kept; `cause` is what the model threw. */
-export class ClipFailedError extends Error {
-  constructor(
-    readonly index: number,
-    readonly total: number,
-    readonly cause: unknown,
-  ) {
-    super(`Clip ${index + 1} of ${total} failed`);
-  }
-}
-
 function statusOf(error: unknown): number | undefined {
   const { statusCode, status, cause } = (error ?? {}) as { statusCode?: unknown; status?: unknown; cause?: unknown };
   if (typeof statusCode === "number") return statusCode;
@@ -46,11 +35,6 @@ function messageOf(error: unknown): string {
 }
 
 export function describeFailure(error: unknown): ErrorEvent {
-  if (error instanceof ClipFailedError) {
-    const why = describeFailure(error.cause);
-    return { ...why, message: `Klip ${error.index + 1} dari ${error.total} gagal dibuat. ${why.message}` };
-  }
-
   const status = statusOf(error);
   const message = messageOf(error);
 

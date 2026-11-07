@@ -1,5 +1,7 @@
 # The actor is silent and a narrator speaks to the acting; the clips keep their other sound
 
+Superseded by [0011](0011-the-video-model-gets-the-sellers-words-and-decides-the-video.md): the planner, the voice-over, the music and the grade are gone.
+
 The first Ad videos threw away the sound the video model made and laid one text-to-speech narration over the picture. Then the person on screen was allowed to speak on camera, but lip-sync in a generated clip is unreliable, the voice drifted from clip to clip, and the speech was never the emotion the reference ad had. Now the actor never speaks and a narrator carries the feeling.
 
 - **The person is silent when the planner chose a voice-over.** Then, and only then, every direction sent to the video model ends with "The person does not speak (a narrator is added later)", so there is nothing to lip-sync and nothing to drift. How the person acts is the model's own choice.

@@ -23,8 +23,8 @@ const TOPICS: Record<Topic, { title: string; body: ReactNode }> = {
         <li>
           <strong>Video</strong>
           <span>
-            Lampirkan gambar storyboard, lalu AI yang menentukan durasi, voice over, dan musiknya. Kamu setuju dengan harganya dulu sebelum
-            videonya dibuat.
+            Lampirkan gambar storyboard, lalu tulis videonya mau dibuat seperti apa dan berapa detik. AI yang memutuskan sisanya. Kamu
+            setuju dengan harganya dulu sebelum videonya dibuat.
           </span>
         </li>
       </ul>

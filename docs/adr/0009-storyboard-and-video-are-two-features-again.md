@@ -9,7 +9,7 @@ The Seller wants the Storyboard to be about the Storyboard only, and the Ad vide
 - **The Video Feature needs an attached picture.** Without one the bot asks for it. A video guessed by the router from a typed message, without the Feature picked, is sent to the Video Feature too: only the Feature makes a video.
 - **The attached picture gets the looser Product check** of a Storyboard picture (a person using the product is a normal ad picture), and the video job still asks it before anything is paid.
 - **The price is always asked first**, whatever the Length. The Generate button used to guarantee it; now the Feature does.
-- **The video planner reads the scenes and the look from the picture itself**, plus any words the Seller types with the request. The Storyboard no longer keeps or sends the Seller's first request (the old Brief), its scenes or its art direction to a video: it keeps the scenes and the art direction only to draw the picture again on a retry.
+- **The video model reads the scenes and the look from the picture itself** (ADR 0011 removed the planner that used to), plus any words the Seller types with the request. The Storyboard no longer keeps or sends the Seller's first request (the old Brief), its scenes or its art direction to a video: it keeps the scenes and the art direction only to draw the picture again on a retry.
 - **A Length the Seller types with the video request is the Length**, found by the same fixed pattern as before ("10 detik", "30s", "20 sec").
 
 ## Considered options

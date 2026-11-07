@@ -1,14 +1,17 @@
 import { MODELS, VIDEO_SETTINGS } from "../config/models";
 import type { AssetFile } from "./asset-store";
 
-/** Makes one silent-or-not clip from a frame. Throws if the model fails. Never retries. */
+/**
+ * Makes one whole video of `seconds` from the storyboard picture. `prompt` is the seller's own words, passed on as they
+ * were typed; the model decides everything else. Throws if the model fails. Never retries.
+ */
 export interface VideoModel {
-  generate(request: { prompt: string; frame: AssetFile; seconds: number }): Promise<Uint8Array>;
+  generate(request: { prompt?: string; frame: AssetFile; seconds: number }): Promise<Uint8Array>;
 }
 
 const INTERACTIONS_URL = "https://generativelanguage.googleapis.com/v1beta/interactions";
-/** A clip takes about 40 seconds to make; this only stops one stuck call from hanging a request forever. */
-const CLIP_TIMEOUT_MS = 12 * 60_000;
+/** A 4 second clip took about 40 seconds to make; this only stops one stuck call from hanging a request forever. */
+const VIDEO_TIMEOUT_MS = 12 * 60_000;
 
 /** An error that carries the HTTP status, so the error handling can read it like it does for SDK errors. */
 function httpError(status: number, body: string): Error & { statusCode: number } {
@@ -17,7 +20,7 @@ function httpError(status: number, body: string): Error & { statusCode: number }
 
 /**
  * Gemini Omni Flash through the Interactions REST API (the AI SDK has no video support for it yet).
- * The clip comes back as base64 inside `steps`; it carries an audio track the app drops when joining.
+ * The video comes back as base64 inside `steps`, with the audio track the model made, and is kept as it is.
  */
 export function createOmniVideoModel(apiKey: string): VideoModel {
   return {
@@ -29,7 +32,7 @@ export function createOmniVideoModel(apiKey: string): VideoModel {
           model: MODELS.video,
           input: [
             { type: "image", data: Buffer.from(frame.bytes).toString("base64"), mime_type: frame.mediaType },
-            { type: "text", text: prompt },
+            ...(prompt ? [{ type: "text", text: prompt }] : []),
           ],
           response_format: {
             type: "video",
@@ -38,7 +41,7 @@ export function createOmniVideoModel(apiKey: string): VideoModel {
             duration: `${seconds}s`,
           },
         }),
-        signal: AbortSignal.timeout(CLIP_TIMEOUT_MS),
+        signal: AbortSignal.timeout(VIDEO_TIMEOUT_MS),
       });
       if (!response.ok) throw httpError(response.status, await response.text());
 

@@ -17,7 +17,6 @@ interface ThreadViewProps {
   /** The retry button of the storyboard picture, which draws it again from the same scenes. */
   onRedraw: (itemId: string) => void;
   onAnswerConfirm: (itemId: string, yes: boolean) => void;
-  onResumeVideo: (itemId: string) => void;
   photoUrl: (assetId: string) => string;
 }
 
@@ -32,7 +31,6 @@ export function ThreadView({
   onRetry,
   onRedraw,
   onAnswerConfirm,
-  onResumeVideo,
   photoUrl,
 }: ThreadViewProps) {
   const end = useRef<HTMLDivElement>(null);
@@ -90,21 +88,6 @@ export function ThreadView({
               </figure>
             );
 
-          case "partial": {
-            return (
-              <div key={item.id} className="msg msg-bot">
-                <p>Sebagian video belum selesai dibuat. Bagian yang sudah jadi tersimpan, jadi hanya sisanya yang dibuat ulang.</p>
-                {!item.resumed && (
-                  <div className="actions">
-                    <button type="button" className="btn btn-primary" disabled={busy} onClick={() => onResumeVideo(item.id)}>
-                      Coba ulang bagian ini
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          }
-
           case "confirm":
             return (
               <div key={item.id} className="msg msg-bot">
@@ -128,11 +111,6 @@ export function ThreadView({
             return (
               <figure key={item.id} className="result result-video">
                 <video className="video-player" src={assetUrl(item.assetId)} controls playsInline preload="metadata" aria-label="Video iklan hasil LAKU" />
-                {item.script && (
-                  <p className="script">
-                    <strong>Naskah voice over:</strong> {item.script.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()}
-                  </p>
-                )}
                 <div className="actions">
                   <a className="btn btn-primary" href={downloadUrl(item.assetId)} download>
                     Unduh

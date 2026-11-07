@@ -36,16 +36,6 @@ export function revisionPrompt(instruction: string): string {
 }
 
 /**
- * One video clip made from the storyboard picture. The video model is told what the picture is (a plan to film, not
- * footage to copy: a real run copied a scene of it, frame and labels included) and which part of it this clip plays, and
- * nothing else: the style, the text, the effects, the camera, the acting and the sound are its own to decide, because a
- * pile of rules from us made a real video worse.
- */
-export function clipPrompt(direction: string): string {
-  return `The reference image is the storyboard of an ad: a plan of its scenes to film, not footage. Make the finished ad video from it. This clip plays: ${direction}`;
-}
-
-/**
  * The whole storyboard as one picture, designed like a professional ad storyboard: slanted gutters, cinematic photos,
  * a numbered title pill and a caption bubble on each panel, small hand-drawn accents, and a different shot in each panel.
  * The scenes are written in Indonesian and each ends with `Caption: "..."`, which is the only text besides the title
@@ -67,21 +57,4 @@ export function sheetPrompt(scenes: readonly string[], artDirection?: string): s
     `Add a few small accents in the style of the art direction near the action, never covering the product or a face. ` +
     `The only text on the picture is the number pills and the captions, each written once, with no camera notes. Show only what the scene describes; do not write the scene text itself. ${KEEP_PRODUCT}`
   );
-}
-
-/**
- * The two things the app adds to a clip's sound after the clip is made, so the video model is told to leave them out:
- * a narrator's voice (the person does not speak) and a music bed. Each is said in one short sentence, and only when it applies.
- */
-export function silentActor(direction: string): string {
-  return `${direction} The person does not speak (a narrator is added later).`;
-}
-
-export function withoutMusic(direction: string): string {
-  return `${direction} No background music (it is added later).`;
-}
-
-/** What the music model is asked for: the planner's brief, always without vocals. */
-export function musicPrompt(brief: string): string {
-  return `${brief.trim()} Instrumental only, no vocals.`;
 }

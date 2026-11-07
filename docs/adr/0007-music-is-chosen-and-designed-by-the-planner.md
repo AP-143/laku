@@ -1,5 +1,7 @@
 # Music is chosen and designed by the planner, and made by Lyria
 
+Superseded by [0011](0011-the-video-model-gets-the-sellers-words-and-decides-the-video.md): the planner, the voice-over, the music and the grade are gone.
+
 An Ad video can get a music bed. The planner decides whether the ad needs it (the video panel has no checkbox: the Seller only presses Generate). It costs money, so a yes to the Price question has to cover everything that is booked (ADR 0003): the price shown is US$1.04 for 10 seconds with music, not US$1.00, and the question says whether music was chosen.
 
 When it chooses music, the planner that looks at the Storyboard picture also designs the music like an editor choosing a track: a genre and mood for this product, its buyers and the art direction, a tempo in BPM picked so the cuts between Clips fall on a beat, the key, the instruments, a steady groove from the first beat (only the first seconds of the clip are used, so there is no long intro or big ending), no artist names and no vocals, and how loud it sits (quieter when someone speaks). That brief is the prompt of Lyria 3 Clip, which makes one 30 second instrumental MP3 for about US$0.04 on the Google key.

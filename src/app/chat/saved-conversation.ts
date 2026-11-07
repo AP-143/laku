@@ -46,7 +46,8 @@ const isSession = (value: unknown): value is ChatSession =>
 /**
  * Cards and replies of an older storyboard flow are left out; everything else in the chat stays.
  * - A storyboard saved before it became one picture has four scenes and one frame each, which the server no longer
- *   accepts, and a stopped video made from such frames cannot be remade.
+ *   accepts.
+ * - A card of a video that stopped part way (from when a video was made of several clips) has nothing left to remake.
  * - A storyboard card without its picture is one that was never drawn (an old card that waited for an approval, or a
  *   picture that failed): the card shows nothing and a video cannot be made from it. The retry button of a picture that
  *   failed is in its error message and carries the scenes itself.
@@ -54,7 +55,7 @@ const isSession = (value: unknown): value is ChatSession =>
  *   words are never touched.
  */
 function isObsolete(item: ThreadItem): boolean {
-  if (item.kind === "partial") return "frames" in item;
+  if ((item as { kind: string }).kind === "partial") return true;
   if (item.kind === "scenes") return "frames" in item || !item.sheet;
   return item.kind === "bot" && OBSOLETE_REPLIES.has(item.text);
 }
@@ -106,7 +107,7 @@ function featureOf(items: ThreadItem[]): ChatIntent | undefined {
   for (const item of items) {
     if (item.kind === "studio") return "studio_photo";
     if (item.kind === "scenes") return "storyboard";
-    if (item.kind === "video" || item.kind === "partial") return "video";
+    if (item.kind === "video") return "video";
   }
   return undefined;
 }

@@ -23,7 +23,6 @@ import { ThreadView, type Progress } from "./ThreadView";
 import {
   lastPhotoAssetId,
   lastStudioAssetId,
-  narratedVideo,
   redrawRequest,
   styleOf,
   type Preset,
@@ -163,8 +162,6 @@ export default function ChatApp() {
       setBusy(true);
       setNote(undefined);
       let botId: string | undefined;
-      // After a video stopped part way, only the "remake this part" button may continue it, never a full retry.
-      let videoStopped = false;
       const retry: RetryRequest = body;
       // The storyboard card this request draws the picture for: the one it was started from, or the one its scenes created.
       let cardId = context.scenesItemId;
@@ -223,49 +220,10 @@ export default function ChatApp() {
             }
             break;
           }
-          case "voice_over":
-            // The narration belongs to the video that was just added.
-            setItems((current) => {
-              const index = current.findLastIndex((item) => item.kind === "video");
-              return current.map((item, position) =>
-                position === index && item.kind === "video"
-                  ? {
-                      ...item,
-                      script: event.script,
-                      silentAssetId: event.silentAssetId,
-                      voice: event.voice,
-                      seconds: event.seconds,
-                      lines: event.lines,
-                    }
-                  : item,
-              );
-            });
-            break;
-          case "video_partial":
-            videoStopped = true;
-            setItems((current) => [
-              ...current,
-              {
-                id: newId(),
-                kind: "partial",
-                seconds: event.seconds,
-                clips: event.clips,
-                finished: event.finished,
-                failedIndex: event.failedIndex,
-                voiceOver: event.voiceOver,
-                sheet: typeof body.sheet === "string" ? body.sheet : "",
-                directions: event.directions,
-                narration: event.narration,
-                voice: event.voice,
-                grade: event.grade,
-                music: event.music,
-              },
-            ]);
-            break;
           case "confirmation_requested":
             setItems((current) => [
               ...current,
-              { id: newId(), kind: "confirm", message: event.message, estimatedUsd: event.estimatedUsd, videoChoice: event.videoChoice, retry },
+              { id: newId(), kind: "confirm", message: event.message, estimatedUsd: event.estimatedUsd, retry },
             ]);
             break;
           case "usage_updated":
@@ -280,7 +238,7 @@ export default function ChatApp() {
                 message: event.message,
                 code: event.code,
                 retryable: event.retryable,
-                retry: videoStopped ? undefined : (redraw ?? retry),
+                retry: redraw ?? retry,
               },
             ]);
             break;
@@ -315,8 +273,6 @@ export default function ChatApp() {
     ];
     return {
       messages,
-      // The video with a narration, so "ganti narasinya..." or "pakai suara cowok" can change it without new clips.
-      revise: narratedVideo(itemsRef.current),
       // The newest result, or else the photo sent earlier, so "bikin foto studio" works on a later turn.
       lastImageAssetId: lastStudioAssetId(itemsRef.current) ?? lastPhotoAssetId(itemsRef.current),
       ...extra,
@@ -381,42 +337,14 @@ export default function ChatApp() {
     [busy, run],
   );
 
-  /** Remakes only the clips of a stopped video that are still missing; the finished ones are reused. */
-  const resumeVideo = useCallback(
-    (itemId: string) => {
-      const item = itemsRef.current.find((candidate) => candidate.id === itemId);
-      if (busy || !item || item.kind !== "partial" || item.resumed) return;
-      patchItem(itemId, (current) => (current.kind === "partial" ? { ...current, resumed: true } : current));
-      void run(
-        {
-          messages: [{ role: "user", text: "Coba ulang bagian yang gagal." }],
-          sheet: item.sheet,
-          resume: {
-            seconds: item.seconds,
-            clips: item.clips,
-            finished: item.finished,
-            voiceOver: item.voiceOver,
-            directions: item.directions,
-            narration: item.narration,
-            voice: item.voice,
-            grade: item.grade,
-            music: item.music,
-          },
-        },
-        {},
-      );
-    },
-    [busy, patchItem, run],
-  );
-
   /** The seller's answer to a price question: yes sends the same request again, now confirmed; no spends nothing. */
   const answerConfirmation = useCallback(
     (itemId: string, yes: boolean) => {
       const item = itemsRef.current.find((candidate) => candidate.id === itemId);
       if (busy || !item || item.kind !== "confirm" || item.answer) return;
       patchItem(itemId, (current) => (current.kind === "confirm" ? { ...current, answer: yes ? "yes" : "no" } : current));
-      // The yes is for this price and this plan: the plan comes back as it was shown, and the server asks again if it would cost more.
-      if (yes) void run({ ...item.retry, confirmedUsd: item.estimatedUsd, videoChoice: item.videoChoice }, {});
+      // The yes is for this price: the server asks again if the same request would now cost more.
+      if (yes) void run({ ...item.retry, confirmedUsd: item.estimatedUsd }, {});
     },
     [busy, patchItem, run],
   );
@@ -539,7 +467,6 @@ export default function ChatApp() {
                   onRetry={retryRequest}
                   onRedraw={redrawSheet}
                   onAnswerConfirm={answerConfirmation}
-                  onResumeVideo={resumeVideo}
                   photoUrl={(assetId) => assetUrl(assetId, "resized")}
                 />
               )}

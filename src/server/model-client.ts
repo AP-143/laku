@@ -1,17 +1,7 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import {
-  generateImage,
-  generateSpeech,
-  generateText,
-  streamText,
-  type ImageModel,
-  type LanguageModel,
-  type ModelMessage,
-  type SpeechModel,
-} from "ai";
+import { generateImage, generateText, streamText, type ImageModel, type LanguageModel, type ModelMessage } from "ai";
 import { MODELS } from "../config/models";
 import type { AssetFile } from "./asset-store";
-import { createLyriaMusicModel, type MusicModel } from "./music-model";
 import { createOmniVideoModel, type VideoModel } from "./video-model";
 import {
   CHAT_SYSTEM_PROMPT,
@@ -20,14 +10,8 @@ import {
   intentPrompt,
   parseIntent,
   parseScenes,
-  parseVideoPlan,
   planScenesPrompt,
-  videoPlanPrompt,
-  parseVoiceRevision,
-  voiceRevisionPrompt,
   type PlannedStoryboard,
-  type VideoPlan,
-  type VoiceRevision,
   type Intent,
   type IntentContext,
 } from "./chat-prompt";
@@ -44,9 +28,6 @@ const MAX_REPLY_TOKENS = 1024;
 const MAX_CHECK_TOKENS = 16;
 /** The short scenes (as many as the ad needs) with their captions and the art direction, or one rewritten scene, as JSON. */
 const MAX_SCENE_TOKENS = 1600;
-/** The reasoning, and a direction and a line to say for each of up to four clips, as JSON. */
-const MAX_PLAN_TOKENS = 2400;
-
 /** Studio photos are square; the storyboard picture is vertical so the video made from it is vertical too. */
 export type ImageAspectRatio = "1:1" | "9:16";
 
@@ -71,30 +52,14 @@ export interface ModelClient {
   /** Makes one image from a reference photo and an instruction. Throws if the model fails. Never retries. */
   generateImage(request: { prompt: string; reference: AssetFile; aspectRatio: ImageAspectRatio }): Promise<AssetFile>;
   /**
-   * Looks at the storyboard picture, thinks, and decides the length of the video, whether it has a voice-over and music,
-   * and what each clip plays and says. `wish` is what the seller typed with this request, if they typed. The scenes and the
-   * look are read from the picture itself. Throws if the model fails or answers badly.
+   * Makes a whole video of `seconds` from the storyboard picture. `prompt` is the seller's own words as they typed them
+   * (left out when they typed none); the model decides everything else. Throws if the model fails. Never retries.
    */
-  planVideo(request: { wish?: string; length?: number; wrong?: number; sheet?: AssetFile }): Promise<VideoPlan>;
-  /** Makes 30 seconds of instrumental music from a prompt. Throws if the model fails. Never retries. */
-  generateMusic(request: { prompt: string }): Promise<Uint8Array>;
-  /** Reads what the seller wants changed in a narration. Throws if the model fails or answers badly. */
-  readVoiceRevision(text: string, currentScript: string): Promise<VoiceRevision>;
-  /**
-   * Reads a script aloud, in the app voice unless another is given, performed as `instructions` direct (the manner,
-   * the emotion and how the pitch moves). Throws if the model fails. Never retries.
-   */
-  speak(script: string, voice?: string, instructions?: string): Promise<AssetFile>;
-  /** Makes one clip of `seconds` from a frame. Throws if the model fails. Never retries. */
-  generateClip(request: { prompt: string; frame: AssetFile; seconds: number }): Promise<Uint8Array>;
+  generateVideo(request: { prompt?: string; frame: AssetFile; seconds: number }): Promise<Uint8Array>;
 }
 
 /** Image generation is slow; this keeps one stuck call from hanging a request forever. */
 const IMAGE_TIMEOUT_MS = 3 * 60_000;
-/** Reading a script aloud takes seconds; this only stops one stuck call from hanging a request. */
-const SPEECH_TIMEOUT_MS = 2 * 60_000;
-/** A narration is under a hundred words (a video is at most 32 seconds). */
-const MAX_SCRIPT_TOKENS = 1200;
 
 /** Turns one chat message into the SDK's shape, attaching the photo as a file part when there is one. */
 function toModelMessage(message: ChatMessage): ModelMessage {
@@ -113,8 +78,6 @@ export function createModelClient(models: {
   chatModel: LanguageModel;
   imageModel: ImageModel;
   videoModel: VideoModel;
-  speechModel: SpeechModel;
-  musicModel: MusicModel;
 }): ModelClient {
   /** Shows one image to the chat model with a question that is answered YES or NO. */
   async function askYesNo(question: string, image: AssetFile): Promise<boolean> {
@@ -200,50 +163,7 @@ export function createModelClient(models: {
       return { bytes: result.image.uint8Array, mediaType: result.image.mediaType };
     },
 
-    async planVideo(request) {
-      const { text } = await generateText({
-        model: models.chatModel,
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: videoPlanPrompt(request) },
-              ...(request.sheet ? [{ type: "file" as const, mediaType: request.sheet.mediaType, data: request.sheet.bytes }] : []),
-            ],
-          },
-        ],
-        maxOutputTokens: MAX_PLAN_TOKENS,
-        maxRetries: 0,
-      });
-      return parseVideoPlan(text);
-    },
-
-
-    generateClip: (request) => models.videoModel.generate(request),
-
-    generateMusic: (request) => models.musicModel.generate(request),
-
-    async readVoiceRevision(text, currentScript) {
-      const { text: answer } = await generateText({
-        model: models.chatModel,
-        messages: [{ role: "user", content: voiceRevisionPrompt(text, currentScript) }],
-        maxOutputTokens: MAX_SCRIPT_TOKENS,
-        maxRetries: 0,
-      });
-      return parseVoiceRevision(answer);
-    },
-
-    async speak(script, voice = MODELS.voice, instructions) {
-      const { audio } = await generateSpeech({
-        model: models.speechModel,
-        text: script,
-        voice,
-        instructions,
-        maxRetries: 0,
-        abortSignal: AbortSignal.timeout(SPEECH_TIMEOUT_MS),
-      });
-      return { bytes: audio.uint8Array, mediaType: audio.mediaType };
-    },
+    generateVideo: (request) => models.videoModel.generate(request),
   };
 }
 
@@ -254,7 +174,5 @@ export function createDefaultModelClient(): ModelClient {
     chatModel: google(MODELS.chat),
     imageModel: google.image(MODELS.image),
     videoModel: createOmniVideoModel(process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? ""),
-    speechModel: google.speech(MODELS.speech),
-    musicModel: createLyriaMusicModel(process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? ""),
   });
 }

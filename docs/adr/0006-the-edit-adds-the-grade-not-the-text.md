@@ -1,5 +1,7 @@
 # The edit adds the colour grade and keeps the quality; the text on screen is the video model's
 
+Superseded by [0011](0011-the-video-model-gets-the-sellers-words-and-decides-the-video.md): the planner, the voice-over, the music and the grade are gone.
+
 Generated video gives itself away in a few ways, and a professional editor fixes some of them in the edit, so LAKU does too. The clips come from the video model; the edit joins them and adds the grade in one ffmpeg pass, so the picture is encoded once. The edit draws nothing on the picture.
 
 - **The text on screen is the video model's.** The storyboard picture holds the style of the ad: its captions, checklist, call to action, colours and effects. The video model reads it and decides how the text looks on screen (ADR 0008). The planner only says which captions of the storyboard show in which clip, word for word, and never invents other words. An earlier version had the app draw the captions (a font, bubbles, a palette, doodles); the Seller wanted the style to come from the storyboard and the AI, not from fixed choices of the app, so that code is gone.

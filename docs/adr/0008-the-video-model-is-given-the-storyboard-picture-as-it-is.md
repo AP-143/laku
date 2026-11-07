@@ -1,6 +1,6 @@
 # The video model is given the storyboard picture as it is and decides everything else itself
 
-Partly superseded by [0009](0009-storyboard-and-video-are-two-features-again.md): the planner no longer gets the scenes or the Seller's first request (the brief), only the picture and the words typed with the video request.
+Partly superseded by [0009](0009-storyboard-and-video-are-two-features-again.md): the planner no longer gets the scenes or the Seller's first request (the brief), only the picture and the words typed with the video request. Superseded by [0011](0011-the-video-model-gets-the-sellers-words-and-decides-the-video.md): there is no planner and no clip prompt any more; the model gets the picture and the Seller's own words.
 
 The Seller wants the video made from the storyboard, with the AI thinking for itself: its style, the text it shows, its effects, the camera, the acting and the sound are the video model's own choices. So every clip starts from the storyboard picture the Seller approved, unchanged, and the app gives the model almost no instructions.
 

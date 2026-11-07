@@ -37,7 +37,7 @@ Turns a Product photo into a Storyboard: asking for it makes its Storyboard pict
 _Avoid_: Storyboard & Video (the two used to be one Feature)
 
 **Video (Feature)**:
-Turns a Storyboard picture the Seller attaches to the chat into an Ad video, with no Storyboard made in that Session first. Only the attached picture is used: nothing is carried over from a Storyboard Session, and the planner reads the Scenes and the Art direction from the picture. It gets the looser Product check of a Storyboard picture, and the Price question is always asked first, whatever the Length. What the Seller types with the request reaches the planner as they wrote it: a Length, a Voice-over or Music they ask for is done as asked, and only what they do not mention is the planner's choice. A Length written as "10 detik", "30s" or "20 sec" is found by a fixed pattern and is the Length of the video (a number between the options is the nearest one that is not longer): the planner is told so, asked once more if it still chooses another, and then its plan is fitted to that Length.
+Turns a Storyboard picture the Seller attaches to the chat into an Ad video, with no Storyboard made in that Session first. Only the attached picture is used: nothing is carried over from a Storyboard Session. It gets the looser Product check of a Storyboard picture, and the Price question is always asked first, whatever the Length. What the Seller types ("buatkan video iklan 10 detik layaknya editan profesional dari storyboard ini") goes to the video model exactly as they wrote it, together with the picture, and the video model decides how the video is made. The app writes no instruction of its own for the video. A Length written as "10 detik", "30s" or "20 sec" is found by a fixed pattern and is the Length of the video (a number between the options is the nearest one that is not longer; with none, the shortest).
 _Avoid_: Reel maker, Storyboard & Video
 
 ### Storyboard and video
@@ -51,7 +51,7 @@ The text of one of the moments of a Storyboard: what is seen, and the Caption wr
 _Avoid_: Shot, slide (a panel is the Scene as drawn in the Storyboard picture)
 
 **Art direction**:
-The look of one ad, written by the planner for this product, its buyers and its story: mood, colour grade, light, the graphic style of labels and accents, and the effects, transitions and text animations that fit. It is chosen like a professional editor would, not taken from one fixed recipe, and the Storyboard picture is made in it. It is kept only to draw the picture again on a retry. The video planner and the video model are not given it: they see the look in the picture and decide the rest themselves. The Seller does not see or edit it.
+The look of one ad, written by the planner for this product, its buyers and its story: mood, colour grade, light, the graphic style of labels and accents, and the effects, transitions and text animations that fit. It is chosen like a professional editor would, not taken from one fixed recipe, and the Storyboard picture is made in it. It is kept only to draw the picture again on a retry. The video model is not given it: it sees the look in the picture and decides the rest itself. The Seller does not see or edit it.
 _Avoid_: Style (that is the Studio photo Style), theme, template
 
 **Storyboard picture**:
@@ -59,28 +59,12 @@ The whole Storyboard as one tall vertical image: a grid of panels (two columns; 
 _Avoid_: Frame, sheet (in the UI), scene image, thumbnail
 
 **Ad video**:
-A vertical video made from the Storyboard picture of a Storyboard, 10, 20 or 30 seconds long, with or without a Voice-over and a Music bed. The Seller only attaches the picture in the Video Feature (and may add words): the planner decides the Length, the Voice-over and the Music bed. Its style, the text it shows (the Captions of the Scenes), its effects and the emotion of the person follow the Storyboard picture, and the video model decides how they look on screen; the app draws no text of its own.
-_Avoid_: Reel, clip (a Clip is only a piece of it)
+A vertical video made from the Storyboard picture of a Storyboard, 10, 20 or 30 seconds long, in one call to the video model. The Seller attaches the picture in the Video Feature and says in their own words what video they want. The video model decides everything else (its style, the text it shows, its effects, the camera, the acting and the sound) and the app keeps the video as the model returned it; the app draws no text and adds no voice or music of its own.
+_Avoid_: Reel, clip
 
 **Length**:
-How long the Ad video runs: 10, 20 or 30 seconds, chosen by the planner for the story (a typed request may say what the Seller wants). All the Scenes of the picture are always in the video; a text model shares them over the Clips, so a short Length moves fast and a long one lingers.
+How long the Ad video runs: 10, 20 or 30 seconds, the one the Seller's words name, otherwise 10. The price follows it.
 _Avoid_: Duration, any other number of seconds
-
-**Clip**:
-One piece of an Ad video, 4 to 8 seconds, made from the Storyboard picture and a direction that tells the story of its part as a film scene, with the Caption words of the Scenes it plays; the video model is told only that the picture is a plan to film, not footage, and decides how it looks, moves, sounds and how the text shows. Several Clips are joined into the Ad video; if one fails, the finished ones are kept and only the rest is made again.
-_Avoid_: Segment, shot
-
-**Voice-over**:
-A narrator read over an Ad video while the person in it stays silent. The planner writes one line for each Clip about what the person feels at that part of the story, with a delivery note (the emotion) and the second where the line starts; each line is read with its own emotion at its moment and mixed over the sound the Clips came with. A change of voice keeps the lines and does not make the video again.
-_Avoid_: Dubbing, audio track, narrator
-
-**Music bed**:
-Instrumental background music under an Ad video, only when the planner decides the ad needs it (it is part of the Price question). The planner designs it for the ad (genre, tempo so the cuts fall on a beat, mood, how loud) and Lyria makes a 30 second clip, which is mixed under the Sound with ducking and fades.
-_Avoid_: Soundtrack, jingle, song
-
-**Sound**:
-How an Ad video sounds: the Clips keep whatever sound the video model made, and a Voice-over and a Music bed can be added. When one of them is added the model is told to leave it out of the Clip (the person does not speak; no background music). The app does not direct the rest.
-_Avoid_: Audio, soundtrack
 
 ### Conversation
 
@@ -91,7 +75,7 @@ _Avoid_: Chat, thread, conversation, history (history is the list of Sessions)
 ### Money
 
 **Price question**:
-The question that tells the Seller what an Ad video will cost, and what the planner chose (Length, Voice-over, Music bed), and asks before any of it is spent. A yes covers exactly that price and that plan, which comes back with the yes so it is made as it was shown; a plan that would cost more asks again.
+The question that tells the Seller what an Ad video will cost, for the Length their words name, and asks before anything is spent. A yes covers that price; the same request that would now cost more asks again.
 _Avoid_: Confirmation, checkout, payment
 
 **Usage meter**:

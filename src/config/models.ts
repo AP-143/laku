@@ -23,15 +23,6 @@ export const MODELS = {
    * Measured 2026-11-02 (see BAKEOFF_NOTES): a 4 s clip came back at 720x1280 with an audio track, about US$0.10 per second.
    */
   video: "gemini-omni-1.1-flash",
-  /**
-   * Background music, called directly on the Google key (Interactions API) by src/server/music-model.ts. Always one
-   * 30 second MP3, instrumental when asked for, paid tier only (no free tier).
-   */
-  music: "lyria-3-clip-preview",
-  /** Reads the voice-over aloud, called directly on the Google key (measured 2026-11-02: 12 s of Indonesian in 4 s). */
-  speech: "gemini-3.8-flash-lite-tts",
-  /** The one prebuilt voice used for every narration, so a video sounds the same from start to end. */
-  voice: "Kore",
 } as const;
 
 /**
@@ -44,9 +35,6 @@ export interface BakeoffImageCandidate {
   size: "512" | "1K";
   usd: number;
 }
-
-/** The two narration voices a seller can ask for ("suara cewek" or "suara cowok"): Gemini prebuilt voices. */
-export const VOICES = { female: "Kore", male: "Charon" } as const;
 
 /** Candidates the live bake-off script compares, all called directly on the Google key. Edit to try others. */
 export const BAKEOFF_CANDIDATES = {
@@ -157,15 +145,6 @@ export const COSTS = {
   imageUsd: 0.0336,
   /** One second of video from `MODELS.video` at 720p (about US$0.10, see the bake-off notes). */
   videoUsdPerSecond: 0.1,
-  /**
-   * One second of narration: US$12 per 1M audio tokens (the price from 2027-01-01; US$6 until then) at 25 tokens
-   * per second, so the estimate is already the higher one.
-   */
-  speechUsdPerSecond: 0.0003,
-  /** One clip of background music from `MODELS.music`: US$0.04 per 30 second clip on Google's pricing page (not measured yet). */
-  musicUsd: 0.04,
-  /** A video estimated above this is only made after the seller says yes; cheaper ones start at once. */
-  videoConfirmAboveUsd: 1,
   /**
    * Only to show rupiah next to dollars in a question to the seller; a rough rate, not a quote. About what Google
    * billed at on 2026-11-03.

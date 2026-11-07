@@ -3,7 +3,7 @@
 A chatbot for small online sellers in Indonesia. From one amateur photo of a product it makes:
 
 - a **studio photo** (clean backdrop, solid colour or lifestyle setting; the product never changes), and
-- a **storyboard and ad video**: scenes drawn as one picture (numbered panels, caption bubbles, a different shot per panel; the AI chooses how many panels the ad needs), then a vertical ad video made from that picture. What the seller asks in the first message (for example "storyboard and a 10 second video") shapes both the storyboard and the video. The seller then only presses Generate: the AI decides the length (10, 20 or 30 seconds), whether there is an Indonesian voice-over (the person stays silent and a narrator speaks, with emotion) and whether there is music, and the seller says yes to the exact price. The video model is given the storyboard and decides how the video looks, moves and sounds; the app only shares the story over the clips, joins them, grades them and adds the voice-over and music.
+- a **storyboard and ad video**: scenes drawn as one picture (numbered panels, caption bubbles, a different shot per panel; the AI chooses how many panels the ad needs), then a vertical ad video made from that picture. In the Video feature the seller attaches the storyboard picture and says in their own words what video they want (for example "video iklan 10 detik layaknya editan profesional"). The words and the picture go to the video model as they are, the model decides how the video looks, moves and sounds, and the seller says yes to the exact price first. The length is 10, 20 or 30 seconds, the one the words name (10 when they name none). The app writes no instructions for the video and adds nothing to it afterwards.
 
 The chat talks to the seller in Bahasa Indonesia. The code, comments and docs are in English.
 
@@ -17,9 +17,7 @@ Every model runs directly on a Google AI Studio key (no gateway):
 | --- | --- |
 | Chat, product check, planning | `gemini-3.5-flash-lite` |
 | Studio photos and the storyboard picture | `gemini-nano-banana-2.1` |
-| Video clips | `gemini-omni-1.1-flash` (Interactions API) |
-| Voice-over | `gemini-3.8-flash-lite-tts` |
-| Background music (optional) | `lyria-3-clip-preview` (Interactions API) |
+| Video | `gemini-omni-1.1-flash` (Interactions API) |
 
 All model IDs and estimated prices live in `src/config/models.ts`. Only `src/server/model-client.ts` talks to models.
 
@@ -29,7 +27,7 @@ Read `GLOSSARY.md` for the domain words and `docs/adr/` for why things are the w
 
 ## Run it
 
-You need Node.js 22 or later, `ffmpeg` on your PATH (videos are joined and the voice is laid over with it), and a Google AI Studio API key **with billing enabled** (image and video models have no free tier).
+You need Node.js 22 or later, and a Google AI Studio API key **with billing enabled** (image and video models have no free tier).
 
 ```bash
 npm install
@@ -41,7 +39,7 @@ Open http://localhost:3000/chat. Generated files go under `storage/` (git-ignore
 
 ## Cost
 
-Real runs spend real money: about US$0.03 for a studio photo or a storyboard picture, about US$0.10 per second of video (US$1 for 10 seconds), and about US$0.04 for a clip of background music (paid tier only). The app keeps a local estimate of this month's spend (the usage meter) but sets **no spend limit** of its own, so a bug or a loop can spend until your balance ends. Set a spend cap on the Google billing side.
+Real runs spend real money: about US$0.03 for a studio photo or a storyboard picture, about US$0.10 per second of video (US$1 for 10 seconds). The app keeps a local estimate of this month's spend (the usage meter) but sets **no spend limit** of its own, so a bug or a loop can spend until your balance ends. Set a spend cap on the Google billing side.
 
 ## Test
 
